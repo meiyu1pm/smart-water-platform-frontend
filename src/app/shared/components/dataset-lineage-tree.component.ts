@@ -119,8 +119,7 @@ export function buildLineageTree(
         color: empty ? '#92400e' : '#0f172a',
         fontSize: 12,
         lineHeight: 18,
-        align: 'left',
-        padding: [8, 12, 8, 12],
+        align: 'center',
       },
       children: cycle ? [] : (children.get(id) ?? []).map((child) => build(child, nextPath)),
     };
