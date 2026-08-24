@@ -4,10 +4,12 @@ import {
   Definition,
   Edge,
   EditorNode,
+  Graph,
   StoredBinding,
   ValidationIssue,
   ValidationStatus,
 } from './workflow-editor.models';
+import { DataAssetSelection } from '../../core/models/api.models';
 
 /**
  * 架构边界：上游是 CommandBus/Facade 的领域写入，下游是页面、面板和 Rete Adapter 的只读信号。
@@ -17,11 +19,12 @@ import {
 @Injectable()
 export class WorkflowEditorStore {
   readonly definitions = signal<Definition[]>([]);
+  readonly definitionByCode = computed(() => new Map(this.definitions().map((definition) => [definition.node_code, definition])));
   readonly nodes = signal<EditorNode[]>([]);
   readonly edges = signal<Edge[]>([]);
   readonly outputs = signal<Array<{ node_id: string; port: string }>>([]);
   readonly bindings = signal<Map<string, StoredBinding>>(new Map());
-  readonly bindingSelections = signal<Map<string, unknown>>(new Map());
+  readonly bindingSelections = signal<Map<string, DataAssetSelection>>(new Map());
   readonly selectedId = signal<string | null>(null);
   readonly invalidParameterNodes = signal<ReadonlySet<string>>(new Set());
   readonly workflowId = signal<number | null>(null);
@@ -38,6 +41,9 @@ export class WorkflowEditorStore {
   readonly message = signal('');
   readonly messageType = signal<'info' | 'error'>('info');
   readonly graphLoaded = signal(false);
+  readonly history = signal<Graph[]>([]);
+  readonly historyIndex = signal(-1);
+  readonly bindingRevision = signal(0);
   readonly parametersValid = computed(() => this.invalidParameterNodes().size === 0);
   readonly selectedNode = computed(() => this.nodes().find((n) => n.id === this.selectedId()) ?? null);
   readonly bindingsReady = computed(() =>
@@ -51,7 +57,9 @@ export class WorkflowEditorStore {
   setEdges(value: Edge[]): void { this.edges.set(value); }
   setOutputs(value: Array<{ node_id: string; port: string }>): void { this.outputs.set(value); }
   setBindings(value: Map<string, StoredBinding>): void { this.bindings.set(new Map(value)); }
-  setBindingSelections(value: Map<string, unknown>): void { this.bindingSelections.set(new Map(value)); }
+  setBindingSelections(value: Map<string, DataAssetSelection>): void { this.bindingSelections.set(new Map(value)); }
+  setHistory(history: Graph[], index: number): void { this.history.set(history); this.historyIndex.set(index); }
+  setBindingRevision(): void { this.bindingRevision.update((value) => value + 1); }
   setInvalidParameterNodes(value: ReadonlySet<string>): void { this.invalidParameterNodes.set(new Set(value)); }
   setMessage(type: 'info' | 'error', value: string): void { this.messageType.set(type); this.message.set(value); }
   resetTransientValidation(): void {
@@ -60,4 +68,3 @@ export class WorkflowEditorStore {
     this.validationRevision.set(null);
   }
 }
-

@@ -4,6 +4,7 @@ import {
   HostListener,
   OnDestroy,
   ViewChild,
+  computed,
   inject,
   signal,
 } from '@angular/core';
@@ -22,14 +23,12 @@ import {
 } from 'dockview-angular';
 
 import { AuthService } from '../../core/services/auth.service';
-import { ApiClient } from '../../core/services/api-client.service';
 import { NotificationService } from '../../core/services/notification.service';
 import {
   FormlyJsonFieldTypeComponent,
   FormlySliderFieldTypeComponent,
 } from '../../shared/components/operator-parameter-form.component';
 import type { Definition, EditorNode, Graph } from './workflow-editor.models';
-import { WorkflowEditorPage } from './workflow-editor.page';
 import { WorkflowEditorStore } from './workflow-editor-store';
 import { WorkflowCommandBus } from './workflow-command-bus';
 import { WorkflowGraphSerializer } from './workflow-graph-serializer';
@@ -39,7 +38,6 @@ import {
   NodeInspectorPanelComponent,
   OperatorCatalogPanelComponent,
   WorkflowCanvasPanelComponent,
-  WORKFLOW_EDITOR_PANEL_HOST,
 } from './workflow-editor-panels';
 import { WorkflowCompositeCanvasPanelComponent } from './workflow-composite-canvas-panel.component';
 import {
@@ -77,8 +75,6 @@ type OptionalWorkspacePanelId = Exclude<WorkspacePanelId, typeof ROOT_CANVAS_PAN
     WorkflowCanvasPanelComponent,
   ],
   providers: [
-    { provide: WORKFLOW_EDITOR_PANEL_HOST, useExisting: WorkflowEditorWorkspacePage },
-    WorkflowEditorPage,
     WorkflowEditorStore,
     WorkflowCommandBus,
     WorkflowGraphSerializer,
@@ -431,43 +427,40 @@ type OptionalWorkspacePanelId = Exclude<WorkspacePanelId, typeof ROOT_CANVAS_PAN
   `,
 })
 export class WorkflowEditorWorkspacePage implements OnDestroy {
-  /** Workspace composition boundary: the editor page is a domain controller, not a base class. */
-  private readonly editor = inject(WorkflowEditorPage);
-  readonly operatorNames = this.editor.operatorNames;
-  readonly definitions = this.editor.definitions;
-  readonly nodes = this.editor.nodes;
-  readonly selectedNode = this.editor.selectedNode;
-  readonly selectedDataBinding = this.editor.selectedDataBinding;
-  readonly history = this.editor.history;
-  readonly historyIndex = this.editor.historyIndex;
-  readonly graphLoaded = this.editor.graphLoaded;
-  readonly selectedId = this.editor.selectedId;
-  readonly workflowId = this.editor.workflowId;
-  readonly workflowName = this.editor.workflowName;
-  readonly publishedVersionId = this.editor.publishedVersionId;
-  readonly publishedVersionNumber = this.editor.publishedVersionNumber;
-  readonly draftMatchesPublished = this.editor.draftMatchesPublished;
-  readonly draftRevision = this.editor.draftRevision;
-  readonly busy = this.editor.busy;
-  readonly message = this.editor.message;
-  readonly messageType = this.editor.messageType;
-  readonly autosaveState = this.editor.autosaveState;
-  readonly validationStatus = this.editor.validationStatus;
-  readonly validationIssues = this.editor.validationIssues;
-  readonly parametersValid = this.editor.parametersValid;
-  get edges() { return this.editor.edges; }
-  get graphOutputs() { return this.editor.graphOutputs; }
-  get bindingsReady() { return this.editor.bindingsReady; }
+  /** Workspace composition boundary: only layout, dialogs and view delegation live here. */
+  private readonly store = inject(WorkflowEditorStore);
+  private readonly facade = inject(WorkflowEditorFacade);
+  private readonly commandBus = inject(WorkflowCommandBus);
+  private readonly adapter = inject(ReteWorkflowAdapter);
+  readonly operatorNames = this.facade.operatorNames;
+  readonly definitions = this.store.definitions;
+  readonly nodes = this.store.nodes;
+  readonly selectedNode = this.store.selectedNode;
+  readonly selectedDataBinding = computed(() => { this.store.bindingRevision(); const node = this.selectedNode(); return node ? { id: node.id, label: this.operatorNames.displayName(node.node_code, node.definition?.node_name), selection: this.store.bindingSelections().get(node.id) ?? null, wholeAsset: node.node_code === 'dataset_asset_v1' } : null; });
+  readonly history = this.store.history;
+  readonly historyIndex = this.store.historyIndex;
+  readonly graphLoaded = this.store.graphLoaded;
+  readonly selectedId = this.store.selectedId;
+  readonly workflowId = this.store.workflowId;
+  readonly workflowName = this.store.workflowName;
+  readonly publishedVersionId = this.store.publishedVersionId;
+  readonly publishedVersionNumber = this.store.publishedVersionNumber;
+  readonly draftMatchesPublished = this.store.draftMatchesPublished;
+  readonly draftRevision = this.store.draftRevision;
+  readonly busy = this.store.busy;
+  readonly message = this.store.message;
+  readonly messageType = this.store.messageType;
+  readonly autosaveState = this.store.autosaveState;
+  readonly validationStatus = this.store.validationStatus;
+  readonly validationIssues = this.store.validationIssues;
+  readonly parametersValid = this.store.parametersValid;
+  get edges() { return this.store.edges(); }
+  get graphOutputs() { return this.store.outputs(); }
+  get bindingsReady() { return this.store.bindingsReady; }
   @ViewChild('workspaceBody') private workspaceBody?: ElementRef<HTMLDivElement>;
   private readonly workspaceAuth = inject(AuthService);
-  private readonly workspaceApi = inject(ApiClient);
   private readonly dialog = inject(MatDialog);
   private readonly workspaceNotice = inject(NotificationService);
-  private readonly exactCompositeVersions = new Map<
-    string,
-    { executorType: string; workflowVersionId: number | null }
-  >();
-  private readonly exactCompositeLookups = new Set<string>();
   private dockviewApi?: DockviewApi;
   private layoutSubscription?: { dispose(): void };
   private panelRemovalSubscription?: { dispose(): void };
@@ -512,39 +505,41 @@ export class WorkflowEditorWorkspacePage implements OnDestroy {
     }
   }
   constructor() {
+    this.facade.initialize();
+    this.adapter.setNodePickedHandler((id) => this.facade.notifyNodePicked(id, Date.now(), (nodeId) => this.openCompositeNodeDocument(nodeId)));
     this.restoreThemePreference();
   }
 
-  addNode(definition: Definition): Promise<void> { return this.editor.addNode(definition); }
-  onCatalogDragStart(event: DragEvent, definition: Definition): void { this.editor.onCatalogDragStart(event, definition); }
-  allowDrop(event: DragEvent): void { this.editor.allowDrop(event); }
-  onCanvasDrop(event: DragEvent): void { this.editor.onCanvasDrop(event); }
-  attachEditorHost(element: HTMLDivElement): void { this.editor.attachEditorHost(element); }
-  detachEditorHost(element: HTMLDivElement): void { this.editor.detachEditorHost(element); }
-  fitView(): Promise<void> { return this.editor.fitView(); }
-  refreshEditorViewport(): void { this.editor.refreshEditorViewport(); }
-  undo(): void { this.editor.undo(); }
-  redo(): void { this.editor.redo(); }
-  parameterEntries(node: EditorNode): Array<{ key: string; value: unknown }> { return this.editor.parameterEntries(node); }
-  parameterSchema(node: EditorNode, key: string): Record<string, any> { return this.editor.parameterSchema(node, key); }
-  defaultParameters(definition: Definition): Record<string, unknown> { return this.editor.defaultParameters(definition); }
-  coerceNumber(value: unknown, integer: boolean): number { return this.editor.coerceNumber(value, integer); }
-  setParameter(id: string, key: string, value: unknown): void { this.editor.setParameter(id, key, value); }
-  setParameters(id: string, parameters: Record<string, unknown>): void { this.editor.setParameters(id, parameters); }
-  setParameterValidity(id: string, valid: boolean): void { this.editor.setParameterValidity(id, valid); }
-  isOutputPort(nodeId: string, port: string): boolean { return this.editor.isOutputPort(nodeId, port); }
-  toggleOutputPort(nodeId: string, port: string): void { this.editor.toggleOutputPort(nodeId, port); }
-  removeNode(id: string): Promise<void> { return this.editor.removeNode(id); }
-  setBinding(nodeId: string, selection: any): void { this.editor.setBinding(nodeId, selection); }
-  graph(): Graph { return this.editor.graph(); }
-  select(id: string): void { this.editor.select(id); }
-  validate(): void { this.editor.validate(); }
-  save(): void { this.editor.save(); }
-  publish(): void { this.editor.publish(); }
-  run(): void { this.editor.run(); }
-  autosaveLabel(): string { return this.editor.autosaveLabel(); }
-  validationButtonLabel(): string { return this.editor.validationButtonLabel(); }
-  showError(text: string): void { (this.editor as any).showError(text); }
+  async addNode(definition: Definition): Promise<void> { const node = this.facade.addNode(definition); await this.adapter.addNode(node); }
+  onCatalogDragStart(event: DragEvent, definition: Definition): void { event.dataTransfer?.setData('application/x-node-code', definition.node_code); }
+  allowDrop(event: DragEvent): void { event.preventDefault(); }
+  onCanvasDrop(event: DragEvent): void { event.preventDefault(); const definition = this.store.definitionByCode().get(event.dataTransfer?.getData('application/x-node-code') || ''); if (definition) void this.addNode(definition); }
+  attachEditorHost(element: HTMLDivElement): void { void this.adapter.mount(element, { nodes: this.nodes(), edges: this.edges }, { editable: true, onNodePicked: (id) => this.facade.notifyNodePicked(id, Date.now(), (nodeId) => this.openCompositeNodeDocument(nodeId)) }); }
+  detachEditorHost(element: HTMLDivElement): void { this.adapter.detachHost(element); }
+  fitView(): Promise<void> { return this.adapter.fitView(); }
+  refreshEditorViewport(): void { this.adapter.refresh(); }
+  undo(): void { this.facade.undo(); }
+  redo(): void { this.facade.redo(); }
+  parameterEntries(node: EditorNode): Array<{ key: string; value: unknown }> { return this.facade.parameterEntries(node); }
+  parameterSchema(node: EditorNode, key: string): Record<string, any> { return this.facade.parameterSchema(node, key); }
+  defaultParameters(definition: Definition): Record<string, unknown> { return this.facade.defaultParameters(definition); }
+  coerceNumber(value: unknown, integer: boolean): number { return this.facade.coerceNumber(value, integer); }
+  setParameter(id: string, key: string, value: unknown): void { this.facade.setParameter(id, key, value); this.adapter.setNodeData(id, this.nodes().find((node) => node.id === id)?.parameters ?? {}); }
+  setParameters(id: string, parameters: Record<string, unknown>): void { this.facade.setParameters(id, parameters); this.adapter.setNodeData(id, parameters); }
+  setParameterValidity(id: string, valid: boolean): void { this.facade.setParameterValidity(id, valid); }
+  isOutputPort(nodeId: string, port: string): boolean { return this.facade.isOutputPort(nodeId, port); }
+  toggleOutputPort(nodeId: string, port: string): void { this.facade.toggleOutputPort(nodeId, port); }
+  removeNode(id: string): Promise<void> { if (typeof window !== 'undefined' && !window.confirm('移除该节点并删除其连接？')) return Promise.resolve(); this.facade.removeNode(id); return this.adapter.removeNode(id); }
+  setBinding(nodeId: string, selection: any): void { this.facade.setBinding(nodeId, selection); }
+  graph(): Graph { return this.facade.graph(); }
+  select(id: string): void { this.store.selectedId.set(id); void this.adapter.select(id); }
+  validate(): void { this.facade.validate(); }
+  save(): void { this.facade.save(); }
+  publish(): void { this.facade.publish(); }
+  run(): void { this.facade.run(); }
+  autosaveLabel(): string { return this.facade.autosaveLabel(); }
+  validationButtonLabel(): string { return this.facade.validationButtonLabel(); }
+  showError(text: string): void { this.store.setMessage('error', text); }
 
   @HostListener('window:resize')
   handleWorkspaceResize(): void {
@@ -627,11 +622,13 @@ export class WorkflowEditorWorkspacePage implements OnDestroy {
     if (this.initializationFrame !== undefined) cancelAnimationFrame(this.initializationFrame);
     this.layoutSubscription?.dispose();
     this.panelRemovalSubscription?.dispose();
-    this.editor.ngOnDestroy();
+    this.adapter.destroy();
+    this.facade.destroy();
   }
 
   loadGraph(graph: Graph): void {
-    this.editor.loadGraph(graph);
+    this.facade.loadGraph(graph);
+    void this.adapter.sync({ nodes: this.nodes(), edges: this.edges });
     this.scheduleWorkspaceInitialization();
   }
 
@@ -662,49 +659,14 @@ export class WorkflowEditorWorkspacePage implements OnDestroy {
     if (!this.dockviewApi || this.mobile()) return;
     const node = this.nodes().find((item) => item.id === nodeId);
     if (!node) return;
-    const key = `${node.node_code}@${node.node_version}`;
-    const cached = this.exactCompositeVersions.get(key);
-    if (!cached) {
-      if (this.exactCompositeLookups.has(key)) return;
-      this.exactCompositeLookups.add(key);
-      this.workspaceApi
-        .get<Record<string, unknown>>(
-          `/api/v1/operators/${encodeURIComponent(node.node_code)}/versions/${encodeURIComponent(node.node_version)}`,
-        )
-        .subscribe({
-          next: (response) => {
-            this.exactCompositeLookups.delete(key);
-            const metadata = this.exactCompositeVersionMetadata(response, node.node_version);
-            this.exactCompositeVersions.set(key, metadata);
-            if (metadata.executorType === 'composite_workflow' && metadata.workflowVersionId) {
-              this.openResolvedCompositeNodeDocument(nodeId, metadata.workflowVersionId);
-            }
-          },
-          error: () => {
-            this.exactCompositeLookups.delete(key);
-            this.showError('无法读取该复合节点的版本信息，请稍后重试。');
-          },
-        });
-      return;
-    }
-    if (cached.executorType !== 'composite_workflow' || !cached.workflowVersionId) return;
-    this.openResolvedCompositeNodeDocument(nodeId, cached.workflowVersionId);
+    this.facade.resolveCompositeVersion(node.node_code, node.node_version).subscribe({
+      next: (metadata) => {
+        if (metadata.executorType === 'composite_workflow' && metadata.workflowVersionId) this.openResolvedCompositeNodeDocument(nodeId, metadata.workflowVersionId);
+      },
+      error: () => this.showError('无法读取该复合节点的版本信息，请稍后重试。'),
+    });
   }
 
-  private exactCompositeVersionMetadata(
-    response: Record<string, unknown>,
-    expectedVersion: string,
-  ): { executorType: string; workflowVersionId: number | null } {
-    const rawVersion = (response['version'] || response) as Record<string, unknown>;
-    if (String(rawVersion['version'] || '') !== expectedVersion) {
-      return { executorType: '', workflowVersionId: null };
-    }
-    const workflowVersionId = Number(rawVersion['composite_workflow_version_id']);
-    return {
-      executorType: String(rawVersion['executor_type'] || ''),
-      workflowVersionId: Number.isInteger(workflowVersionId) ? workflowVersionId : null,
-    };
-  }
 
   private openResolvedCompositeNodeDocument(nodeId: string, versionId: number): void {
     if (!this.dockviewApi || this.mobile()) return;

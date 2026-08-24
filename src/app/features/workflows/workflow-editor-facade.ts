@@ -1,39 +1,86 @@
-import { Injectable } from '@angular/core';
-import { Observable } from 'rxjs';
+import { Injectable, inject } from '@angular/core';
+import { ActivatedRoute, Router } from '@angular/router';
+import { Observable, Subscription, map, of } from 'rxjs';
+import { DataAssetSelection, OperatorSummary } from '../../core/models/api.models';
 import { ApiClient } from '../../core/services/api-client.service';
 import { AuthService } from '../../core/services/auth.service';
 import { NotificationService } from '../../core/services/notification.service';
+import { OperatorNameService } from '../../core/services/operator-name.service';
 import { WorkflowCacheService } from '../../core/services/workflow-cache.service';
-import { Graph } from './workflow-editor.models';
+import { WorkflowCommandBus, EditorSnapshot } from './workflow-command-bus';
+import { Definition, EditorNode, Graph, Port, StoredBinding, ValidationIssue, ValidationStatus } from './workflow-editor.models';
+import { WorkflowEditorStore } from './workflow-editor-store';
+import { WorkflowGraphSerializer } from './workflow-graph-serializer';
 
 /**
- * 架构边界：上游是 Workspace 的用户意图与 Store Graph，下游是 API、IndexedDB Cache 和通知服务。
- * Facade 独占 load/save/publish/run、缓存、乐观锁和通知；不访问 DOM/Rete/Dockview，也不拥有图编辑状态。
- * 销毁由 Angular 注入作用域负责，Facade 不自行销毁视图资源。
+ * 架构边界：上游是路由/Workspace 用户意图与 CommandBus， 下游是 API、IndexedDB Cache、Router 和通知。
+ * Facade 独占 catalog/load/save/publish/run、自动保存、恢复、校验和导航；不访问 DOM/Rete/Dockview，不拥有画布状态。
+ * Store 是唯一状态源，CommandBus 是唯一图修改入口；Facade 销毁时清理订阅和 autosave timer。
  */
 @Injectable()
 export class WorkflowEditorFacade {
-  constructor(
-    private readonly api: ApiClient,
-    private readonly auth: AuthService,
-    private readonly cache: WorkflowCacheService,
-    private readonly notice: NotificationService,
-  ) {}
+  readonly store = inject(WorkflowEditorStore);
+  readonly commandBus = inject(WorkflowCommandBus);
+  readonly serializer = inject(WorkflowGraphSerializer);
+  readonly operatorNames = inject(OperatorNameService);
+  private readonly api = inject(ApiClient);
+  private readonly auth = inject(AuthService);
+  private readonly cache = inject(WorkflowCacheService);
+  private readonly notice = inject(NotificationService);
+  private readonly router = inject(Router);
+  private readonly route = inject(ActivatedRoute, { optional: true });
+  private readonly subscriptions: Subscription[] = [];
+  private autosaveTimer?: ReturnType<typeof setTimeout>;
+  private initialized = false;
+  private lastPickedNodeId: string | null = null;
+  private lastPickedAt = 0;
+  private readonly exactCompositeVersions = new Map<string, { executorType: string; workflowVersionId: number | null }>();
 
-  load<T = Record<string, unknown>>(workflowId: number): Observable<T> { return this.api.get<T>(`/api/v1/workflows/${workflowId}`); }
-  loadVersions<T = Array<Record<string, unknown>>>(workflowId: number): Observable<T> { return this.api.get<T>(`/api/v1/workflows/${workflowId}/versions`); }
-  save(workflowId: number, graph: Graph, baseRevision: number): Observable<Record<string, unknown>> {
-    return this.api.put<Record<string, unknown>, { graph: Graph; base_revision: number }>(`/api/v1/workflows/${workflowId}/draft`, { graph, base_revision: baseRevision });
+  constructor() { this.commandBus.onDirty(() => this.scheduleAutosave()); }
+  initialize(): void {
+    if (this.initialized) return; this.initialized = true;
+    this.subscriptions.push(this.api.get<{ items: OperatorSummary[] }>('/api/v1/operators', { page: 1, page_size: 100 }).subscribe({ next: ({ items }) => { const definitions = (items || []).filter((item) => item.status === 'active' && item.available && item.active_version?.available).map((item) => this.operatorDefinition(item)).filter((item): item is Definition => item !== null); this.store.setDefinitions(definitions); const id = this.route?.snapshot.paramMap.get('workflowId'); if (!id) return this.error('工作流草稿不存在，请先从工作流入口创建草稿。'); this.store.workflowId.set(Number(id)); this.subscriptions.push(this.load(Number(id)).subscribe({ next: (workflow) => this.applyWorkflow(workflow), error: () => this.error('工作流草稿加载失败，可能已被删除或你没有访问权限。') })); }, error: () => this.error('算子目录加载失败，请检查工作流权限。') }));
   }
-  validate(workflowId: number): Observable<Record<string, unknown>> { return this.api.post<Record<string, unknown>, Record<string, never>>(`/api/v1/workflows/${workflowId}/validate`, {}); }
-  publish(workflowId: number): Observable<Record<string, unknown>> { return this.api.post<Record<string, unknown>, Record<string, never>>(`/api/v1/workflows/${workflowId}/publish`, {}); }
-  run(versionId: number, inputBindings: Record<string, unknown>, parameterOverrides: Record<string, unknown>): Observable<Record<string, unknown>> {
-    return this.api.post<Record<string, unknown>, { input_bindings: Record<string, unknown>; parameter_overrides: Record<string, unknown> }>(`/api/v1/workflow-versions/${versionId}/runs`, { input_bindings: inputBindings, parameter_overrides: parameterOverrides });
-  }
-  async cacheDraft(workflowId: number, graph: Graph, baseRevision: number, workflowName?: string): Promise<void> {
-    const userId = Number(this.auth.user()?.id ?? 0); if (userId) await this.cache.put({ key: `${userId}:${workflowId}`, userId, workflowId, workflowName, graph: graph as unknown as Record<string, unknown>, baseRevision, updatedAt: Date.now() });
-  }
-  async clearCache(workflowId: number): Promise<void> { const userId = Number(this.auth.user()?.id ?? 0); if (userId) await this.cache.remove(userId, workflowId); }
-  notifySuccess(message: string): void { this.notice.success(message); }
-  notifyError(message: string): void { this.notice.error(message); }
+  load<T = Record<string, unknown>>(workflowId: number) { return this.api.get<T>(`/api/v1/workflows/${workflowId}`); }
+  loadVersions<T = Array<Record<string, unknown>>>(workflowId: number) { return this.api.get<T>(`/api/v1/workflows/${workflowId}/versions`); }
+  resolveCompositeVersion(nodeCode: string, nodeVersion: string): Observable<{ executorType: string; workflowVersionId: number | null }> { const key = `${nodeCode}@${nodeVersion}`; const cached = this.exactCompositeVersions.get(key); if (cached) return of(cached); return this.api.get<Record<string, unknown>>(`/api/v1/operators/${encodeURIComponent(nodeCode)}/versions/${encodeURIComponent(nodeVersion)}`).pipe(map((response) => { const raw = (response['version'] || response) as Record<string, unknown>; const metadata = String(raw['version'] || '') !== nodeVersion ? { executorType: '', workflowVersionId: null } : { executorType: String(raw['executor_type'] || ''), workflowVersionId: Number.isInteger(Number(raw['composite_workflow_version_id'])) ? Number(raw['composite_workflow_version_id']) : null }; this.exactCompositeVersions.set(key, metadata); return metadata; })); }
+  private applyWorkflow(workflow: Record<string, unknown>): void { this.store.workflowName.set(String(workflow['workflow_name'] || '工作流编辑器')); this.store.draftRevision.set(Number(workflow['draft_revision'] || 1)); const base = Number(workflow['draft_base_version_id']); this.store.publishedVersionId.set(Number.isInteger(base) ? base : null); this.store.draftMatchesPublished.set(String(workflow['status'] || '') === 'published' && Number.isInteger(base)); this.applyValidationResult(workflow); this.loadGraph((workflow['draft_graph'] || { contract_version: '1.0', nodes: [], edges: [], outputs: [] }) as Graph); const id = this.store.workflowId(); if (id) { this.subscriptions.push(this.loadVersions(id).subscribe({ next: (versions) => { const latest = (versions || []).filter((v: any) => v.status === 'published' || v.status === 'validated').sort((a: any, b: any) => Number(a['version']) - Number(b['version'])).pop() as Record<string, unknown> | undefined; this.store.publishedVersionId.set(latest ? Number(latest['id']) : null); this.store.publishedVersionNumber.set(latest ? Number(latest['version']) : null); }, error: () => { this.store.publishedVersionId.set(null); this.store.publishedVersionNumber.set(null); } })); this.checkRecovery(workflow); } }
+  private operatorDefinition(item: OperatorSummary): Definition | null { const version = item.active_version; if (!version) return null; return { node_code: item.code, version: version.version, node_name: item.name, description: item.description, category: item.category, runtime_type: version.runtime_type, input_ports: version.input_ports as unknown as Port[], output_ports: version.output_ports as unknown as Port[], parameter_schema: version.parameter_schema as Definition['parameter_schema'], ui_schema: version.ui_schema as Definition['ui_schema'], default_params: ((version.algorithm?.['active_release'] as Record<string, unknown> | null)?.['default_params'] as Record<string, unknown> | undefined) || (version.algorithm?.['default_params'] as Record<string, unknown> | undefined), executor_type: String((version as any)['executor_type'] || ''), composite_workflow_version_id: Number.isInteger(Number((version as any)['composite_workflow_version_id'])) ? Number((version as any)['composite_workflow_version_id']) : null, composite_interface: ((version as any)['composite_interface'] as Record<string, unknown> | null | undefined) ?? null }; }
+  graph(): Graph { return this.serializer.serialize(this.store.nodes(), this.store.edges(), this.store.outputs(), this.store.bindings()); }
+  loadGraph(graph: Graph): void { const parsed = this.serializer.deserialize(graph, this.store.definitionByCode()); const selections = new Map<string, DataAssetSelection>(); for (const [id, binding] of parsed.bindings) selections.set(id, this.selectionHint(binding)); const snapshot: EditorSnapshot = { nodes: parsed.nodes, edges: parsed.edges, outputs: parsed.outputs, bindings: Object.fromEntries(parsed.bindings), bindingSelections: Object.fromEntries(selections), invalidParameterNodes: [] }; this.commandBus.hydrate(snapshot); this.store.setBindingRevision(); this.store.selectedId.set(parsed.nodes[0]?.id ?? null); this.store.graphLoaded.set(true); this.store.setHistory([this.graph()], 0); if (parsed.edges.length !== (graph.edges || []).length) this.info(`已清理 ${(graph.edges || []).length - parsed.edges.length} 条无效连接。`); }
+  addNode(definition: Definition): EditorNode { return this.commandBus.addNode(definition); }
+  removeNode(id: string): void { this.commandBus.removeNode(id); }
+  moveNode(id: string, x: number, y: number): void { this.commandBus.moveNode(id, x, y); }
+  setParameter(id: string, key: string, value: unknown): void { this.commandBus.setParameter(id, key, value); }
+  setParameters(id: string, parameters: Record<string, unknown>): void { this.commandBus.setParameters(id, parameters); }
+  setParameterValidity(id: string, valid: boolean): void { this.commandBus.setParameterValidity(id, valid); }
+  toggleOutputPort(nodeId: string, port: string): void { this.commandBus.toggleOutput(nodeId, port); }
+  isOutputPort(nodeId: string, port: string): boolean { return this.store.outputs().some((o) => o.node_id === nodeId && o.port === port); }
+  setBinding(nodeId: string, selection: DataAssetSelection | null): void { const node = this.store.nodes().find((n) => n.id === nodeId); const wholeAsset = node?.node_code === 'dataset_asset_v1'; if (!selection || (!wholeAsset && !selection.channel)) return this.commandBus.setBinding(nodeId, null, null); const binding: StoredBinding = wholeAsset ? { dataset_asset_id: selection.asset.id, dataset_version_id: selection.version.id } : { dataset_asset_id: selection.asset.id, dataset_version_id: selection.version.id, monitor_point_id: selection.channel!.monitor_point_id, metric_code: selection.channel!.metric_code, value_source: selection.value_source, start: selection.channel!.time_start, end: selection.channel!.time_end }; this.commandBus.setBinding(nodeId, binding, selection); }
+  undo(): void { this.commandBus.undo(); }
+  redo(): void { this.commandBus.redo(); }
+  parameterEntries(node: EditorNode): Array<{ key: string; value: unknown }> { return Object.entries(node.parameters).map(([key, value]) => ({ key, value })); }
+  parameterSchema(node: EditorNode, key: string): Record<string, any> { return (node.definition?.parameter_schema?.properties?.[key] || {}) as Record<string, any>; }
+  defaultParameters(definition: Definition): Record<string, unknown> { return { ...Object.fromEntries(Object.entries(definition.parameter_schema?.properties || {}).map(([key, schema]) => [key, schema['default']])), ...(definition.default_params || {}) }; }
+  coerceNumber(value: unknown, integer: boolean): number { const n = Number(value); return integer ? Math.trunc(n) : n; }
+  validate(): void { if (this.store.validationStatus() === 'valid') return this.info('最近一次保存的草稿已通过校验。'); if (this.store.validationStatus() === 'invalid') return this.error(`最近一次保存发现 ${this.store.validationIssues().length} 个校验问题。`); this.info('保存草稿后将自动校验。'); }
+  validationButtonLabel(): string { if (this.store.autosaveState() === 'dirty') return '待保存校验'; if (this.store.validationStatus() === 'valid') return '校验通过'; if (this.store.validationStatus() === 'invalid') return `校验未通过 · ${this.store.validationIssues().length}`; return '尚无记录'; }
+  save(): void { this.saveDraft(); }
+  private saveDraft(after?: (result: Record<string, unknown>) => void): void { if (this.store.busy()) return; this.store.busy.set(true); const graph = this.graph(); const id = this.store.workflowId(); const body = { workflow_code: `workflow_${Date.now()}`, workflow_name: '新建工作流', description: '从空白画布开始的工作流', visibility: 'private', graph }; const request = id ? this.api.put<Record<string, unknown>, { graph: Graph; expected_revision: number }>(`/api/v1/workflows/${id}/draft`, { graph, expected_revision: this.store.draftRevision() }) : this.api.post<Record<string, unknown>, typeof body>('/api/v1/workflows', body); this.subscriptions.push(request.subscribe({ next: (result) => { this.store.busy.set(false); this.store.workflowId.set(Number(result['id'] || id)); this.store.draftRevision.set(Number(result['draft_revision'] || this.store.draftRevision())); this.applyValidationResult(result); this.store.autosaveState.set('saved'); void this.clearCache(); this.info(this.store.validationStatus() === 'valid' ? '草稿已保存，校验通过。' : `草稿已保存，发现 ${this.store.validationIssues().length} 个校验问题。`); after?.(result); }, error: (e) => { this.store.busy.set(false); this.store.autosaveState.set(e?.status === 409 ? 'conflict' : e?.status === 422 ? 'dirty' : 'offline'); this.error(this.formatError(e, '草稿保存失败，请检查图结构和权限。')); } })); }
+  publish(): void { const id = this.store.workflowId(); if (!id) return this.error('请先保存草稿。'); if (!this.store.parametersValid()) return this.error('存在参数错误，请修正后再发布。'); if (this.store.autosaveState() === 'dirty') return this.saveDraft(() => this.store.validationStatus() === 'valid' ? this.publishVersion() : this.error('草稿已保存，但未通过校验，暂不能发布。')); if (this.store.validationStatus() !== 'valid') return this.error('请先保存草稿并通过校验后再发布。'); this.publishVersion(); }
+  private publishVersion(): void { const id = this.store.workflowId(); if (!id || this.store.busy()) return; this.store.busy.set(true); this.subscriptions.push(this.api.post<{ id: number; version?: number }, Record<string, never>>(`/api/v1/workflows/${id}/publish`, {}).subscribe({ next: (version) => { this.store.busy.set(false); this.store.publishedVersionId.set(Number(version.id)); this.store.publishedVersionNumber.set(Number(version.version)); this.store.draftMatchesPublished.set(true); this.store.autosaveState.set('saved'); this.info(`已发布版本 #${version.id}。`); }, error: (e) => { this.store.busy.set(false); this.error(this.formatError(e, '发布失败，请先保存并通过校验。')); } })); }
+  run(): void { const versionId = this.store.publishedVersionId(); if (!versionId || this.store.busy()) return; const changed = this.store.autosaveState() !== 'saved' || !this.store.draftMatchesPublished(); if (changed && typeof window !== 'undefined' && !window.confirm('当前修改尚未保存或发布，是否继续运行已发布工作流？')) return; this.store.busy.set(true); const bindings = this.store.draftMatchesPublished() ? Object.fromEntries(this.store.bindings()) : {}; this.subscriptions.push(this.api.post<Record<string, unknown>, { input_bindings: Record<string, unknown>; parameter_overrides: Record<string, unknown> }>(`/api/v1/workflow-versions/${versionId}/runs`, { input_bindings: bindings, parameter_overrides: {} }).subscribe({ next: (result) => { this.store.busy.set(false); this.info('工作流已提交。'); const runId = String(result['run_id'] || result['id'] || ''); if (runId) void this.router.navigate(['/workflow-runs', runId]); }, error: (e) => { this.store.busy.set(false); this.error(this.formatError(e, '工作流提交失败。')); } })); }
+  autosaveLabel(): string { return ({ saved: '已保存', dirty: '有未保存修改', saving: '正在保存', offline: '离线，已保存到本机', conflict: '保存冲突' } as Record<string, string>)[this.store.autosaveState()]; }
+  notifyNodePicked(nodeId: string, pickedAt = Date.now(), openComposite?: (id: string) => void): void { this.store.selectedId.set(nodeId); const twice = this.lastPickedNodeId === nodeId && pickedAt - this.lastPickedAt >= 0 && pickedAt - this.lastPickedAt <= 350; this.lastPickedNodeId = twice ? null : nodeId; this.lastPickedAt = twice ? 0 : pickedAt; const node = this.store.nodes().find((n) => n.id === nodeId); if (twice && node?.definition && (node.definition.executor_type === 'composite_workflow' || Number(node.definition.composite_workflow_version_id) > 0)) openComposite?.(nodeId); }
+  private scheduleAutosave(): void { if (this.autosaveTimer) clearTimeout(this.autosaveTimer); void this.cacheDraft(); this.autosaveTimer = setTimeout(() => this.autosave(), 3000); }
+  private autosave(): void { const id = this.store.workflowId(); if (!id) { this.store.autosaveState.set('offline'); return; } this.store.autosaveState.set('saving'); this.subscriptions.push(this.api.put<Record<string, unknown>, { graph: Graph; expected_revision: number }>(`/api/v1/workflows/${id}/draft`, { graph: this.graph(), expected_revision: this.store.draftRevision() }).subscribe({ next: (result) => { this.store.draftRevision.set(Number(result['draft_revision'] || this.store.draftRevision())); this.applyValidationResult(result); this.store.autosaveState.set('saved'); void this.clearCache(); }, error: (e) => this.store.autosaveState.set(e?.status === 409 ? 'conflict' : e?.status === 422 ? 'dirty' : 'offline') })); }
+  private async cacheDraft(): Promise<void> { const id = this.store.workflowId(); const userId = Number(this.auth.user()?.id ?? 0); if (id && userId) await this.cache.put({ key: `${userId}:${id}`, userId, workflowId: id, workflowName: this.store.workflowName(), graph: this.graph() as unknown as Record<string, unknown>, baseRevision: this.store.draftRevision(), updatedAt: Date.now() }); }
+  private async clearCache(): Promise<void> { const id = this.store.workflowId(); const userId = Number(this.auth.user()?.id ?? 0); if (id && userId) await this.cache.remove(userId, id); }
+  private checkRecovery(workflow: Record<string, unknown>): void { const id = this.store.workflowId(); const userId = Number(this.auth.user()?.id ?? 0); if (!id || !userId) return; void this.cache.get(userId, id).then((draft) => { if (!draft || draft.baseRevision !== this.store.draftRevision()) return; if (typeof window !== 'undefined' && window.confirm('发现未同步的本机草稿，是否恢复？')) { this.loadGraph(draft.graph as unknown as Graph); this.scheduleAutosave(); } else void this.cache.remove(userId, id); }); }
+  private applyValidationResult(result: Record<string, unknown>): void { const raw = result['draft_validation_status']; this.store.validationStatus.set(raw === 'valid' || raw === 'invalid' ? raw : 'not_validated'); const rawIssues = Array.isArray(result['draft_validation_issues']) ? result['draft_validation_issues'] : []; this.store.validationIssues.set(rawIssues.map((issue: any) => ({ code: String(issue?.code || 'WORKFLOW_VALIDATION_ERROR'), message: String(issue?.message || issue?.code || '图校验未通过'), ...(issue?.node_id ? { node_id: String(issue.node_id) } : {}), ...(issue?.path ? { path: String(issue.path) } : {}) }))); const revision = Number(result['draft_validation_revision']); this.store.validationRevision.set(Number.isInteger(revision) ? revision : null); }
+  private selectionHint(binding: StoredBinding): DataAssetSelection { return { asset: { id: binding.dataset_asset_id }, version: { id: binding.dataset_version_id }, channel: binding.monitor_point_id && binding.metric_code ? { monitor_point_id: binding.monitor_point_id, metric_code: binding.metric_code } : null, channels: [], value_source: binding.value_source ?? 'processed' } as unknown as DataAssetSelection; }
+  private info(message: string): void { this.store.setMessage('info', message); this.notice.success(message); }
+  private error(message: string): void { this.store.setMessage('error', message); this.notice.error(message); }
+  private formatError(error: any, fallback: string): string { const detail = error?.error?.detail; return typeof detail === 'string' ? detail : detail?.message || error?.error?.message || fallback; }
+  destroy(): void { if (this.autosaveTimer) clearTimeout(this.autosaveTimer); this.subscriptions.forEach((subscription) => subscription.unsubscribe()); }
 }

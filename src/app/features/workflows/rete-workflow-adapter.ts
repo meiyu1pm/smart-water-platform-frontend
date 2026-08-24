@@ -21,10 +21,12 @@ export class ReteWorkflowAdapter {
   private host?: HTMLDivElement;
   private hydrating = false;
   private editable = true;
+  private nodePickedHandler?: (id: string) => void;
 
   constructor(private readonly injector: Injector, private readonly commands: WorkflowCommandBus, private readonly store: WorkflowEditorStore) {}
 
   async mount(host: HTMLDivElement, snapshot: { nodes: EditorNode[]; edges: Edge[] }, options: { editable?: boolean; onNodePicked?: (id: string) => void } = {}): Promise<void> {
+    if (this.editor && this.host === host) { this.editable = options.editable ?? this.editable; await this.syncIncremental(snapshot); return; }
     this.destroy(); this.host = host; this.editable = options.editable ?? true; host.replaceChildren();
     this.editor = new NodeEditor(); this.area = new AreaPlugin(host); this.selection = AreaExtensions.selector();
     const connection = new ConnectionPlugin(); connection.addPreset(ConnectionPresets.classic.setup());
@@ -36,12 +38,15 @@ export class ReteWorkflowAdapter {
       for (const edge of snapshot.edges) await this.addConnection(edge);
       await AreaExtensions.zoomAt(this.area, this.editor.getNodes());
     } finally { this.hydrating = false; }
-    this.installEvents(options.onNodePicked);
+    this.installEvents(options.onNodePicked ?? this.nodePickedHandler);
   }
   setReadOnly(readOnly: boolean): void { this.editable = !readOnly; }
-  async sync(snapshot: { nodes: EditorNode[]; edges: Edge[] }): Promise<void> { if (!this.host) return; await this.mount(this.host, snapshot, { editable: this.editable }); }
+  setNodePickedHandler(handler?: (id: string) => void): void { this.nodePickedHandler = handler; }
+  detachHost(host: HTMLDivElement): void { if (this.host === host) this.host = undefined; }
+  async sync(snapshot: { nodes: EditorNode[]; edges: Edge[] }): Promise<void> { await this.syncIncremental(snapshot); }
   refresh(): void { (this.area?.area as any)?.update?.(); }
   get areaPlugin(): AreaPlugin<any, any> | undefined { return this.area; }
+  get editorInstance(): NodeEditor<any> | undefined { return this.editor; }
   get nodeCount(): number { return this.reteNodes.size; }
   destroy(): void { this.area?.destroy(); this.editor = undefined; this.area = undefined; this.reteNodes.clear(); }
   async addNode(item: EditorNode): Promise<void> {
@@ -56,6 +61,23 @@ export class ReteWorkflowAdapter {
     const node = this.reteNodes.get(id); if (!node || !this.editor) return;
     for (const connection of this.editor.getConnections()) if (connection.source === node.id || connection.target === node.id) await this.editor.removeConnection(connection.id);
     await this.editor.removeNode(node.id); this.reteNodes.delete(id);
+  }
+  private async syncIncremental(snapshot: { nodes: EditorNode[]; edges: Edge[] }): Promise<void> {
+    if (!this.editor || !this.area || !this.host) return;
+    const wanted = new Map(snapshot.nodes.map((node) => [node.id, node]));
+    for (const id of [...this.reteNodes.keys()]) if (!wanted.has(id)) await this.removeNode(id);
+    for (const node of snapshot.nodes) {
+      if (!this.reteNodes.has(node.id)) await this.addNode(node);
+      else await this.area.translate(this.reteNodes.get(node.id).id, { x: node.x, y: node.y });
+    }
+    const edgeKey = (edge: Edge) => `${edge.source.node_id}:${edge.source.port}->${edge.target.node_id}:${edge.target.port}`;
+    const wantedEdges = new Map(snapshot.edges.map((edge) => [edgeKey(edge), edge]));
+    for (const connection of [...this.editor.getConnections()]) {
+      const edge: Edge = { source: { node_id: String(connection.source), port: String(connection.sourceOutput) }, target: { node_id: String(connection.target), port: String(connection.targetInput) } };
+      if (!wantedEdges.has(edgeKey(edge))) await this.editor.removeConnection(connection.id);
+      else wantedEdges.delete(edgeKey(edge));
+    }
+    for (const edge of wantedEdges.values()) await this.addConnection(edge);
   }
   async select(id: string): Promise<void> {
     const node = this.reteNodes.get(id); if (!node || !this.selection || !this.area) return;
