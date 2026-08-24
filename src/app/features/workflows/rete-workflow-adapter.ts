@@ -32,12 +32,13 @@ export class ReteWorkflowAdapter {
     const connection = new ConnectionPlugin(); connection.addPreset(ConnectionPresets.classic.setup());
     const render = new AngularPlugin({ injector: this.injector }); render.addPreset(AngularPresets.classic.setup() as any);
     this.editor.use(this.area); this.area.use(render as any); this.area.use(connection);
+    const wasHydrating = this.hydrating;
     this.hydrating = true;
     try {
       for (const node of snapshot.nodes) await this.addNode(node);
       for (const edge of snapshot.edges) await this.addConnection(edge);
       await AreaExtensions.zoomAt(this.area, this.editor.getNodes());
-    } finally { this.hydrating = false; }
+    } finally { this.hydrating = wasHydrating; }
     this.installEvents(options.onNodePicked ?? this.nodePickedHandler);
   }
   setReadOnly(readOnly: boolean): void { this.editable = !readOnly; }
@@ -65,6 +66,7 @@ export class ReteWorkflowAdapter {
   }
   private async syncIncremental(snapshot: { nodes: EditorNode[]; edges: Edge[] }): Promise<void> {
     if (!this.editor || !this.area || !this.host) return;
+    const wasHydrating = this.hydrating;
     this.hydrating = true;
     try {
       const wanted = new Map(snapshot.nodes.map((node) => [node.id, node]));
@@ -82,7 +84,7 @@ export class ReteWorkflowAdapter {
       }
       for (const edge of wantedEdges.values()) await this.addConnection(edge);
     } finally {
-      this.hydrating = false;
+      this.hydrating = wasHydrating;
     }
   }
   async select(id: string): Promise<void> {
