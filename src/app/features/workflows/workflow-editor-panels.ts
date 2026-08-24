@@ -2,7 +2,7 @@ import {
   AfterViewInit,
   Component,
   ElementRef,
-  Injectable,
+  InjectionToken,
   OnDestroy,
   Signal,
   ViewChild,
@@ -60,16 +60,9 @@ export interface WorkflowEditorPanelHost {
   removeNode(id: string): Promise<void>;
   setBinding(nodeId: string, selection: DataAssetSelection | null): void;
 }
-
-@Injectable()
-export class WorkflowEditorPanelBridge {
-  host?: WorkflowEditorPanelHost;
-
-  requireHost(): WorkflowEditorPanelHost {
-    if (!this.host) throw new Error('Workflow editor panel host is not ready');
-    return this.host;
-  }
-}
+export const WORKFLOW_EDITOR_PANEL_HOST = new InjectionToken<WorkflowEditorPanelHost>(
+  'WORKFLOW_EDITOR_PANEL_HOST',
+);
 
 @Component({
   selector: 'app-operator-catalog-panel',
@@ -233,7 +226,7 @@ export class WorkflowEditorPanelBridge {
   `,
 })
 export class OperatorCatalogPanelComponent {
-  readonly host = inject(WorkflowEditorPanelBridge).requireHost();
+  readonly host = inject(WORKFLOW_EDITOR_PANEL_HOST);
   readonly operatorNames = inject(OperatorNameService);
   search = '';
   private readonly openCategories = new Set([
@@ -364,7 +357,7 @@ export class OperatorCatalogPanelComponent {
   `,
 })
 export class WorkflowCanvasPanelComponent implements AfterViewInit, OnDestroy {
-  readonly host = inject(WorkflowEditorPanelBridge).requireHost();
+  readonly host = inject(WORKFLOW_EDITOR_PANEL_HOST);
   @ViewChild('editorHost', { static: true }) private editorHost!: ElementRef<HTMLDivElement>;
   ngAfterViewInit(): void {
     this.host.attachEditorHost(this.editorHost.nativeElement);
@@ -669,7 +662,7 @@ export class WorkflowCanvasPanelComponent implements AfterViewInit, OnDestroy {
   `,
 })
 export class NodeInspectorPanelComponent {
-  readonly host = inject(WorkflowEditorPanelBridge).requireHost();
+  readonly host = inject(WORKFLOW_EDITOR_PANEL_HOST);
   readonly operatorNames = inject(OperatorNameService);
   private readonly api = inject(ApiClient);
 

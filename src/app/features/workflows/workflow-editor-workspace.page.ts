@@ -28,12 +28,18 @@ import {
   FormlyJsonFieldTypeComponent,
   FormlySliderFieldTypeComponent,
 } from '../../shared/components/operator-parameter-form.component';
-import { Graph, WorkflowEditorPage } from './workflow-editor.page';
+import type { Definition, EditorNode, Graph } from './workflow-editor.models';
+import { WorkflowEditorPage } from './workflow-editor.page';
+import { WorkflowEditorStore } from './workflow-editor-store';
+import { WorkflowCommandBus } from './workflow-command-bus';
+import { WorkflowGraphSerializer } from './workflow-graph-serializer';
+import { ReteWorkflowAdapter } from './rete-workflow-adapter';
+import { WorkflowEditorFacade } from './workflow-editor-facade';
 import {
   NodeInspectorPanelComponent,
   OperatorCatalogPanelComponent,
   WorkflowCanvasPanelComponent,
-  WorkflowEditorPanelBridge,
+  WORKFLOW_EDITOR_PANEL_HOST,
 } from './workflow-editor-panels';
 import { WorkflowCompositeCanvasPanelComponent } from './workflow-composite-canvas-panel.component';
 import {
@@ -71,7 +77,13 @@ type OptionalWorkspacePanelId = Exclude<WorkspacePanelId, typeof ROOT_CANVAS_PAN
     WorkflowCanvasPanelComponent,
   ],
   providers: [
-    WorkflowEditorPanelBridge,
+    { provide: WORKFLOW_EDITOR_PANEL_HOST, useExisting: WorkflowEditorWorkspacePage },
+    WorkflowEditorPage,
+    WorkflowEditorStore,
+    WorkflowCommandBus,
+    WorkflowGraphSerializer,
+    ReteWorkflowAdapter,
+    WorkflowEditorFacade,
     provideFormlyCore([
       ...withFormlyMaterial(),
       {
@@ -418,9 +430,35 @@ type OptionalWorkspacePanelId = Exclude<WorkspacePanelId, typeof ROOT_CANVAS_PAN
     }
   `,
 })
-export class WorkflowEditorWorkspacePage extends WorkflowEditorPage implements OnDestroy {
+export class WorkflowEditorWorkspacePage implements OnDestroy {
+  /** Workspace composition boundary: the editor page is a domain controller, not a base class. */
+  private readonly editor = inject(WorkflowEditorPage);
+  readonly operatorNames = this.editor.operatorNames;
+  readonly definitions = this.editor.definitions;
+  readonly nodes = this.editor.nodes;
+  readonly selectedNode = this.editor.selectedNode;
+  readonly selectedDataBinding = this.editor.selectedDataBinding;
+  readonly history = this.editor.history;
+  readonly historyIndex = this.editor.historyIndex;
+  readonly graphLoaded = this.editor.graphLoaded;
+  readonly selectedId = this.editor.selectedId;
+  readonly workflowId = this.editor.workflowId;
+  readonly workflowName = this.editor.workflowName;
+  readonly publishedVersionId = this.editor.publishedVersionId;
+  readonly publishedVersionNumber = this.editor.publishedVersionNumber;
+  readonly draftMatchesPublished = this.editor.draftMatchesPublished;
+  readonly draftRevision = this.editor.draftRevision;
+  readonly busy = this.editor.busy;
+  readonly message = this.editor.message;
+  readonly messageType = this.editor.messageType;
+  readonly autosaveState = this.editor.autosaveState;
+  readonly validationStatus = this.editor.validationStatus;
+  readonly validationIssues = this.editor.validationIssues;
+  readonly parametersValid = this.editor.parametersValid;
+  get edges() { return this.editor.edges; }
+  get graphOutputs() { return this.editor.graphOutputs; }
+  get bindingsReady() { return this.editor.bindingsReady; }
   @ViewChild('workspaceBody') private workspaceBody?: ElementRef<HTMLDivElement>;
-  private readonly bridge = inject(WorkflowEditorPanelBridge);
   private readonly workspaceAuth = inject(AuthService);
   private readonly workspaceApi = inject(ApiClient);
   private readonly dialog = inject(MatDialog);
@@ -474,10 +512,39 @@ export class WorkflowEditorWorkspacePage extends WorkflowEditorPage implements O
     }
   }
   constructor() {
-    super();
-    this.bridge.host = this;
     this.restoreThemePreference();
   }
+
+  addNode(definition: Definition): Promise<void> { return this.editor.addNode(definition); }
+  onCatalogDragStart(event: DragEvent, definition: Definition): void { this.editor.onCatalogDragStart(event, definition); }
+  allowDrop(event: DragEvent): void { this.editor.allowDrop(event); }
+  onCanvasDrop(event: DragEvent): void { this.editor.onCanvasDrop(event); }
+  attachEditorHost(element: HTMLDivElement): void { this.editor.attachEditorHost(element); }
+  detachEditorHost(element: HTMLDivElement): void { this.editor.detachEditorHost(element); }
+  fitView(): Promise<void> { return this.editor.fitView(); }
+  refreshEditorViewport(): void { this.editor.refreshEditorViewport(); }
+  undo(): void { this.editor.undo(); }
+  redo(): void { this.editor.redo(); }
+  parameterEntries(node: EditorNode): Array<{ key: string; value: unknown }> { return this.editor.parameterEntries(node); }
+  parameterSchema(node: EditorNode, key: string): Record<string, any> { return this.editor.parameterSchema(node, key); }
+  defaultParameters(definition: Definition): Record<string, unknown> { return this.editor.defaultParameters(definition); }
+  coerceNumber(value: unknown, integer: boolean): number { return this.editor.coerceNumber(value, integer); }
+  setParameter(id: string, key: string, value: unknown): void { this.editor.setParameter(id, key, value); }
+  setParameters(id: string, parameters: Record<string, unknown>): void { this.editor.setParameters(id, parameters); }
+  setParameterValidity(id: string, valid: boolean): void { this.editor.setParameterValidity(id, valid); }
+  isOutputPort(nodeId: string, port: string): boolean { return this.editor.isOutputPort(nodeId, port); }
+  toggleOutputPort(nodeId: string, port: string): void { this.editor.toggleOutputPort(nodeId, port); }
+  removeNode(id: string): Promise<void> { return this.editor.removeNode(id); }
+  setBinding(nodeId: string, selection: any): void { this.editor.setBinding(nodeId, selection); }
+  graph(): Graph { return this.editor.graph(); }
+  select(id: string): void { this.editor.select(id); }
+  validate(): void { this.editor.validate(); }
+  save(): void { this.editor.save(); }
+  publish(): void { this.editor.publish(); }
+  run(): void { this.editor.run(); }
+  autosaveLabel(): string { return this.editor.autosaveLabel(); }
+  validationButtonLabel(): string { return this.editor.validationButtonLabel(); }
+  showError(text: string): void { (this.editor as any).showError(text); }
 
   @HostListener('window:resize')
   handleWorkspaceResize(): void {
@@ -556,16 +623,15 @@ export class WorkflowEditorWorkspacePage extends WorkflowEditorPage implements O
     this.saveWorkspaceLayout();
   }
 
-  override ngOnDestroy(): void {
+  ngOnDestroy(): void {
     if (this.initializationFrame !== undefined) cancelAnimationFrame(this.initializationFrame);
     this.layoutSubscription?.dispose();
     this.panelRemovalSubscription?.dispose();
-    this.bridge.host = undefined;
-    super.ngOnDestroy();
+    this.editor.ngOnDestroy();
   }
 
-  override loadGraph(graph: Graph): void {
-    super.loadGraph(graph);
+  loadGraph(graph: Graph): void {
+    this.editor.loadGraph(graph);
     this.scheduleWorkspaceInitialization();
   }
 
@@ -592,7 +658,7 @@ export class WorkflowEditorWorkspacePage extends WorkflowEditorPage implements O
     });
   }
 
-  override openCompositeNodeDocument(nodeId: string): void {
+  openCompositeNodeDocument(nodeId: string): void {
     if (!this.dockviewApi || this.mobile()) return;
     const node = this.nodes().find((item) => item.id === nodeId);
     if (!node) return;

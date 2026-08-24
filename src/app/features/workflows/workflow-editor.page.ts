@@ -1,7 +1,6 @@
 import {
   AfterViewInit,
   Component,
-  Injector,
   ElementRef,
   OnDestroy,
   ViewChild,
@@ -11,10 +10,6 @@ import {
 } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { Subscription } from 'rxjs';
-import { NodeEditor, ClassicPreset } from 'rete';
-import { AreaExtensions, AreaPlugin } from 'rete-area-plugin';
-import { ConnectionPlugin, Presets as ConnectionPresets } from 'rete-connection-plugin';
-import { AngularPlugin, Presets as AngularPresets } from 'rete-angular-plugin/21';
 
 import { DataAssetSelection, OperatorSummary } from '../../core/models/api.models';
 import { ApiClient } from '../../core/services/api-client.service';
@@ -22,110 +17,76 @@ import { NotificationService } from '../../core/services/notification.service';
 import { AuthService } from '../../core/services/auth.service';
 import { WorkflowCacheService } from '../../core/services/workflow-cache.service';
 import { OperatorNameService } from '../../core/services/operator-name.service';
-
-interface Port {
-  key: string;
-  label: string;
-  data_type: string;
-  semantic_type?: string | null;
-  unit?: string | null;
-  required?: boolean;
-  cardinality?: 'one' | 'many' | string;
-}
-export interface Definition {
-  node_code: string;
-  version: string;
-  node_name: string;
-  description: string;
-  category: string;
-  runtime_type: string;
-  input_ports: Port[];
-  output_ports: Port[];
-  parameter_schema?: {
-    properties?: Record<string, Record<string, unknown>>;
-    required?: string[];
-  };
-  ui_schema?: Record<string, Record<string, unknown>>;
-  default_params?: Record<string, unknown>;
-  algorithm?: Record<string, unknown> | null;
-  executor_type?: string;
-  composite_workflow_version_id?: number | null;
-  composite_interface?: Record<string, unknown> | null;
-}
-export interface EditorNode {
-  id: string;
-  node_code: string;
-  node_version: string;
-  parameters: Record<string, unknown>;
-  x: number;
-  y: number;
-  collapsed: boolean;
-  definition?: Definition;
-}
-interface Edge {
-  source: { node_id: string; port: string };
-  target: { node_id: string; port: string };
-}
-interface StoredBinding {
-  dataset_asset_id: number;
-  dataset_version_id: number;
-  monitor_point_id?: number;
-  metric_code?: string;
-  value_source?: 'raw' | 'processed';
-  start?: string | null;
-  end?: string | null;
-}
-export interface ValidationIssue {
-  code: string;
-  message: string;
-  node_id?: string;
-  path?: string;
-}
-export type ValidationStatus = 'not_validated' | 'valid' | 'invalid';
-export interface Graph {
-  contract_version: string;
-  nodes: Record<string, unknown>[];
-  edges: Edge[];
-  outputs: Array<{ node_id: string; port: string }>;
-  bindings?: Record<string, StoredBinding>;
-}
+export type {
+  Definition,
+  EditorNode,
+  Edge,
+  Graph,
+  Port,
+  StoredBinding,
+  ValidationIssue,
+  ValidationStatus,
+} from './workflow-editor.models';
+import type {
+  Definition,
+  EditorNode,
+  Edge,
+  Graph,
+  Port,
+  StoredBinding,
+  ValidationIssue,
+  ValidationStatus,
+} from './workflow-editor.models';
+import { WorkflowEditorStore } from './workflow-editor-store';
+import { WorkflowCommandBus } from './workflow-command-bus';
+import { WorkflowGraphSerializer } from './workflow-graph-serializer';
+import { ReteWorkflowAdapter } from './rete-workflow-adapter';
+import { WorkflowEditorFacade } from './workflow-editor-facade';
 
 @Component({
   selector: 'app-workflow-editor-page',
   imports: [],
+  providers: [WorkflowEditorStore, WorkflowCommandBus, WorkflowGraphSerializer, ReteWorkflowAdapter, WorkflowEditorFacade],
   template: `<div class="editor-host"></div>`,
   styles: ``,
 })
 export class WorkflowEditorPage implements AfterViewInit, OnDestroy {
+  /** Composed collaborators; the page remains the compatibility facade for existing consumers. */
+  readonly editorStore = inject(WorkflowEditorStore);
+  readonly commandBus = inject(WorkflowCommandBus);
+  readonly graphSerializer = inject(WorkflowGraphSerializer);
+  readonly reteAdapter = inject(ReteWorkflowAdapter);
+  readonly editorFacade = inject(WorkflowEditorFacade);
   readonly operatorNames = inject(OperatorNameService);
   @ViewChild('editorHost') editorHost?: ElementRef<HTMLDivElement>;
   private readonly api = inject(ApiClient);
   private readonly notice = inject(NotificationService);
   private readonly router = inject(Router);
   private readonly route = inject(ActivatedRoute, { optional: true });
-  private readonly injector = inject(Injector);
   private readonly auth = inject(AuthService);
   private readonly workflowCache = inject(WorkflowCacheService);
-  readonly definitions = signal<Definition[]>([]);
-  readonly nodes = signal<EditorNode[]>([]);
-  edges: Edge[] = [];
-  graphOutputs: Array<{ node_id: string; port: string }> = [];
+  readonly definitions = this.editorStore.definitions;
+  readonly nodes = this.editorStore.nodes;
+  get edges(): Edge[] { return this.editorStore.edges(); }
+  set edges(value: Edge[]) { this.editorStore.setEdges(value); }
+  get graphOutputs(): Array<{ node_id: string; port: string }> { return this.editorStore.outputs(); }
+  set graphOutputs(value: Array<{ node_id: string; port: string }>) { this.editorStore.setOutputs(value); }
   private readonly bindings = new Map<string, StoredBinding>();
-  readonly graphLoaded = signal(false);
-  readonly selectedId = signal<string | null>(null);
-  readonly workflowId = signal<number | null>(null);
-  readonly workflowName = signal('工作流编辑器');
-  readonly publishedVersionId = signal<number | null>(null);
-  readonly publishedVersionNumber = signal<number | null>(null);
-  readonly draftMatchesPublished = signal(false);
-  readonly draftRevision = signal(1);
-  readonly busy = signal(false);
-  readonly message = signal('');
-  readonly messageType = signal<'info' | 'error'>('info');
-  readonly autosaveState = signal<'saved' | 'dirty' | 'saving' | 'offline' | 'conflict'>('saved');
-  readonly validationStatus = signal<ValidationStatus>('not_validated');
-  readonly validationIssues = signal<ValidationIssue[]>([]);
-  readonly validationRevision = signal<number | null>(null);
+  readonly graphLoaded = this.editorStore.graphLoaded;
+  readonly selectedId = this.editorStore.selectedId;
+  readonly workflowId = this.editorStore.workflowId;
+  readonly workflowName = this.editorStore.workflowName;
+  readonly publishedVersionId = this.editorStore.publishedVersionId;
+  readonly publishedVersionNumber = this.editorStore.publishedVersionNumber;
+  readonly draftMatchesPublished = this.editorStore.draftMatchesPublished;
+  readonly draftRevision = this.editorStore.draftRevision;
+  readonly busy = this.editorStore.busy;
+  readonly message = this.editorStore.message;
+  readonly messageType = this.editorStore.messageType;
+  readonly autosaveState = this.editorStore.autosaveState;
+  readonly validationStatus = this.editorStore.validationStatus;
+  readonly validationIssues = this.editorStore.validationIssues;
+  readonly validationRevision = this.editorStore.validationRevision;
   private autosaveTimer: ReturnType<typeof setTimeout> | undefined;
   private readonly beforeUnload = (event: BeforeUnloadEvent) => {
     if (
@@ -141,19 +102,11 @@ export class WorkflowEditorPage implements AfterViewInit, OnDestroy {
   readonly historyIndex = signal(-1);
   private readonly bindingSelections = new Map<string, DataAssetSelection>();
   private readonly bindingRevision = signal(0);
-  private readonly invalidParameterNodes = signal(new Set<string>());
-  readonly parametersValid = computed(() => this.invalidParameterNodes().size === 0);
-  private reteEditor: any;
-  private reteArea: any;
-  private reteSelection: any;
-  private reteSelectableNodes: any;
-  private resizeObserver?: ResizeObserver;
-  private reteNodes = new Map<string, any>();
+  private readonly invalidParameterNodes = this.editorStore.invalidParameterNodes;
+  readonly parametersValid = this.editorStore.parametersValid;
   private definitionByCode = new Map<string, Definition>();
   private lastPickedReteNodeId: string | null = null;
   private lastPickedAt = 0;
-  private hydratingRete = false;
-  private suppressReteSync = false;
   private subscriptions: Subscription[] = [];
   readonly selectedNode = computed(
     () => this.nodes().find((item) => item.id === this.selectedId()) ?? null,
@@ -198,6 +151,7 @@ export class WorkflowEditorPage implements AfterViewInit, OnDestroy {
             .map((item) => this.operatorDefinition(item))
             .filter((item): item is Definition => item !== null);
           this.definitions.set(catalog);
+          this.editorStore.setDefinitions(catalog);
           this.definitionByCode = new Map(catalog.map((item) => [item.node_code, item]));
           const workflowId = this.route?.snapshot.paramMap.get('workflowId');
           if (!workflowId) {
@@ -283,7 +237,7 @@ export class WorkflowEditorPage implements AfterViewInit, OnDestroy {
 
   /** Handle Rete's nodepicked event without changing ordinary single-click behaviour. */
   protected handleReteNodePicked(nodeId: string, pickedAt = Date.now()): void {
-    const id = this.backendIdForRete(nodeId) || nodeId;
+    const id = nodeId;
     this.selectedId.set(id);
     const isDoublePick =
       this.lastPickedReteNodeId === nodeId &&
@@ -307,20 +261,18 @@ export class WorkflowEditorPage implements AfterViewInit, OnDestroy {
     );
   }
   ngAfterViewInit(): void {
-    this.observeResize();
-    if (this.nodes().length) void this.initializeRete();
+    if (this.editorHost && this.nodes().length) void this.mountReteAdapter();
   }
 
   attachEditorHost(element: HTMLDivElement): void {
-    if (this.editorHost?.nativeElement === element && this.reteEditor) return;
+    if (this.editorHost?.nativeElement === element) return;
     this.editorHost = new ElementRef(element);
-    this.observeResize();
-    void this.rebuildRete();
+    void this.mountReteAdapter();
   }
 
   detachEditorHost(element: HTMLDivElement): void {
     if (this.editorHost?.nativeElement !== element) return;
-    this.resizeObserver?.disconnect();
+    this.reteAdapter.destroy();
     this.editorHost = undefined;
   }
 
@@ -330,10 +282,7 @@ export class WorkflowEditorPage implements AfterViewInit, OnDestroy {
       window.removeEventListener('beforeunload', this.beforeUnload);
     }
     this.subscriptions.forEach((item) => item.unsubscribe());
-    this.resizeObserver?.disconnect();
-    this.reteArea?.destroy();
-    this.reteEditor = undefined;
-    this.reteArea = undefined;
+    this.reteAdapter.destroy();
   }
   loadGraph(graph: Graph): void {
     this.graphOutputs = [...(graph.outputs || [])];
@@ -387,10 +336,20 @@ export class WorkflowEditorPage implements AfterViewInit, OnDestroy {
       this.message.set(`已清理 ${originalEdgeCount - this.edges.length} 条无效连接。`);
     }
     this.selectedId.set(this.nodes()[0]?.id ?? null);
+    this.editorStore.setNodes(loadedNodes);
+    this.editorStore.setEdges(this.edges);
+    this.editorStore.setOutputs(this.graphOutputs);
+    this.editorStore.setBindings(this.bindings);
+    this.editorStore.selectedId.set(this.selectedId());
     this.graphLoaded.set(true);
     this.pushHistory(this.graph());
     if (this.edges.length !== originalEdgeCount) this.markDirty();
-    if (this.editorHost) void this.rebuildRete();
+    if (this.editorHost) void this.mountReteAdapter();
+  }
+
+  private async mountReteAdapter(): Promise<void> {
+    if (!this.editorHost) return;
+    await this.reteAdapter.mount(this.editorHost.nativeElement, { nodes: this.nodes(), edges: this.edges }, { editable: true, onNodePicked: (id) => this.handleReteNodePicked(id) });
   }
 
   private sanitizeEdges(nodes: EditorNode[], edges: Edge[]): Edge[] {
@@ -419,204 +378,7 @@ export class WorkflowEditorPage implements AfterViewInit, OnDestroy {
   }
 
   refreshEditorViewport(): void {
-    this.reteArea?.area?.update?.();
-  }
-  private async rebuildRete(): Promise<void> {
-    this.reteArea?.destroy();
-    this.reteEditor = undefined;
-    this.reteArea = undefined;
-    this.reteNodes.clear();
-    await this.initializeRete();
-  }
-  private async initializeRete(): Promise<void> {
-    if (!this.editorHost || this.reteEditor) return;
-    const host = this.editorHost.nativeElement;
-    host.replaceChildren();
-    this.reteEditor = new NodeEditor();
-    this.reteArea = new AreaPlugin(host);
-    this.reteSelection = AreaExtensions.selector();
-    this.reteSelectableNodes = AreaExtensions.selectableNodes(this.reteArea, this.reteSelection, {
-      accumulating: AreaExtensions.accumulateOnCtrl(),
-    });
-    this.installReteSync();
-    const connection = new ConnectionPlugin();
-    connection.addPreset(ConnectionPresets.classic.setup());
-    const render = new AngularPlugin({ injector: this.injector });
-    render.addPreset(AngularPresets.classic.setup() as any);
-    // Register the area with the editor before attaching child plugins.
-    // The renderer and connection plugin resolve their parent scope during registration.
-    // Attaching them first leaves the area without a parent and prevents node views from mounting.
-    this.reteEditor.use(this.reteArea);
-    this.reteArea.use(render as any);
-    this.reteArea.use(connection);
-    this.hydratingRete = true;
-    try {
-      for (const item of this.nodes()) await this.addReteNode(item);
-      const loadedEdges: Edge[] = [];
-      for (const edge of this.edges) {
-        if (await this.addReteConnection(edge)) loadedEdges.push(edge);
-      }
-      this.edges = loadedEdges;
-      await AreaExtensions.zoomAt(this.reteArea, this.reteEditor.getNodes());
-    } finally {
-      this.hydratingRete = false;
-    }
-  }
-  private observeResize(): void {
-    const host = this.editorHost?.nativeElement;
-    if (!host || typeof ResizeObserver === 'undefined') return;
-    this.resizeObserver?.disconnect();
-    this.resizeObserver = new ResizeObserver(() => {
-      this.reteArea?.area?.update?.();
-    });
-    this.resizeObserver.observe(host);
-  }
-
-  private installReteSync(): void {
-    this.reteEditor.addPipe((context: any) => {
-      if (context.type === 'connectioncreate') {
-        const connection = context.data;
-        const source = this.backendIdForRete(connection.source);
-        const target = this.backendIdForRete(connection.target);
-        if (!source || !target || source === target || this.wouldCreateCycle(source, target))
-          return;
-        const sourceNode = this.nodes().find((n) => n.id === source);
-        const targetNode = this.nodes().find((n) => n.id === target);
-        const sourcePort = sourceNode?.definition?.output_ports?.find(
-          (p) => p.key === String(connection.sourceOutput),
-        );
-        const targetPort = targetNode?.definition?.input_ports?.find(
-          (p) => p.key === String(connection.targetInput),
-        );
-        if (sourcePort && targetPort && sourcePort.data_type !== targetPort.data_type) {
-          this.showError(
-            `无法连接：端口类型不匹配（${sourcePort.data_type} → ${targetPort.data_type}）`,
-          );
-          return;
-        }
-      }
-      if (
-        !this.hydratingRete &&
-        !this.suppressReteSync &&
-        (context.type === 'connectioncreated' || context.type === 'connectionremoved')
-      ) {
-        this.syncEdgesFromRete();
-      }
-      return context;
-    });
-    this.reteArea.addPipe((context: any) => {
-      if (context.type === 'nodepicked') this.handleReteNodePicked(String(context.data.id));
-      if (
-        !this.hydratingRete &&
-        (context.type === 'nodetranslated' || context.type === 'nodetranslate')
-      ) {
-        const id = this.backendIdForRete(context.data.id);
-        if (id && context.data.position) {
-          const x = Number(context.data.position.x);
-          const y = Number(context.data.position.y);
-          let changed = false;
-          this.nodes.update((items) =>
-            items.map((item) => {
-              if (item.id !== id) return item;
-              if (item.x === x && item.y === y) return item;
-              changed = true;
-              return { ...item, x, y };
-            }),
-          );
-          if (changed) this.markDirty();
-        }
-      }
-      return context;
-    });
-  }
-  private wouldCreateCycle(source: string, target: string): boolean {
-    const adjacency = new Map<string, string[]>();
-    for (const edge of this.edges) {
-      const next = adjacency.get(edge.source.node_id) || [];
-      next.push(edge.target.node_id);
-      adjacency.set(edge.source.node_id, next);
-    }
-    const pending = [target];
-    const visited = new Set<string>();
-    while (pending.length) {
-      const current = pending.pop() as string;
-      if (current === source) return true;
-      if (visited.has(current)) continue;
-      visited.add(current);
-      pending.push(...(adjacency.get(current) || []));
-    }
-    return false;
-  }
-  private backendIdForRete(reteId: string): string | null {
-    for (const [backendId, node] of this.reteNodes.entries())
-      if (node.id === reteId) return backendId;
-    return null;
-  }
-  private syncEdgesFromRete(): void {
-    if (!this.reteEditor) return;
-    const nextEdges = this.reteEditor.getConnections().map((connection: any) => ({
-      source: {
-        node_id: this.backendIdForRete(connection.source) || connection.source,
-        port: String(connection.sourceOutput),
-      },
-      target: {
-        node_id: this.backendIdForRete(connection.target) || connection.target,
-        port: String(connection.targetInput),
-      },
-    }));
-    this.edges = this.sanitizeEdges(this.nodes(), nextEdges);
-    this.pushHistory(this.graph());
-    this.markDirty();
-  }
-  private async addReteNode(item: EditorNode): Promise<void> {
-    const def = item.definition;
-    if (!def) return;
-    const node = new ClassicPreset.Node(
-      this.operatorNames.displayName(def.node_code, def.node_name),
-    ) as any;
-    this.reteNodes.set(item.id, node);
-    const sockets = new Map<string, ClassicPreset.Socket>();
-    const socket = (port: Port) => {
-      const key = `${port.data_type}:${port.semantic_type || ''}:${port.unit || ''}`;
-      let current = sockets.get(key);
-      if (!current) {
-        current = new ClassicPreset.Socket(key);
-        sockets.set(key, current);
-      }
-      return current;
-    };
-    for (const port of def.input_ports || [])
-      node.addInput(
-        port.key,
-        new ClassicPreset.Input(socket(port), port.label || port.key, port.cardinality !== 'one'),
-      );
-    for (const port of def.output_ports || [])
-      node.addOutput(
-        port.key,
-        new ClassicPreset.Output(socket(port), port.label || port.key, true),
-      );
-    await this.reteEditor.addNode(node);
-    await this.reteArea.translate(node.id, { x: item.x, y: item.y });
-    (node as any).__backendId = item.id;
-    (node as any).__definition = def;
-  }
-  private async addReteConnection(edge: Edge): Promise<boolean> {
-    const source = this.reteNodes.get(edge.source.node_id);
-    const target = this.reteNodes.get(edge.target.node_id);
-    if (
-      !source ||
-      !target ||
-      !source.outputs?.[edge.source.port] ||
-      !target.inputs?.[edge.target.port]
-    )
-      return false;
-    const connection = new ClassicPreset.Connection(
-      source,
-      edge.source.port,
-      target,
-      edge.target.port,
-    );
-    return Boolean(await this.reteEditor.addConnection(connection as any));
+    this.reteAdapter.refresh();
   }
   onCatalogDragStart(event: DragEvent, definition: Definition): void {
     event.dataTransfer?.setData('application/x-node-code', definition.node_code);
@@ -644,18 +406,13 @@ export class WorkflowEditorPage implements AfterViewInit, OnDestroy {
     };
     this.nodes.set([...items, item]);
     this.selectedId.set(item.id);
-    if (this.reteEditor) {
-      await this.addReteNode(item);
-      const rete = this.reteNodes.get(item.id);
-      if (rete && this.reteSelectableNodes) {
-        await this.reteSelectableNodes.select(rete.id, false);
-      }
-    }
+    if (this.editorHost) await this.mountReteAdapter();
     this.pushHistory(this.graph());
     this.markDirty();
   }
   select(id: string): void {
     this.selectedId.set(id);
+    this.editorStore.selectedId.set(id);
   }
   async removeNode(id: string): Promise<void> {
     if (!confirm('移除该节点并删除其连接？')) return;
@@ -666,21 +423,7 @@ export class WorkflowEditorPage implements AfterViewInit, OnDestroy {
     this.graphOutputs = this.graphOutputs.filter((output) => output['node_id'] !== id);
     this.bindings.delete(id);
     this.bindingSelections.delete(id);
-    const rete = this.reteNodes.get(id);
-    this.suppressReteSync = true;
-    try {
-      const connections = this.reteEditor?.getConnections?.() || [];
-      for (const connection of connections) {
-        const sourceId = this.backendIdForRete(connection.source);
-        const targetId = this.backendIdForRete(connection.target);
-        if (sourceId === id || targetId === id)
-          await this.reteEditor?.removeConnection?.(connection.id);
-      }
-      if (rete) await this.reteEditor?.removeNode(rete.id);
-    } finally {
-      this.suppressReteSync = false;
-    }
-    this.reteNodes.delete(id);
+    await this.reteAdapter.removeNode(id);
     this.selectedId.set(null);
     this.pushHistory(this.graph());
     this.markDirty();
@@ -710,8 +453,7 @@ export class WorkflowEditorPage implements AfterViewInit, OnDestroy {
         item.id === id ? { ...item, parameters: { ...item.parameters, [key]: value } } : item,
       ),
     );
-    const node = this.reteNodes.get(id);
-    if (node) node.data = this.nodes().find((item) => item.id === id)?.parameters;
+    this.reteAdapter.setNodeData(id, this.nodes().find((item) => item.id === id)?.parameters ?? {});
     this.markDirty();
   }
   setParameters(id: string, parameters: Record<string, unknown>): void {
@@ -720,8 +462,7 @@ export class WorkflowEditorPage implements AfterViewInit, OnDestroy {
     this.nodes.update((items) =>
       items.map((item) => (item.id === id ? { ...item, parameters: { ...parameters } } : item)),
     );
-    const node = this.reteNodes.get(id);
-    if (node) node.data = parameters;
+    this.reteAdapter.setNodeData(id, parameters);
     this.pushHistory(this.graph());
     this.markDirty();
   }
@@ -745,23 +486,7 @@ export class WorkflowEditorPage implements AfterViewInit, OnDestroy {
     this.markDirty();
   }
   graph(): Graph {
-    const nodes = this.nodes();
-    return {
-      contract_version: '1.0',
-      nodes: nodes.map(({ id, node_code, node_version, parameters, x, y, collapsed }) => ({
-        id,
-        node_code,
-        node_version,
-        parameters,
-        ui: { position: { x, y }, collapsed },
-      })),
-      edges: this.sanitizeEdges(nodes, this.edges),
-      outputs: this.graphOutputs.filter((output) => {
-        const node = nodes.find((item) => item.id === output.node_id);
-        return Boolean(node?.definition?.output_ports.some((port) => port.key === output.port));
-      }),
-      bindings: Object.fromEntries(this.bindings.entries()),
-    };
+    return this.graphSerializer.serialize(this.nodes(), this.edges, this.graphOutputs, this.bindings);
   }
   private pushHistory(graph: Graph): void {
     const snapshot = JSON.parse(JSON.stringify(graph)) as Graph;
@@ -786,8 +511,7 @@ export class WorkflowEditorPage implements AfterViewInit, OnDestroy {
     this.markDirty();
   }
   async fitView(): Promise<void> {
-    if (this.reteArea && this.reteEditor)
-      await AreaExtensions.zoomAt(this.reteArea, this.reteEditor.getNodes());
+    await this.reteAdapter.fitView();
   }
   shortNodeId(nodeId: string): string {
     return nodeId.length > 8 ? nodeId.slice(0, 8) : nodeId;
@@ -800,6 +524,7 @@ export class WorkflowEditorPage implements AfterViewInit, OnDestroy {
       this.bindingSelections.delete(nodeId);
       if (!previous) return;
       this.bindings.delete(nodeId);
+      this.editorStore.setBindings(this.bindings);
       this.bindingRevision.update((value) => value + 1);
       this.markDirty();
       return;
@@ -821,6 +546,7 @@ export class WorkflowEditorPage implements AfterViewInit, OnDestroy {
     this.bindingSelections.set(nodeId, selection);
     if (previous && this.sameBinding(previous, binding)) return;
     this.bindings.set(nodeId, binding);
+    this.editorStore.setBindings(this.bindings);
     this.bindingRevision.update((value) => value + 1);
     this.markDirty();
   }

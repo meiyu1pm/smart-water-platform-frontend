@@ -2,21 +2,19 @@ import {
   AfterViewInit,
   Component,
   ElementRef,
-  Injector,
   OnDestroy,
   ViewChild,
   inject,
   signal,
 } from '@angular/core';
 import { Subscription } from 'rxjs';
-import { NodeEditor, ClassicPreset } from 'rete';
-import { AreaExtensions, AreaPlugin } from 'rete-area-plugin';
-import { ConnectionPlugin, Presets as ConnectionPresets } from 'rete-connection-plugin';
-import { AngularPlugin, Presets as AngularPresets } from 'rete-angular-plugin/21';
 
 import { ApiClient } from '../../core/services/api-client.service';
 import { OperatorNameService } from '../../core/services/operator-name.service';
-import type { Definition } from './workflow-editor.page';
+import type { Definition, EditorNode, Edge } from './workflow-editor.models';
+import { ReteWorkflowAdapter } from './rete-workflow-adapter';
+import { WorkflowEditorStore } from './workflow-editor-store';
+import { WorkflowCommandBus } from './workflow-command-bus';
 
 export interface CompositeCanvasParams {
   workflowVersionId: number;
@@ -51,6 +49,7 @@ interface PortLike {
 
 @Component({
   selector: 'app-workflow-composite-canvas-panel',
+  providers: [ReteWorkflowAdapter, WorkflowEditorStore, WorkflowCommandBus],
   standalone: true,
   template: `
     <section class="composite-shell" aria-label="复合节点内部画布">
@@ -144,13 +143,10 @@ interface PortLike {
 export class WorkflowCompositeCanvasPanelComponent implements AfterViewInit, OnDestroy {
   @ViewChild('editorHost', { static: true }) private editorHost!: ElementRef<HTMLDivElement>;
   private readonly api = inject(ApiClient);
-  private readonly injector = inject(Injector);
+  private readonly adapter = inject(ReteWorkflowAdapter);
   private readonly operatorNames = inject(OperatorNameService);
   private readonly subscriptions: Subscription[] = [];
   private resizeObserver?: ResizeObserver;
-  private editor?: NodeEditor<any>;
-  private area?: AreaPlugin<any, any>;
-  private readonly reteNodes = new Map<string, any>();
   private viewReady = false;
   private requestVersion = 0;
 
@@ -175,10 +171,7 @@ export class WorkflowCompositeCanvasPanelComponent implements AfterViewInit, OnD
     this.requestVersion += 1;
     this.subscriptions.forEach((subscription) => subscription.unsubscribe());
     this.resizeObserver?.disconnect();
-    this.area?.destroy();
-    this.editor = undefined;
-    this.area = undefined;
-    this.reteNodes.clear();
+    this.adapter.destroy();
   }
 
   private loadCompositeGraph(): void {
@@ -217,77 +210,19 @@ export class WorkflowCompositeCanvasPanelComponent implements AfterViewInit, OnD
     const graph = response?.graph || {};
     const nodes = Array.isArray(graph.nodes) ? graph.nodes : [];
     const definitions = this.normalizeDefinitions(response?.definitions);
-    this.editor = new NodeEditor();
-    this.area = new AreaPlugin(this.editorHost.nativeElement);
-    this.installReadOnlyAreaGuard();
-    const connection = new ConnectionPlugin();
-    connection.addPreset(ConnectionPresets.classic.setup());
-    const render = new AngularPlugin({ injector: this.injector });
-    render.addPreset(AngularPresets.classic.setup() as any);
-    this.editor.use(this.area);
-    this.area.use(render as any);
-    this.area.use(connection);
-
-    this.reteNodes.clear();
     const positions = this.positionsForNodes(nodes, graph.edges || []);
+    const editorNodes: EditorNode[] = [];
     for (const [index, rawNode] of nodes.entries()) {
       const nodeId = String(rawNode['id'] || `node-${index + 1}`);
       const definition = this.definitionForNode(rawNode, definitions);
       if (!definition) continue;
-      const reteNode = this.createReteNode(definition, nodeId);
-      this.reteNodes.set(nodeId, reteNode);
-      await this.editor.addNode(reteNode);
-      await this.area.translate(reteNode.id, positions.get(nodeId) || { x: 60, y: 60 });
+      const position = positions.get(nodeId) || { x: 60, y: 60 };
+      editorNodes.push({ id: nodeId, node_code: definition.node_code, node_version: definition.version, parameters: {}, x: position.x, y: position.y, collapsed: false, definition });
     }
-    for (const rawEdge of graph.edges || []) {
-      const edge = this.normalizeEdge(rawEdge);
-      if (!edge) continue;
-      const source = this.reteNodes.get(edge.source.node_id);
-      const target = this.reteNodes.get(edge.target.node_id);
-      if (
-        !source ||
-        !target ||
-        !source.outputs?.[edge.source.port] ||
-        !target.inputs?.[edge.target.port]
-      )
-        continue;
-      await this.editor.addConnection(
-        new ClassicPreset.Connection(source, edge.source.port, target, edge.target.port) as any,
-      );
-    }
-    this.renderedNodeCount.set(this.reteNodes.size);
-    if (this.reteNodes.size) await AreaExtensions.zoomAt(this.area, this.editor.getNodes());
-    this.refreshArea();
-  }
-
-  private createReteNode(definition: Definition, sourceId: string): any {
-    const node = new ClassicPreset.Node(
-      this.operatorNames.displayName(definition.node_code, definition.node_name),
-    ) as any;
-    const sockets = new Map<string, ClassicPreset.Socket>();
-    const socket = (port: PortLike): ClassicPreset.Socket => {
-      const key = `${port.data_type || 'json'}:${port.semantic_type || ''}:${port.unit || ''}`;
-      let current = sockets.get(key);
-      if (!current) {
-        current = new ClassicPreset.Socket(key);
-        sockets.set(key, current);
-      }
-      return current;
-    };
-    for (const port of definition.input_ports || []) {
-      node.addInput(
-        port.key,
-        new ClassicPreset.Input(socket(port), port.label || port.key, port.cardinality !== 'one'),
-      );
-    }
-    for (const port of definition.output_ports || []) {
-      node.addOutput(
-        port.key,
-        new ClassicPreset.Output(socket(port), port.label || port.key, true),
-      );
-    }
-    node.__sourceNodeId = sourceId;
-    return node;
+    const editorEdges: Edge[] = (graph.edges || []).map((raw) => this.normalizeEdge(raw)).filter((edge): edge is Edge => Boolean(edge));
+    await this.adapter.mount(this.editorHost.nativeElement, { nodes: editorNodes, edges: editorEdges }, { editable: false });
+    this.renderedNodeCount.set(this.adapter.nodeCount);
+    this.adapter.refresh();
   }
 
   private definitionForNode(
@@ -403,41 +338,15 @@ export class WorkflowCompositeCanvasPanelComponent implements AfterViewInit, OnD
     return result;
   }
 
-  private installReadOnlyAreaGuard(): void {
-    this.area?.addPipe((context: any) => {
-      if (
-        [
-          'nodepicked',
-          'nodetranslate',
-          'nodetranslated',
-          'connectioncreate',
-          'connectioncreated',
-          'connectionremoved',
-          'nodedragged',
-        ].includes(context.type)
-      ) {
-        return undefined;
-      }
-      return context;
-    });
-  }
-
   private observeResize(): void {
     if (typeof ResizeObserver === 'undefined') return;
     this.resizeObserver?.disconnect();
-    this.resizeObserver = new ResizeObserver(() => this.refreshArea());
+    this.resizeObserver = new ResizeObserver(() => this.adapter.refresh());
     this.resizeObserver.observe(this.editorHost.nativeElement);
   }
 
-  private refreshArea(): void {
-    (this.area?.area as any)?.update?.();
-  }
-
   private destroyRete(): void {
-    this.area?.destroy();
-    this.editor = undefined;
-    this.area = undefined;
-    this.reteNodes.clear();
+    this.adapter.destroy();
     this.editorHost?.nativeElement.replaceChildren();
   }
 }
