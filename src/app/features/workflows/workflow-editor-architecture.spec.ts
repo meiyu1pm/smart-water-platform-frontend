@@ -121,4 +121,15 @@ describe('workflow editor architecture', () => {
     expect(adapter.synchronizationProtected).toBe(true);
     expect(commandCalls).toEqual([]);
   });
+
+  it('only unmounts the Rete surface owned by the destroyed canvas host', () => {
+    const adapter = Object.create(ReteWorkflowAdapter.prototype) as any;
+    const activeHost = {}; const staleHost = {}; const destroyed: string[] = [];
+    adapter.host = activeHost; adapter.mountGeneration = 4; adapter.reteNodes = new Map([['node-1', {}]]);
+    adapter.area = { destroy: () => destroyed.push('area') }; adapter.editor = {};
+    adapter.unmount(staleHost);
+    expect(destroyed).toEqual([]); expect(adapter.host).toBe(activeHost);
+    adapter.unmount(activeHost);
+    expect(destroyed).toEqual(['area']); expect(adapter.host).toBeUndefined(); expect(adapter.nodeCount).toBe(0);
+  });
 });

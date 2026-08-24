@@ -15,6 +15,19 @@ export function legacyWorkspacePreferenceKey(userId: number | null | undefined):
   return `smart-water.workflow-workspace.layout.v1.${userId ?? 'anonymous'}`;
 }
 
+export function isRestorableWorkspaceLayout(
+  layout: unknown,
+  rootPanelId = 'canvas:root',
+): layout is object {
+  if (!layout || typeof layout !== 'object' || Array.isArray(layout)) return false;
+  const candidate = layout as {
+    grid?: { root?: unknown };
+    panels?: Record<string, { contentComponent?: unknown }>;
+  };
+  const rootPanel = candidate.panels?.[rootPanelId];
+  return Boolean(candidate.grid?.root && rootPanel?.contentComponent === 'canvas');
+}
+
 export function parseWorkspacePreference(
   raw: string | null,
   expectedUserId: number,
@@ -26,9 +39,7 @@ export function parseWorkspacePreference(
       value.schemaVersion !== 2 ||
       value.userId !== expectedUserId ||
       (value.theme !== 'water-light' && value.theme !== 'workspace-dark') ||
-      !value.layout ||
-      typeof value.layout !== 'object' ||
-      Array.isArray(value.layout)
+      !isRestorableWorkspaceLayout(value.layout)
     ) {
       return null;
     }

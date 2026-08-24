@@ -335,11 +335,15 @@ export class WorkflowCanvasPanelComponent implements AfterViewInit, OnDestroy {
   readonly facade = inject(WorkflowEditorFacade);
   readonly adapter = inject(ReteWorkflowAdapter);
   @ViewChild('editorHost', { static: true }) private editorHost!: ElementRef<HTMLDivElement>;
+  private resizeObserver?: ResizeObserver;
   ngAfterViewInit(): void {
-    void this.adapter.mount(this.editorHost.nativeElement, { nodes: this.store.nodes(), edges: this.store.edges() }, { editable: true });
+    const host = this.editorHost.nativeElement;
+    void this.adapter.mount(host, { nodes: this.store.nodes(), edges: this.store.edges() }, { editable: true });
+    if (typeof ResizeObserver !== 'undefined') { this.resizeObserver = new ResizeObserver(() => this.adapter.refresh()); this.resizeObserver.observe(host); }
   }
   ngOnDestroy(): void {
-    this.adapter.destroy();
+    this.resizeObserver?.disconnect();
+    this.adapter.unmount(this.editorHost.nativeElement);
   }
   allowDrop(event: DragEvent): void { event.preventDefault(); }
   onCanvasDrop(event: DragEvent): void { event.preventDefault(); const definition = this.store.definitionByCode().get(event.dataTransfer?.getData('application/x-node-code') || ''); if (definition) void this.addNode(definition); }

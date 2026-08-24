@@ -46,6 +46,7 @@ import {
 } from './workflow-composite-registration-dialog.component';
 import {
   WorkspaceLayoutPreference,
+  isRestorableWorkspaceLayout,
   legacyWorkspacePreferenceKey,
   parseWorkspacePreference,
   workspacePreferenceKey,
@@ -468,6 +469,7 @@ export class WorkflowEditorWorkspacePage implements OnDestroy {
   private workspaceInitialized = false;
   private rootRecoveryScheduled = false;
   private initializationFrame?: number;
+  private destroying = false;
   private readonly guideStorageKey = 'smart-water.workflow.onboarding.dismissed';
   readonly guideDismissed = signal(this.readGuideDismissed());
   readonly darkWorkspace = signal(false);
@@ -555,7 +557,7 @@ export class WorkflowEditorWorkspacePage implements OnDestroy {
     this.panelRemovalSubscription?.dispose();
     this.layoutSubscription = event.api.onDidLayoutChange(() => {
       this.syncOpenPanels();
-      if (!this.restoringLayout) this.saveWorkspaceLayout();
+      if (!this.restoringLayout && this.workspaceInitialized) this.saveWorkspaceLayout();
     });
     this.panelRemovalSubscription = event.api.onDidRemovePanel((panel) => {
       if (
@@ -619,6 +621,7 @@ export class WorkflowEditorWorkspacePage implements OnDestroy {
   }
 
   ngOnDestroy(): void {
+    this.destroying = true;
     if (this.initializationFrame !== undefined) cancelAnimationFrame(this.initializationFrame);
     this.layoutSubscription?.dispose();
     this.panelRemovalSubscription?.dispose();
@@ -757,13 +760,15 @@ export class WorkflowEditorWorkspacePage implements OnDestroy {
   }
 
   private saveWorkspaceLayout(): void {
-    if (!this.dockviewApi || this.mobile()) return;
+    if (!this.dockviewApi || this.mobile() || this.destroying || this.restoringLayout || !this.workspaceInitialized || !this.dockviewApi.getPanel(ROOT_CANVAS_PANEL_ID)) return;
     try {
+      const layout = this.dockviewApi.toJSON();
+      if (!isRestorableWorkspaceLayout(layout, ROOT_CANVAS_PANEL_ID)) return;
       const preference: WorkspaceLayoutPreference = {
         schemaVersion: 2,
         userId: this.workspaceAuth.user()?.id ?? 0,
         theme: this.darkWorkspace() ? 'workspace-dark' : 'water-light',
-        layout: this.dockviewApi.toJSON(),
+        layout,
       };
       window.localStorage.setItem(this.preferenceKey(), JSON.stringify(preference));
     } catch {
@@ -784,10 +789,13 @@ export class WorkflowEditorWorkspacePage implements OnDestroy {
       }
       this.restoringLayout = true;
       this.dockviewApi.fromJSON(preference.layout as any);
+      const rootCanvas = this.dockviewApi.getPanel(ROOT_CANVAS_PANEL_ID);
+      if (!rootCanvas) return false;
+      rootCanvas.api.setActive();
       this.darkWorkspace.set(preference.theme === 'workspace-dark');
       this.dockviewTheme.set(this.darkWorkspace() ? themeDark : themeLight);
       window.localStorage.removeItem('smart-water.workflow-editor.docks');
-      return Boolean(this.dockviewApi.getPanel(ROOT_CANVAS_PANEL_ID));
+      return true;
     } catch {
       window.localStorage.removeItem(this.preferenceKey());
       return false;
@@ -873,6 +881,7 @@ export class WorkflowEditorWorkspacePage implements OnDestroy {
       requestAnimationFrame(() => {
         this.layoutWorkspace();
         this.refreshEditorViewport();
+        this.saveWorkspaceLayout();
       });
     };
     this.initializationFrame = requestAnimationFrame(initialize);

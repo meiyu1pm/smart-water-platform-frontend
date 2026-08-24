@@ -22,12 +22,14 @@ export class ReteWorkflowAdapter {
   private hydrating = false;
   private editable = true;
   private nodePickedHandler?: (id: string) => void;
+  private mountGeneration = 0;
 
   constructor(private readonly injector: Injector, private readonly commands: WorkflowCommandBus, private readonly store: WorkflowEditorStore) {}
 
   async mount(host: HTMLDivElement, snapshot: { nodes: EditorNode[]; edges: Edge[] }, options: { editable?: boolean; onNodePicked?: (id: string) => void } = {}): Promise<void> {
     if (this.editor && this.host === host) { this.editable = options.editable ?? this.editable; await this.syncIncremental(snapshot); return; }
-    this.destroy(); this.host = host; this.editable = options.editable ?? true; host.replaceChildren();
+    const generation = ++this.mountGeneration;
+    this.destroySurface(); this.host = host; this.editable = options.editable ?? true; host.replaceChildren();
     this.editor = new NodeEditor(); this.area = new AreaPlugin(host); this.selection = AreaExtensions.selector();
     const connection = new ConnectionPlugin(); connection.addPreset(ConnectionPresets.classic.setup());
     const render = new AngularPlugin({ injector: this.injector }); render.addPreset(AngularPresets.classic.setup() as any);
@@ -35,29 +37,35 @@ export class ReteWorkflowAdapter {
     const wasHydrating = this.hydrating;
     this.hydrating = true;
     try {
-      for (const node of snapshot.nodes) await this.addNode(node);
-      for (const edge of snapshot.edges) await this.addConnection(edge);
+      for (const node of snapshot.nodes) { if (!this.isActiveMount(generation, host)) return; await this.addNode(node, generation); }
+      for (const edge of snapshot.edges) { if (!this.isActiveMount(generation, host)) return; await this.addConnection(edge, generation); }
+      if (!this.isActiveMount(generation, host) || !this.area || !this.editor) return;
       await AreaExtensions.zoomAt(this.area, this.editor.getNodes());
-    } finally { this.hydrating = wasHydrating; }
+    } finally { if (this.isActiveMount(generation, host)) this.hydrating = wasHydrating; }
+    if (!this.isActiveMount(generation, host)) return;
     this.installEvents(options.onNodePicked ?? this.nodePickedHandler);
   }
   setReadOnly(readOnly: boolean): void { this.editable = !readOnly; }
   setNodePickedHandler(handler?: (id: string) => void): void { this.nodePickedHandler = handler; }
-  detachHost(host: HTMLDivElement): void { if (this.host === host) this.host = undefined; }
+  unmount(host: HTMLDivElement): void { if (this.host === host) { this.mountGeneration += 1; this.destroySurface(); } }
+  detachHost(host: HTMLDivElement): void { this.unmount(host); }
   async sync(snapshot: { nodes: EditorNode[]; edges: Edge[] }): Promise<void> { await this.syncIncremental(snapshot); }
   refresh(): void { (this.area?.area as any)?.update?.(); }
   get areaPlugin(): AreaPlugin<any, any> | undefined { return this.area; }
   get editorInstance(): NodeEditor<any> | undefined { return this.editor; }
   get synchronizationProtected(): boolean { return this.hydrating; }
   get nodeCount(): number { return this.reteNodes.size; }
-  destroy(): void { this.area?.destroy(); this.editor = undefined; this.area = undefined; this.reteNodes.clear(); }
-  async addNode(item: EditorNode): Promise<void> {
-    if (!this.editor) return;
+  destroy(): void { this.mountGeneration += 1; this.destroySurface(); }
+  async addNode(item: EditorNode, expectedGeneration = this.mountGeneration): Promise<void> {
+    const editor = this.editor; const area = this.area;
+    if (!editor || !area) return;
     const node = new ClassicPreset.Node(item.definition?.node_name ?? item.node_code);
     for (const port of item.definition?.input_ports ?? []) node.addInput(port.key, new ClassicPreset.Input(new ClassicPreset.Socket(port.data_type), port.label, Boolean(port.required)));
     for (const port of item.definition?.output_ports ?? []) node.addOutput(port.key, new ClassicPreset.Output(new ClassicPreset.Socket(port.data_type), port.label));
     (node as any).id = item.id; (node as any).__backendId = item.id;
-    await this.editor.addNode(node); this.reteNodes.set(item.id, node); await this.area?.translate(node.id, { x: item.x, y: item.y });
+    await editor.addNode(node);
+    if (expectedGeneration !== this.mountGeneration || editor !== this.editor || area !== this.area) return;
+    this.reteNodes.set(item.id, node); await area.translate(node.id, { x: item.x, y: item.y });
   }
   async removeNode(id: string): Promise<void> {
     const node = this.reteNodes.get(id); if (!node || !this.editor) return;
@@ -94,10 +102,11 @@ export class ReteWorkflowAdapter {
   }
   async fitView(): Promise<void> { if (this.area && this.editor) await AreaExtensions.zoomAt(this.area, this.editor.getNodes()); }
   setNodeData(id: string, data: Record<string, unknown>): void { const node = this.reteNodes.get(id); if (node) node.data = data; }
-  private async addConnection(edge: Edge): Promise<boolean> {
-    if (!this.editor) return false; const source = this.reteNodes.get(edge.source.node_id); const target = this.reteNodes.get(edge.target.node_id);
+  private async addConnection(edge: Edge, expectedGeneration = this.mountGeneration): Promise<boolean> {
+    const editor = this.editor;
+    if (!editor || expectedGeneration !== this.mountGeneration) return false; const source = this.reteNodes.get(edge.source.node_id); const target = this.reteNodes.get(edge.target.node_id);
     if (!source || !target) return false;
-    try { await this.editor.addConnection(new ClassicPreset.Connection(source, edge.source.port, target, edge.target.port)); return true; } catch { return false; }
+    try { await editor.addConnection(new ClassicPreset.Connection(source, edge.source.port, target, edge.target.port)); return expectedGeneration === this.mountGeneration && editor === this.editor; } catch { return false; }
   }
   private installEvents(onNodePicked?: (id: string) => void): void {
     if (!this.editor) return;
@@ -110,4 +119,6 @@ export class ReteWorkflowAdapter {
       return context;
     });
   }
+  private isActiveMount(generation: number, host: HTMLDivElement): boolean { return generation === this.mountGeneration && host === this.host; }
+  private destroySurface(): void { this.area?.destroy(); this.editor = undefined; this.area = undefined; this.selection = undefined; this.host = undefined; this.hydrating = false; this.reteNodes.clear(); }
 }
