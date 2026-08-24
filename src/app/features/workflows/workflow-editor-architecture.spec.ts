@@ -62,10 +62,19 @@ describe('workflow editor architecture', () => {
     const store = new WorkflowEditorStore();
     const commands = new WorkflowCommandBus(store);
     const node = commands.addNode(source, { id: 'dataset-channel' });
-    const binding = { dataset_asset_id: 7, dataset_version_id: 8, metric_code: 'flow' };
-    store.setBindings(new Map([[node.id, binding]]));
+    const oldBinding = { dataset_asset_id: 7, dataset_version_id: 8, metric_code: 'flow' };
+    const newBinding = { dataset_asset_id: 9, dataset_version_id: 10, metric_code: 'pressure' };
+    const oldSelection = { asset: { id: 7 }, version: { id: 8 }, channel: { monitor_point_id: 1, metric_code: 'flow' } } as any;
+    const newSelection = { asset: { id: 9 }, version: { id: 10 }, channel: { monitor_point_id: 2, metric_code: 'pressure' } } as any;
+    commands.setBinding(node.id, oldBinding, oldSelection);
     commands.setParameter(node.id, 'window', 24);
-    expect(store.bindings().get(node.id)).toEqual(binding);
+    commands.setBinding(node.id, newBinding, newSelection);
+    commands.undo();
+    expect(store.bindings().get(node.id)).toEqual(oldBinding);
+    expect(store.bindingSelections().get(node.id)).toEqual(oldSelection);
+    commands.redo();
+    expect(store.bindings().get(node.id)).toEqual(newBinding);
+    expect(store.bindingSelections().get(node.id)).toEqual(newSelection);
     expect(store.nodes()[0].parameters).toEqual({ window: 24 });
   });
 
@@ -92,5 +101,20 @@ describe('workflow editor architecture', () => {
   it('keeps sync incremental instead of rebuilding the Rete editor', () => {
     expect(ReteWorkflowAdapter.prototype.sync.toString()).not.toContain('mount');
     expect(ReteWorkflowAdapter.prototype.sync.toString()).not.toContain('destroy');
+  });
+
+  it('protects incremental Rete synchronization from user command paths', async () => {
+    const commandCalls: string[] = [];
+    const adapter = Object.create(ReteWorkflowAdapter.prototype) as any;
+    adapter.host = {};
+    adapter.hydrating = false;
+    adapter.reteNodes = new Map();
+    adapter.editor = { getConnections: () => [], removeConnection: async () => commandCalls.push('remove-connection') };
+    adapter.area = { translate: async () => { expect(adapter.synchronizationProtected).toBe(true); } };
+    adapter.addNode = async () => { expect(adapter.synchronizationProtected).toBe(true); };
+    adapter.addConnection = async () => { expect(adapter.synchronizationProtected).toBe(true); };
+    await adapter.sync({ nodes: [{ id: 'a', node_code: 'source', node_version: '1.0.0', parameters: {}, x: 1, y: 2, collapsed: false, definition: source }], edges: [] });
+    expect(adapter.synchronizationProtected).toBe(false);
+    expect(commandCalls).toEqual([]);
   });
 });

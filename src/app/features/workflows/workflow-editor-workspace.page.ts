@@ -427,7 +427,7 @@ type OptionalWorkspacePanelId = Exclude<WorkspacePanelId, typeof ROOT_CANVAS_PAN
   `,
 })
 export class WorkflowEditorWorkspacePage implements OnDestroy {
-  /** Workspace composition boundary: only layout, dialogs and view delegation live here. */
+  /** 架构边界：上游是路由与 Dockview，下游是 Facade/Store/CommandBus/Adapter；拥有布局视图状态，不拥有图业务状态；不负责 HTTP/Rete 业务，销毁时释放布局与视图资源，并保持主画布不可关闭。 */
   private readonly store = inject(WorkflowEditorStore);
   private readonly facade = inject(WorkflowEditorFacade);
   private readonly commandBus = inject(WorkflowCommandBus);

@@ -47,6 +47,7 @@ export class ReteWorkflowAdapter {
   refresh(): void { (this.area?.area as any)?.update?.(); }
   get areaPlugin(): AreaPlugin<any, any> | undefined { return this.area; }
   get editorInstance(): NodeEditor<any> | undefined { return this.editor; }
+  get synchronizationProtected(): boolean { return this.hydrating; }
   get nodeCount(): number { return this.reteNodes.size; }
   destroy(): void { this.area?.destroy(); this.editor = undefined; this.area = undefined; this.reteNodes.clear(); }
   async addNode(item: EditorNode): Promise<void> {
@@ -64,20 +65,25 @@ export class ReteWorkflowAdapter {
   }
   private async syncIncremental(snapshot: { nodes: EditorNode[]; edges: Edge[] }): Promise<void> {
     if (!this.editor || !this.area || !this.host) return;
-    const wanted = new Map(snapshot.nodes.map((node) => [node.id, node]));
-    for (const id of [...this.reteNodes.keys()]) if (!wanted.has(id)) await this.removeNode(id);
-    for (const node of snapshot.nodes) {
-      if (!this.reteNodes.has(node.id)) await this.addNode(node);
-      else await this.area.translate(this.reteNodes.get(node.id).id, { x: node.x, y: node.y });
+    this.hydrating = true;
+    try {
+      const wanted = new Map(snapshot.nodes.map((node) => [node.id, node]));
+      for (const id of [...this.reteNodes.keys()]) if (!wanted.has(id)) await this.removeNode(id);
+      for (const node of snapshot.nodes) {
+        if (!this.reteNodes.has(node.id)) await this.addNode(node);
+        else await this.area.translate(this.reteNodes.get(node.id).id, { x: node.x, y: node.y });
+      }
+      const edgeKey = (edge: Edge) => `${edge.source.node_id}:${edge.source.port}->${edge.target.node_id}:${edge.target.port}`;
+      const wantedEdges = new Map(snapshot.edges.map((edge) => [edgeKey(edge), edge]));
+      for (const connection of [...this.editor.getConnections()]) {
+        const edge: Edge = { source: { node_id: String(connection.source), port: String(connection.sourceOutput) }, target: { node_id: String(connection.target), port: String(connection.targetInput) } };
+        if (!wantedEdges.has(edgeKey(edge))) await this.editor.removeConnection(connection.id);
+        else wantedEdges.delete(edgeKey(edge));
+      }
+      for (const edge of wantedEdges.values()) await this.addConnection(edge);
+    } finally {
+      this.hydrating = false;
     }
-    const edgeKey = (edge: Edge) => `${edge.source.node_id}:${edge.source.port}->${edge.target.node_id}:${edge.target.port}`;
-    const wantedEdges = new Map(snapshot.edges.map((edge) => [edgeKey(edge), edge]));
-    for (const connection of [...this.editor.getConnections()]) {
-      const edge: Edge = { source: { node_id: String(connection.source), port: String(connection.sourceOutput) }, target: { node_id: String(connection.target), port: String(connection.targetInput) } };
-      if (!wantedEdges.has(edgeKey(edge))) await this.editor.removeConnection(connection.id);
-      else wantedEdges.delete(edgeKey(edge));
-    }
-    for (const edge of wantedEdges.values()) await this.addConnection(edge);
   }
   async select(id: string): Promise<void> {
     const node = this.reteNodes.get(id); if (!node || !this.selection || !this.area) return;

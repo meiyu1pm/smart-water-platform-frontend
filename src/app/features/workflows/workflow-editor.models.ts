@@ -74,4 +74,3 @@ export interface ValidationIssue {
 
 export type ValidationStatus = 'not_validated' | 'valid' | 'invalid';
 export type AutosaveState = 'saved' | 'dirty' | 'saving' | 'offline' | 'conflict';
-

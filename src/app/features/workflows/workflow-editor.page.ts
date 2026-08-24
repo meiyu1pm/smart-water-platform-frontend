@@ -11,7 +11,7 @@ export type { Definition, EditorNode, Edge, Graph, StoredBinding, ValidationIssu
 
 /**
  * 架构边界：上游是旧路由入口， 下游是 Facade、Store、CommandBus 和 ReteWorkflowAdapter。
- * 这是兼容性的薄路由壳：不拥有业务状态，不访问 HTTP、Cache、Router 或 Rete；画布销毁委托 Adapter。
+ * 这是兼容性的薄路由壳：不拥有业务状态，不访问 HTTP、Cache 或 Router；不直接管理 Rete，Rete 生命周期委托 Adapter。
  */
 @Component({ selector: 'app-workflow-editor-page', imports: [], providers: [WorkflowEditorStore, WorkflowCommandBus, WorkflowGraphSerializer, ReteWorkflowAdapter, WorkflowEditorFacade], template: `<div #editorHost class="editor-host"></div>`, styles: `` })
 export class WorkflowEditorPage implements AfterViewInit, OnDestroy {
