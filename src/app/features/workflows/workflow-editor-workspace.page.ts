@@ -1,10 +1,12 @@
 import {
+  AfterViewInit,
   Component,
   ElementRef,
   HostListener,
   OnDestroy,
   ViewChild,
   computed,
+  effect,
   inject,
   signal,
 } from '@angular/core';
@@ -427,7 +429,7 @@ type OptionalWorkspacePanelId = Exclude<WorkspacePanelId, typeof ROOT_CANVAS_PAN
     }
   `,
 })
-export class WorkflowEditorWorkspacePage implements OnDestroy {
+export class WorkflowEditorWorkspacePage implements AfterViewInit, OnDestroy {
   /** 架构边界：上游是路由与 Dockview，下游是 Facade/Store/CommandBus/Adapter；拥有布局视图状态，不拥有图业务状态；不负责 HTTP/Rete 业务，销毁时释放布局与视图资源，并保持主画布不可关闭。 */
   private readonly store = inject(WorkflowEditorStore);
   private readonly facade = inject(WorkflowEditorFacade);
@@ -469,6 +471,7 @@ export class WorkflowEditorWorkspacePage implements OnDestroy {
   private workspaceInitialized = false;
   private rootRecoveryScheduled = false;
   private initializationFrame?: number;
+  private workspaceResizeObserver?: ResizeObserver;
   private destroying = false;
   private readonly guideStorageKey = 'smart-water.workflow.onboarding.dismissed';
   readonly guideDismissed = signal(this.readGuideDismissed());
@@ -507,9 +510,24 @@ export class WorkflowEditorWorkspacePage implements OnDestroy {
     }
   }
   constructor() {
+    effect(() => {
+      if (this.graphLoaded()) queueMicrotask(() => this.requestWorkspaceInitialization());
+    });
     this.facade.initialize();
     this.adapter.setNodePickedHandler((id) => this.facade.notifyNodePicked(id, Date.now(), (nodeId) => this.openCompositeNodeDocument(nodeId)));
     this.restoreThemePreference();
+  }
+
+  ngAfterViewInit(): void {
+    const body = this.workspaceBody?.nativeElement;
+    if (body && typeof ResizeObserver !== 'undefined') {
+      this.workspaceResizeObserver = new ResizeObserver(() => {
+        if (this.workspaceInitialized) this.layoutWorkspace();
+        else this.requestWorkspaceInitialization();
+      });
+      this.workspaceResizeObserver.observe(body);
+    }
+    this.requestWorkspaceInitialization();
   }
 
   async addNode(definition: Definition): Promise<void> { const node = this.facade.addNode(definition); await this.adapter.addNode(node); }
@@ -568,7 +586,7 @@ export class WorkflowEditorWorkspacePage implements OnDestroy {
         this.scheduleRootCanvasRecovery();
       }
     });
-    this.scheduleWorkspaceInitialization();
+    this.requestWorkspaceInitialization();
   }
 
   openPanel(panelId: OptionalWorkspacePanelId): void {
@@ -625,6 +643,7 @@ export class WorkflowEditorWorkspacePage implements OnDestroy {
     if (this.initializationFrame !== undefined) cancelAnimationFrame(this.initializationFrame);
     this.layoutSubscription?.dispose();
     this.panelRemovalSubscription?.dispose();
+    this.workspaceResizeObserver?.disconnect();
     this.adapter.destroy();
     this.facade.destroy();
   }
@@ -632,7 +651,7 @@ export class WorkflowEditorWorkspacePage implements OnDestroy {
   loadGraph(graph: Graph): void {
     this.facade.loadGraph(graph);
     void this.adapter.sync({ nodes: this.nodes(), edges: this.edges });
-    this.scheduleWorkspaceInitialization();
+    this.requestWorkspaceInitialization();
   }
 
   registerCompositeOperator(): void {
@@ -669,7 +688,6 @@ export class WorkflowEditorWorkspacePage implements OnDestroy {
       error: () => this.showError('无法读取该复合节点的版本信息，请稍后重试。'),
     });
   }
-
 
   private openResolvedCompositeNodeDocument(nodeId: string, versionId: number): void {
     if (!this.dockviewApi || this.mobile()) return;
@@ -858,19 +876,22 @@ export class WorkflowEditorWorkspacePage implements OnDestroy {
     }
   }
 
-  private scheduleWorkspaceInitialization(): void {
+  private requestWorkspaceInitialization(): void {
     if (this.mobile() || this.workspaceInitialized || this.initializationFrame !== undefined)
       return;
-    let attempts = 0;
-    const initialize = () => {
+    this.initializationFrame = requestAnimationFrame(() => {
       this.initializationFrame = undefined;
-      const api = this.dockviewApi;
-      const rect = this.workspaceBody?.nativeElement.getBoundingClientRect();
-      if (!api || !this.graphLoaded() || !rect || rect.width < 1 || rect.height < 1) {
-        if (attempts++ < 120) this.initializationFrame = requestAnimationFrame(initialize);
-        return;
-      }
+      this.initializeWorkspaceIfReady();
+    });
+  }
 
+  private initializeWorkspaceIfReady(): void {
+    if (this.mobile() || this.workspaceInitialized || this.destroying) return;
+    const api = this.dockviewApi;
+    const rect = this.workspaceBody?.nativeElement.getBoundingClientRect();
+    if (!api || !this.graphLoaded() || !rect || rect.width < 1 || rect.height < 1) return;
+
+    try {
       api.layout(Math.floor(rect.width), Math.floor(rect.height), true);
       if (!this.restoreWorkspaceLayout()) {
         api.closeAllGroups();
@@ -879,12 +900,15 @@ export class WorkflowEditorWorkspacePage implements OnDestroy {
       this.workspaceInitialized = true;
       this.syncOpenPanels();
       requestAnimationFrame(() => {
+        if (this.destroying) return;
         this.layoutWorkspace();
         this.refreshEditorViewport();
         this.saveWorkspaceLayout();
       });
-    };
-    this.initializationFrame = requestAnimationFrame(initialize);
+    } catch {
+      // Dockview may emit ready before its host has completed the first layout pass.
+      this.requestWorkspaceInitialization();
+    }
   }
 
   private layoutWorkspace(): void {
