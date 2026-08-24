@@ -48,5 +48,15 @@ describe('workflow editor architecture', () => {
     commands.toggleOutput(a.id, 'out');
     expect(store.outputs()).toEqual([{ node_id: 'a', port: 'out' }]);
   });
-});
 
+  it('keeps dataset bindings isolated from graph node parameters', () => {
+    const store = new WorkflowEditorStore();
+    const commands = new WorkflowCommandBus(store);
+    const node = commands.addNode(source, { id: 'dataset-channel' });
+    const binding = { dataset_asset_id: 7, dataset_version_id: 8, metric_code: 'flow' };
+    store.setBindings(new Map([[node.id, binding]]));
+    commands.setParameter(node.id, 'window', 24);
+    expect(store.bindings().get(node.id)).toEqual(binding);
+    expect(store.nodes()[0].parameters).toEqual({ window: 24 });
+  });
+});
