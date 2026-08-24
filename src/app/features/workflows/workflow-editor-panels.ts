@@ -2,10 +2,9 @@ import {
   AfterViewInit,
   Component,
   ElementRef,
-  Injectable,
   OnDestroy,
-  Signal,
   ViewChild,
+  computed,
   effect,
   inject,
   signal,
@@ -22,7 +21,10 @@ import {
   OperatorParameterFormComponent,
   ParameterSchema,
 } from '../../shared/components/operator-parameter-form.component';
-import type { Definition, EditorNode } from './workflow-editor.page';
+import type { Definition, EditorNode } from './workflow-editor.models';
+import { WorkflowEditorStore } from './workflow-editor-store';
+import { WorkflowEditorFacade } from './workflow-editor-facade';
+import { ReteWorkflowAdapter } from './rete-workflow-adapter';
 
 export interface SelectedRuntimeBinding {
   id: string;
@@ -31,45 +33,6 @@ export interface SelectedRuntimeBinding {
   wholeAsset: boolean;
 }
 
-export interface WorkflowEditorPanelHost {
-  readonly definitions: Signal<Definition[]>;
-  readonly nodes: Signal<EditorNode[]>;
-  readonly selectedNode: Signal<EditorNode | null>;
-  readonly selectedDataBinding: Signal<SelectedRuntimeBinding | null>;
-  readonly history: Signal<unknown[]>;
-  readonly historyIndex: Signal<number>;
-  readonly edges: unknown[];
-  addNode(definition: Definition): Promise<void>;
-  onCatalogDragStart(event: DragEvent, definition: Definition): void;
-  allowDrop(event: DragEvent): void;
-  onCanvasDrop(event: DragEvent): void;
-  attachEditorHost(element: HTMLDivElement): void;
-  detachEditorHost(element: HTMLDivElement): void;
-  fitView(): Promise<void>;
-  refreshEditorViewport(): void;
-  undo(): void;
-  redo(): void;
-  parameterEntries(node: EditorNode): Array<{ key: string; value: unknown }>;
-  parameterSchema(node: EditorNode, key: string): Record<string, any>;
-  setParameter(id: string, key: string, value: unknown): void;
-  setParameters(id: string, parameters: Record<string, unknown>): void;
-  setParameterValidity(id: string, valid: boolean): void;
-  coerceNumber(value: unknown, integer: boolean): number;
-  isOutputPort(nodeId: string, port: string): boolean;
-  toggleOutputPort(nodeId: string, port: string): void;
-  removeNode(id: string): Promise<void>;
-  setBinding(nodeId: string, selection: DataAssetSelection | null): void;
-}
-
-@Injectable()
-export class WorkflowEditorPanelBridge {
-  host?: WorkflowEditorPanelHost;
-
-  requireHost(): WorkflowEditorPanelHost {
-    if (!this.host) throw new Error('Workflow editor panel host is not ready');
-    return this.host;
-  }
-}
 
 @Component({
   selector: 'app-operator-catalog-panel',
@@ -81,7 +44,7 @@ export class WorkflowEditorPanelBridge {
           <span>算子目录</span>
           <h2>可用节点</h2>
         </div>
-        <small>{{ host.definitions().length }}</small>
+        <small>{{ store.definitions().length }}</small>
       </header>
       <label class="search">搜索<input [(ngModel)]="search" placeholder="名称或编码" /></label>
       <p class="help">点击添加，或拖入画布。</p>
@@ -101,8 +64,8 @@ export class WorkflowEditorPanelBridge {
                   <button
                     class="catalog-item"
                     draggable="true"
-                    (dragstart)="host.onCatalogDragStart($event, item)"
-                    (click)="host.addNode(item)"
+                    (dragstart)="onCatalogDragStart($event, item)"
+                    (click)="addNode(item)"
                   >
                     <i [class.gpu]="item.runtime_type === 'builtin_gpu'"></i>
                     <span
@@ -233,7 +196,9 @@ export class WorkflowEditorPanelBridge {
   `,
 })
 export class OperatorCatalogPanelComponent {
-  readonly host = inject(WorkflowEditorPanelBridge).requireHost();
+  readonly store = inject(WorkflowEditorStore);
+  readonly facade = inject(WorkflowEditorFacade);
+  readonly adapter = inject(ReteWorkflowAdapter);
   readonly operatorNames = inject(OperatorNameService);
   search = '';
   private readonly openCategories = new Set([
@@ -256,7 +221,7 @@ export class OperatorCatalogPanelComponent {
   groups(): Array<{ category: string; label: string; items: Definition[] }> {
     const term = this.search.trim().toLowerCase();
     const groups = new Map<string, Definition[]>();
-    for (const item of this.host.definitions()) {
+    for (const item of this.store.definitions()) {
       if (term && !this.operatorNames.matches(item.node_code, item.node_name, term)) continue;
       groups.set(item.category, [...(groups.get(item.category) ?? []), item]);
     }
@@ -276,6 +241,8 @@ export class OperatorCatalogPanelComponent {
     if (this.openCategories.has(category)) this.openCategories.delete(category);
     else this.openCategories.add(category);
   }
+  onCatalogDragStart(event: DragEvent, definition: Definition): void { event.dataTransfer?.setData('application/x-node-code', definition.node_code); }
+  addNode(definition: Definition): void { const node = this.facade.addNode(definition); void this.adapter.addNode(node); }
 }
 
 @Component({
@@ -286,21 +253,21 @@ export class OperatorCatalogPanelComponent {
       <div
         #editorHost
         class="rete-host"
-        (dragover)="host.allowDrop($event)"
-        (drop)="host.onCanvasDrop($event)"
+        (dragover)="allowDrop($event)"
+        (drop)="onCanvasDrop($event)"
       ></div>
-      @if (!host.nodes().length) {
+      @if (!store.nodes().length) {
         <div class="canvas-empty">从算子目录添加节点。</div>
       }
       <div class="canvas-tools">
-        <button mat-stroked-button (click)="host.fitView()">适应画布</button>
-        <button mat-stroked-button (click)="host.undo()" [disabled]="host.historyIndex() <= 0">
+        <button mat-stroked-button (click)="adapter.fitView()">适应画布</button>
+        <button mat-stroked-button (click)="facade.undo()" [disabled]="store.historyIndex() <= 0">
           撤销
         </button>
         <button
           mat-stroked-button
-          (click)="host.redo()"
-          [disabled]="host.historyIndex() >= host.history().length - 1"
+          (click)="facade.redo()"
+          [disabled]="store.historyIndex() >= store.history().length - 1"
         >
           重做
         </button>
@@ -364,14 +331,23 @@ export class OperatorCatalogPanelComponent {
   `,
 })
 export class WorkflowCanvasPanelComponent implements AfterViewInit, OnDestroy {
-  readonly host = inject(WorkflowEditorPanelBridge).requireHost();
+  readonly store = inject(WorkflowEditorStore);
+  readonly facade = inject(WorkflowEditorFacade);
+  readonly adapter = inject(ReteWorkflowAdapter);
   @ViewChild('editorHost', { static: true }) private editorHost!: ElementRef<HTMLDivElement>;
+  private resizeObserver?: ResizeObserver;
   ngAfterViewInit(): void {
-    this.host.attachEditorHost(this.editorHost.nativeElement);
+    const host = this.editorHost.nativeElement;
+    void this.adapter.mount(host, { nodes: this.store.nodes(), edges: this.store.edges() }, { editable: true });
+    if (typeof ResizeObserver !== 'undefined') { this.resizeObserver = new ResizeObserver(() => this.adapter.refresh()); this.resizeObserver.observe(host); }
   }
   ngOnDestroy(): void {
-    this.host.detachEditorHost(this.editorHost.nativeElement);
+    this.resizeObserver?.disconnect();
+    this.adapter.unmount(this.editorHost.nativeElement);
   }
+  allowDrop(event: DragEvent): void { event.preventDefault(); }
+  onCanvasDrop(event: DragEvent): void { event.preventDefault(); const definition = this.store.definitionByCode().get(event.dataTransfer?.getData('application/x-node-code') || ''); if (definition) void this.addNode(definition); }
+  addNode(definition: Definition): void { const node = this.facade.addNode(definition); void this.adapter.addNode(node); }
 }
 
 @Component({
@@ -385,7 +361,7 @@ export class WorkflowCanvasPanelComponent implements AfterViewInit, OnDestroy {
   ],
   template: `
     <section class="panel-content">
-      @if (host.selectedNode(); as node) {
+      @if (store.selectedNode(); as node) {
         <header>
           <span>节点属性</span>
           <h2>{{ operatorNames.displayName(node.node_code, node.definition?.node_name) }}</h2>
@@ -489,10 +465,10 @@ export class WorkflowCanvasPanelComponent implements AfterViewInit, OnDestroy {
           [schema]="node.definition?.parameter_schema || {}"
           [uiSchema]="node.definition?.ui_schema || {}"
           [model]="node.parameters"
-          (parametersChange)="host.setParameters(node.id, $event)"
-          (validityChange)="host.setParameterValidity(node.id, $event)"
+          (parametersChange)="facade.setParameters(node.id, $event)"
+          (validityChange)="facade.setParameterValidity(node.id, $event)"
         />
-        @if (host.selectedDataBinding(); as binding) {
+        @if (selectedDataBinding(); as binding) {
           <section class="runtime-binding">
             <h3>运行数据绑定</h3>
             <p>
@@ -505,7 +481,7 @@ export class WorkflowCanvasPanelComponent implements AfterViewInit, OnDestroy {
             <app-data-asset-picker
               [selection]="binding.selection"
               [channelRequired]="!binding.wholeAsset"
-              (selectionChange)="host.setBinding(binding.id, $event)"
+              (selectionChange)="facade.setBinding(binding.id, $event)"
             />
           </section>
         }
@@ -515,13 +491,13 @@ export class WorkflowCanvasPanelComponent implements AfterViewInit, OnDestroy {
             <label
               ><input
                 type="checkbox"
-                [checked]="host.isOutputPort(node.id, port.key)"
-                (change)="host.toggleOutputPort(node.id, port.key)"
+                [checked]="facade.isOutputPort(node.id, port.key)"
+                (change)="facade.toggleOutputPort(node.id, port.key)"
               />{{ port.label || port.key }}</label
             >
           }
         </div>
-        <button mat-stroked-button color="warn" (click)="host.removeNode(node.id)">移除节点</button>
+        <button mat-stroked-button color="warn" (click)="removeNode(node.id)">移除节点</button>
       } @else {
         <div class="empty">在画布中选择节点以查看属性。</div>
       }
@@ -669,17 +645,19 @@ export class WorkflowCanvasPanelComponent implements AfterViewInit, OnDestroy {
   `,
 })
 export class NodeInspectorPanelComponent {
-  readonly host = inject(WorkflowEditorPanelBridge).requireHost();
+  readonly store = inject(WorkflowEditorStore);
+  readonly facade = inject(WorkflowEditorFacade);
   readonly operatorNames = inject(OperatorNameService);
   private readonly api = inject(ApiClient);
 
   readonly availableModels = signal<ModelVersionSummary[]>([]);
   readonly loadingModels = signal(false);
   private lastFetchedCode: string | null = null;
+  readonly selectedDataBinding = computed(() => { this.store.bindingRevision(); const node = this.store.selectedNode(); if (!node || !['dataset_channel_v1', 'dataset_asset_v1'].includes(node.node_code)) return null; return { id: node.id, selection: this.store.bindingSelections().get(node.id) ?? null, wholeAsset: node.node_code === 'dataset_asset_v1' }; });
 
   constructor() {
     effect(() => {
-      const node = this.host.selectedNode();
+      const node = this.store.selectedNode();
       if (!node) {
         this.lastFetchedCode = null;
         this.availableModels.set([]);
@@ -714,15 +692,17 @@ export class NodeInspectorPanelComponent {
 
   onModelChoiceChange(node: EditorNode, modelId: string): void {
     if (modelId === '__none__') {
-      this.host.setParameter(node.id, 'model_version_id', '');
+      this.facade.setParameter(node.id, 'model_version_id', '');
     } else {
-      this.host.setParameter(node.id, 'model_version_id', modelId);
+      this.facade.setParameter(node.id, 'model_version_id', modelId);
     }
   }
 
   onModelSelect(node: EditorNode, modelId: string): void {
-    this.host.setParameter(node.id, 'model_version_id', modelId);
+    this.facade.setParameter(node.id, 'model_version_id', modelId);
   }
+
+  removeNode(id: string): void { if (typeof window !== 'undefined' && !window.confirm('移除该节点并删除其连接？')) return; this.facade.removeNode(id); }
 
   private loadModels(algorithmCode: string): void {
     this.loadingModels.set(true);

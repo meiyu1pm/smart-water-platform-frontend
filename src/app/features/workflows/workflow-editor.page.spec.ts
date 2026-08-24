@@ -11,6 +11,7 @@ import {
   isRootWorkflowDocumentPanelId,
 } from './workflow-editor-workspace.page';
 import { WorkflowDocumentTabComponent } from './workflow-document-tab.component';
+import { ReteWorkflowAdapter } from './rete-workflow-adapter';
 
 describe('WorkflowEditorPage', () => {
   let asyncApiResponses = false;
@@ -278,6 +279,24 @@ describe('WorkflowEditorPage', () => {
     expect(messageSlot).toBeTruthy();
     expect(messageSlot.textContent.trim()).toBe('');
     expect(workspaceBody).toBeTruthy();
+  });
+
+  it('requests workspace initialization again when a delayed graph becomes ready', async () => {
+    const fixture = TestBed.createComponent(WorkflowEditorWorkspacePage);
+    const workspace = fixture.componentInstance;
+    vi.spyOn(fixture.debugElement.injector.get(ReteWorkflowAdapter), 'mount').mockResolvedValue();
+    workspace.mobile.set(true);
+    workspace.graphLoaded.set(false);
+    const requestInitialization = vi.spyOn(workspace as any, 'requestWorkspaceInitialization');
+    fixture.detectChanges();
+    requestInitialization.mockClear();
+
+    workspace.graphLoaded.set(true);
+    fixture.detectChanges();
+    await Promise.resolve();
+
+    expect(requestInitialization).toHaveBeenCalled();
+    fixture.destroy();
   });
 
   it('uses a stable root document id and distinguishes composite document ids', () => {

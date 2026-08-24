@@ -1,9 +1,12 @@
 import {
+  AfterViewInit,
   Component,
   ElementRef,
   HostListener,
   OnDestroy,
   ViewChild,
+  computed,
+  effect,
   inject,
   signal,
 } from '@angular/core';
@@ -22,18 +25,21 @@ import {
 } from 'dockview-angular';
 
 import { AuthService } from '../../core/services/auth.service';
-import { ApiClient } from '../../core/services/api-client.service';
 import { NotificationService } from '../../core/services/notification.service';
 import {
   FormlyJsonFieldTypeComponent,
   FormlySliderFieldTypeComponent,
 } from '../../shared/components/operator-parameter-form.component';
-import { Graph, WorkflowEditorPage } from './workflow-editor.page';
+import type { Definition, EditorNode, Graph } from './workflow-editor.models';
+import { WorkflowEditorStore } from './workflow-editor-store';
+import { WorkflowCommandBus } from './workflow-command-bus';
+import { WorkflowGraphSerializer } from './workflow-graph-serializer';
+import { ReteWorkflowAdapter } from './rete-workflow-adapter';
+import { WorkflowEditorFacade } from './workflow-editor-facade';
 import {
   NodeInspectorPanelComponent,
   OperatorCatalogPanelComponent,
   WorkflowCanvasPanelComponent,
-  WorkflowEditorPanelBridge,
 } from './workflow-editor-panels';
 import { WorkflowCompositeCanvasPanelComponent } from './workflow-composite-canvas-panel.component';
 import {
@@ -42,6 +48,7 @@ import {
 } from './workflow-composite-registration-dialog.component';
 import {
   WorkspaceLayoutPreference,
+  isRestorableWorkspaceLayout,
   legacyWorkspacePreferenceKey,
   parseWorkspacePreference,
   workspacePreferenceKey,
@@ -71,7 +78,11 @@ type OptionalWorkspacePanelId = Exclude<WorkspacePanelId, typeof ROOT_CANVAS_PAN
     WorkflowCanvasPanelComponent,
   ],
   providers: [
-    WorkflowEditorPanelBridge,
+    WorkflowEditorStore,
+    WorkflowCommandBus,
+    WorkflowGraphSerializer,
+    ReteWorkflowAdapter,
+    WorkflowEditorFacade,
     provideFormlyCore([
       ...withFormlyMaterial(),
       {
@@ -418,18 +429,41 @@ type OptionalWorkspacePanelId = Exclude<WorkspacePanelId, typeof ROOT_CANVAS_PAN
     }
   `,
 })
-export class WorkflowEditorWorkspacePage extends WorkflowEditorPage implements OnDestroy {
+export class WorkflowEditorWorkspacePage implements AfterViewInit, OnDestroy {
+  /** 架构边界：上游是路由与 Dockview，下游是 Facade/Store/CommandBus/Adapter；拥有布局视图状态，不拥有图业务状态；不负责 HTTP/Rete 业务，销毁时释放布局与视图资源，并保持主画布不可关闭。 */
+  private readonly store = inject(WorkflowEditorStore);
+  private readonly facade = inject(WorkflowEditorFacade);
+  private readonly commandBus = inject(WorkflowCommandBus);
+  private readonly adapter = inject(ReteWorkflowAdapter);
+  readonly operatorNames = this.facade.operatorNames;
+  readonly definitions = this.store.definitions;
+  readonly nodes = this.store.nodes;
+  readonly selectedNode = this.store.selectedNode;
+  readonly selectedDataBinding = computed(() => { this.store.bindingRevision(); const node = this.selectedNode(); return node ? { id: node.id, label: this.operatorNames.displayName(node.node_code, node.definition?.node_name), selection: this.store.bindingSelections().get(node.id) ?? null, wholeAsset: node.node_code === 'dataset_asset_v1' } : null; });
+  readonly history = this.store.history;
+  readonly historyIndex = this.store.historyIndex;
+  readonly graphLoaded = this.store.graphLoaded;
+  readonly selectedId = this.store.selectedId;
+  readonly workflowId = this.store.workflowId;
+  readonly workflowName = this.store.workflowName;
+  readonly publishedVersionId = this.store.publishedVersionId;
+  readonly publishedVersionNumber = this.store.publishedVersionNumber;
+  readonly draftMatchesPublished = this.store.draftMatchesPublished;
+  readonly draftRevision = this.store.draftRevision;
+  readonly busy = this.store.busy;
+  readonly message = this.store.message;
+  readonly messageType = this.store.messageType;
+  readonly autosaveState = this.store.autosaveState;
+  readonly validationStatus = this.store.validationStatus;
+  readonly validationIssues = this.store.validationIssues;
+  readonly parametersValid = this.store.parametersValid;
+  get edges() { return this.store.edges(); }
+  get graphOutputs() { return this.store.outputs(); }
+  get bindingsReady() { return this.store.bindingsReady; }
   @ViewChild('workspaceBody') private workspaceBody?: ElementRef<HTMLDivElement>;
-  private readonly bridge = inject(WorkflowEditorPanelBridge);
   private readonly workspaceAuth = inject(AuthService);
-  private readonly workspaceApi = inject(ApiClient);
   private readonly dialog = inject(MatDialog);
   private readonly workspaceNotice = inject(NotificationService);
-  private readonly exactCompositeVersions = new Map<
-    string,
-    { executorType: string; workflowVersionId: number | null }
-  >();
-  private readonly exactCompositeLookups = new Set<string>();
   private dockviewApi?: DockviewApi;
   private layoutSubscription?: { dispose(): void };
   private panelRemovalSubscription?: { dispose(): void };
@@ -437,6 +471,8 @@ export class WorkflowEditorWorkspacePage extends WorkflowEditorPage implements O
   private workspaceInitialized = false;
   private rootRecoveryScheduled = false;
   private initializationFrame?: number;
+  private workspaceResizeObserver?: ResizeObserver;
+  private destroying = false;
   private readonly guideStorageKey = 'smart-water.workflow.onboarding.dismissed';
   readonly guideDismissed = signal(this.readGuideDismissed());
   readonly darkWorkspace = signal(false);
@@ -474,10 +510,56 @@ export class WorkflowEditorWorkspacePage extends WorkflowEditorPage implements O
     }
   }
   constructor() {
-    super();
-    this.bridge.host = this;
+    effect(() => {
+      if (this.graphLoaded()) queueMicrotask(() => this.requestWorkspaceInitialization());
+    });
+    this.facade.initialize();
+    this.adapter.setNodePickedHandler((id) => this.facade.notifyNodePicked(id, Date.now(), (nodeId) => this.openCompositeNodeDocument(nodeId)));
     this.restoreThemePreference();
   }
+
+  ngAfterViewInit(): void {
+    const body = this.workspaceBody?.nativeElement;
+    if (body && typeof ResizeObserver !== 'undefined') {
+      this.workspaceResizeObserver = new ResizeObserver(() => {
+        if (this.workspaceInitialized) this.layoutWorkspace();
+        else this.requestWorkspaceInitialization();
+      });
+      this.workspaceResizeObserver.observe(body);
+    }
+    this.requestWorkspaceInitialization();
+  }
+
+  async addNode(definition: Definition): Promise<void> { const node = this.facade.addNode(definition); await this.adapter.addNode(node); }
+  onCatalogDragStart(event: DragEvent, definition: Definition): void { event.dataTransfer?.setData('application/x-node-code', definition.node_code); }
+  allowDrop(event: DragEvent): void { event.preventDefault(); }
+  onCanvasDrop(event: DragEvent): void { event.preventDefault(); const definition = this.store.definitionByCode().get(event.dataTransfer?.getData('application/x-node-code') || ''); if (definition) void this.addNode(definition); }
+  attachEditorHost(element: HTMLDivElement): void { void this.adapter.mount(element, { nodes: this.nodes(), edges: this.edges }, { editable: true, onNodePicked: (id) => this.facade.notifyNodePicked(id, Date.now(), (nodeId) => this.openCompositeNodeDocument(nodeId)) }); }
+  detachEditorHost(element: HTMLDivElement): void { this.adapter.detachHost(element); }
+  fitView(): Promise<void> { return this.adapter.fitView(); }
+  refreshEditorViewport(): void { this.adapter.refresh(); }
+  undo(): void { this.facade.undo(); }
+  redo(): void { this.facade.redo(); }
+  parameterEntries(node: EditorNode): Array<{ key: string; value: unknown }> { return this.facade.parameterEntries(node); }
+  parameterSchema(node: EditorNode, key: string): Record<string, any> { return this.facade.parameterSchema(node, key); }
+  defaultParameters(definition: Definition): Record<string, unknown> { return this.facade.defaultParameters(definition); }
+  coerceNumber(value: unknown, integer: boolean): number { return this.facade.coerceNumber(value, integer); }
+  setParameter(id: string, key: string, value: unknown): void { this.facade.setParameter(id, key, value); this.adapter.setNodeData(id, this.nodes().find((node) => node.id === id)?.parameters ?? {}); }
+  setParameters(id: string, parameters: Record<string, unknown>): void { this.facade.setParameters(id, parameters); this.adapter.setNodeData(id, parameters); }
+  setParameterValidity(id: string, valid: boolean): void { this.facade.setParameterValidity(id, valid); }
+  isOutputPort(nodeId: string, port: string): boolean { return this.facade.isOutputPort(nodeId, port); }
+  toggleOutputPort(nodeId: string, port: string): void { this.facade.toggleOutputPort(nodeId, port); }
+  removeNode(id: string): Promise<void> { if (typeof window !== 'undefined' && !window.confirm('移除该节点并删除其连接？')) return Promise.resolve(); this.facade.removeNode(id); return this.adapter.removeNode(id); }
+  setBinding(nodeId: string, selection: any): void { this.facade.setBinding(nodeId, selection); }
+  graph(): Graph { return this.facade.graph(); }
+  select(id: string): void { this.store.selectedId.set(id); void this.adapter.select(id); }
+  validate(): void { this.facade.validate(); }
+  save(): void { this.facade.save(); }
+  publish(): void { this.facade.publish(); }
+  run(): void { this.facade.run(); }
+  autosaveLabel(): string { return this.facade.autosaveLabel(); }
+  validationButtonLabel(): string { return this.facade.validationButtonLabel(); }
+  showError(text: string): void { this.store.setMessage('error', text); }
 
   @HostListener('window:resize')
   handleWorkspaceResize(): void {
@@ -493,7 +575,7 @@ export class WorkflowEditorWorkspacePage extends WorkflowEditorPage implements O
     this.panelRemovalSubscription?.dispose();
     this.layoutSubscription = event.api.onDidLayoutChange(() => {
       this.syncOpenPanels();
-      if (!this.restoringLayout) this.saveWorkspaceLayout();
+      if (!this.restoringLayout && this.workspaceInitialized) this.saveWorkspaceLayout();
     });
     this.panelRemovalSubscription = event.api.onDidRemovePanel((panel) => {
       if (
@@ -504,7 +586,7 @@ export class WorkflowEditorWorkspacePage extends WorkflowEditorPage implements O
         this.scheduleRootCanvasRecovery();
       }
     });
-    this.scheduleWorkspaceInitialization();
+    this.requestWorkspaceInitialization();
   }
 
   openPanel(panelId: OptionalWorkspacePanelId): void {
@@ -556,17 +638,20 @@ export class WorkflowEditorWorkspacePage extends WorkflowEditorPage implements O
     this.saveWorkspaceLayout();
   }
 
-  override ngOnDestroy(): void {
+  ngOnDestroy(): void {
+    this.destroying = true;
     if (this.initializationFrame !== undefined) cancelAnimationFrame(this.initializationFrame);
     this.layoutSubscription?.dispose();
     this.panelRemovalSubscription?.dispose();
-    this.bridge.host = undefined;
-    super.ngOnDestroy();
+    this.workspaceResizeObserver?.disconnect();
+    this.adapter.destroy();
+    this.facade.destroy();
   }
 
-  override loadGraph(graph: Graph): void {
-    super.loadGraph(graph);
-    this.scheduleWorkspaceInitialization();
+  loadGraph(graph: Graph): void {
+    this.facade.loadGraph(graph);
+    void this.adapter.sync({ nodes: this.nodes(), edges: this.edges });
+    this.requestWorkspaceInitialization();
   }
 
   registerCompositeOperator(): void {
@@ -592,52 +677,16 @@ export class WorkflowEditorWorkspacePage extends WorkflowEditorPage implements O
     });
   }
 
-  override openCompositeNodeDocument(nodeId: string): void {
+  openCompositeNodeDocument(nodeId: string): void {
     if (!this.dockviewApi || this.mobile()) return;
     const node = this.nodes().find((item) => item.id === nodeId);
     if (!node) return;
-    const key = `${node.node_code}@${node.node_version}`;
-    const cached = this.exactCompositeVersions.get(key);
-    if (!cached) {
-      if (this.exactCompositeLookups.has(key)) return;
-      this.exactCompositeLookups.add(key);
-      this.workspaceApi
-        .get<Record<string, unknown>>(
-          `/api/v1/operators/${encodeURIComponent(node.node_code)}/versions/${encodeURIComponent(node.node_version)}`,
-        )
-        .subscribe({
-          next: (response) => {
-            this.exactCompositeLookups.delete(key);
-            const metadata = this.exactCompositeVersionMetadata(response, node.node_version);
-            this.exactCompositeVersions.set(key, metadata);
-            if (metadata.executorType === 'composite_workflow' && metadata.workflowVersionId) {
-              this.openResolvedCompositeNodeDocument(nodeId, metadata.workflowVersionId);
-            }
-          },
-          error: () => {
-            this.exactCompositeLookups.delete(key);
-            this.showError('无法读取该复合节点的版本信息，请稍后重试。');
-          },
-        });
-      return;
-    }
-    if (cached.executorType !== 'composite_workflow' || !cached.workflowVersionId) return;
-    this.openResolvedCompositeNodeDocument(nodeId, cached.workflowVersionId);
-  }
-
-  private exactCompositeVersionMetadata(
-    response: Record<string, unknown>,
-    expectedVersion: string,
-  ): { executorType: string; workflowVersionId: number | null } {
-    const rawVersion = (response['version'] || response) as Record<string, unknown>;
-    if (String(rawVersion['version'] || '') !== expectedVersion) {
-      return { executorType: '', workflowVersionId: null };
-    }
-    const workflowVersionId = Number(rawVersion['composite_workflow_version_id']);
-    return {
-      executorType: String(rawVersion['executor_type'] || ''),
-      workflowVersionId: Number.isInteger(workflowVersionId) ? workflowVersionId : null,
-    };
+    this.facade.resolveCompositeVersion(node.node_code, node.node_version).subscribe({
+      next: (metadata) => {
+        if (metadata.executorType === 'composite_workflow' && metadata.workflowVersionId) this.openResolvedCompositeNodeDocument(nodeId, metadata.workflowVersionId);
+      },
+      error: () => this.showError('无法读取该复合节点的版本信息，请稍后重试。'),
+    });
   }
 
   private openResolvedCompositeNodeDocument(nodeId: string, versionId: number): void {
@@ -729,13 +778,15 @@ export class WorkflowEditorWorkspacePage extends WorkflowEditorPage implements O
   }
 
   private saveWorkspaceLayout(): void {
-    if (!this.dockviewApi || this.mobile()) return;
+    if (!this.dockviewApi || this.mobile() || this.destroying || this.restoringLayout || !this.workspaceInitialized || !this.dockviewApi.getPanel(ROOT_CANVAS_PANEL_ID)) return;
     try {
+      const layout = this.dockviewApi.toJSON();
+      if (!isRestorableWorkspaceLayout(layout, ROOT_CANVAS_PANEL_ID)) return;
       const preference: WorkspaceLayoutPreference = {
         schemaVersion: 2,
         userId: this.workspaceAuth.user()?.id ?? 0,
         theme: this.darkWorkspace() ? 'workspace-dark' : 'water-light',
-        layout: this.dockviewApi.toJSON(),
+        layout,
       };
       window.localStorage.setItem(this.preferenceKey(), JSON.stringify(preference));
     } catch {
@@ -756,10 +807,13 @@ export class WorkflowEditorWorkspacePage extends WorkflowEditorPage implements O
       }
       this.restoringLayout = true;
       this.dockviewApi.fromJSON(preference.layout as any);
+      const rootCanvas = this.dockviewApi.getPanel(ROOT_CANVAS_PANEL_ID);
+      if (!rootCanvas) return false;
+      rootCanvas.api.setActive();
       this.darkWorkspace.set(preference.theme === 'workspace-dark');
       this.dockviewTheme.set(this.darkWorkspace() ? themeDark : themeLight);
       window.localStorage.removeItem('smart-water.workflow-editor.docks');
-      return Boolean(this.dockviewApi.getPanel(ROOT_CANVAS_PANEL_ID));
+      return true;
     } catch {
       window.localStorage.removeItem(this.preferenceKey());
       return false;
@@ -822,19 +876,22 @@ export class WorkflowEditorWorkspacePage extends WorkflowEditorPage implements O
     }
   }
 
-  private scheduleWorkspaceInitialization(): void {
+  private requestWorkspaceInitialization(): void {
     if (this.mobile() || this.workspaceInitialized || this.initializationFrame !== undefined)
       return;
-    let attempts = 0;
-    const initialize = () => {
+    this.initializationFrame = requestAnimationFrame(() => {
       this.initializationFrame = undefined;
-      const api = this.dockviewApi;
-      const rect = this.workspaceBody?.nativeElement.getBoundingClientRect();
-      if (!api || !this.graphLoaded() || !rect || rect.width < 1 || rect.height < 1) {
-        if (attempts++ < 120) this.initializationFrame = requestAnimationFrame(initialize);
-        return;
-      }
+      this.initializeWorkspaceIfReady();
+    });
+  }
 
+  private initializeWorkspaceIfReady(): void {
+    if (this.mobile() || this.workspaceInitialized || this.destroying) return;
+    const api = this.dockviewApi;
+    const rect = this.workspaceBody?.nativeElement.getBoundingClientRect();
+    if (!api || !this.graphLoaded() || !rect || rect.width < 1 || rect.height < 1) return;
+
+    try {
       api.layout(Math.floor(rect.width), Math.floor(rect.height), true);
       if (!this.restoreWorkspaceLayout()) {
         api.closeAllGroups();
@@ -843,11 +900,15 @@ export class WorkflowEditorWorkspacePage extends WorkflowEditorPage implements O
       this.workspaceInitialized = true;
       this.syncOpenPanels();
       requestAnimationFrame(() => {
+        if (this.destroying) return;
         this.layoutWorkspace();
         this.refreshEditorViewport();
+        this.saveWorkspaceLayout();
       });
-    };
-    this.initializationFrame = requestAnimationFrame(initialize);
+    } catch {
+      // Dockview may emit ready before its host has completed the first layout pass.
+      this.requestWorkspaceInitialization();
+    }
   }
 
   private layoutWorkspace(): void {

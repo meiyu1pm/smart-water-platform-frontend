@@ -263,7 +263,9 @@ export class WorkflowStarterPage {
   constructor() {
     this.route.queryParamMap.subscribe((params) => {
       const requested = params.get('template');
-      this.datasetVersionId = params.get('dataset_version_id') ? Number(params.get('dataset_version_id')) : null;
+      this.datasetVersionId = params.get('dataset_version_id')
+        ? Number(params.get('dataset_version_id'))
+        : null;
       const found = this.templates().find((item) => item.template_code === requested);
       if (found) this.selected.set(found);
     });
@@ -301,9 +303,11 @@ export class WorkflowStarterPage {
           this.notice.success('草稿已创建。');
           void this.router.navigate(['/workflows', workflow.id, 'edit']);
         },
-        error: () => {
+        error: (error) => {
           this.busy.set(false);
-          this.message.set('创建草稿失败，请检查工作流权限和服务状态。');
+          this.message.set(
+            this.notice.describe(error, '创建草稿失败，请检查工作流权限和服务状态。'),
+          );
         },
       });
   }
