@@ -574,8 +574,13 @@ export interface WorkflowRunSummary {
   finished_at: string | null;
 }
 
+export type WorkflowRunListItem = Omit<
+  WorkflowRunSummary,
+  'input_bindings' | 'parameter_overrides' | 'graph_snapshot'
+>;
+
 export interface WorkflowRunPage {
-  items: WorkflowRunSummary[];
+  items: WorkflowRunListItem[];
   page: number;
   page_size: number;
   total: number;
