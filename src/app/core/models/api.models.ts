@@ -547,6 +547,78 @@ export interface CsvImportMapping {
   auto_quality_profile?: boolean;
 }
 
+/** A heterogeneous business data collection. This API is additive to the legacy dataset assets. */
+export interface DataCollectionSummary {
+  id: number;
+  name: string;
+  description: string | null;
+  item_count: number;
+  file_count: number;
+  storage_bytes: number;
+  parse_issue_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export type DataFileKind =
+  'table' | 'topology' | 'spatial' | 'device_catalog' | 'event_log' | 'document' | 'other' | string;
+
+export interface DataFileVersionSummary {
+  id: string;
+  file_id: number;
+  version: string;
+  status: string;
+  sha256: string;
+  size_bytes: number;
+  row_count: number | null;
+  profile_status?: 'pending' | 'running' | 'ready' | 'failed' | string;
+  created_at: string;
+}
+
+export interface DataFileSummary {
+  id: number;
+  collection_id: number;
+  name: string;
+  file_kind: DataFileKind;
+  format: string;
+  status: string;
+  version_count: number;
+  current_version_id: string | null;
+  current_version?: DataFileVersionSummary | null;
+  size_bytes: number;
+  parse_issue_count?: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DataFileColumnPreview {
+  name: string;
+  inferred_type: string;
+  nullable: boolean;
+  sample_values: string[];
+  warnings: string[];
+}
+
+export interface DataFilePreview {
+  file_version_id: string;
+  columns: DataFileColumnPreview[];
+  rows: Array<Record<string, unknown>>;
+  total_rows: number | null;
+  truncated: boolean;
+  preview_limit: number;
+}
+
+export type DataFileViewOutputMode = 'table' | 'timeseries';
+
+export interface DataFileView {
+  file_version_id: string;
+  output_mode: DataFileViewOutputMode;
+  selected_columns?: string[];
+  time_column?: string;
+  value_column?: string;
+  point_column?: string;
+}
+
 export type QueryValue = string | number | boolean | null | undefined;
 
 export interface WorkflowRunSummary {

@@ -20,8 +20,7 @@ export const routes: Routes = [
       },
       {
         path: 'scenes',
-        loadComponent: () =>
-          import('./features/scenes/scenes.page').then((m) => m.ScenesPage),
+        loadComponent: () => import('./features/scenes/scenes.page').then((m) => m.ScenesPage),
         canActivate: [permissionGuard],
         data: { permission: 'workflow:read' },
       },
@@ -29,6 +28,15 @@ export const routes: Routes = [
         path: 'data-sources',
         loadComponent: () =>
           import('./features/data-sources/data-sources.page').then((m) => m.DataSourcesPage),
+        canActivate: [permissionGuard],
+        data: { permission: 'data_source:read' },
+      },
+      {
+        path: 'data-collections',
+        loadComponent: () =>
+          import('./features/data-sources/data-collections.page').then(
+            (m) => m.DataCollectionsPage,
+          ),
         canActivate: [permissionGuard],
         data: { permission: 'data_source:read' },
       },
