@@ -6,6 +6,7 @@ import { AngularPlugin, Presets as AngularPresets } from 'rete-angular-plugin/21
 import { Edge, EditorNode } from './workflow-editor.models';
 import { WorkflowCommandBus } from './workflow-command-bus';
 import { WorkflowEditorStore } from './workflow-editor-store';
+import { NodeRendererRegistry } from './node-renderers/node-renderer-registry';
 
 /**
  * 架构边界：上游是 Workspace 的 DOM 宿主和 Store 快照，下游是 Rete 画布事件/渲染。
@@ -24,7 +25,7 @@ export class ReteWorkflowAdapter {
   private nodePickedHandler?: (id: string) => void;
   private mountGeneration = 0;
 
-  constructor(private readonly injector: Injector, private readonly commands: WorkflowCommandBus, private readonly store: WorkflowEditorStore) {}
+  constructor(private readonly injector: Injector, private readonly commands: WorkflowCommandBus, private readonly store: WorkflowEditorStore, private readonly renderers: NodeRendererRegistry) {}
 
   async mount(host: HTMLDivElement, snapshot: { nodes: EditorNode[]; edges: Edge[] }, options: { editable?: boolean; onNodePicked?: (id: string) => void } = {}): Promise<void> {
     if (this.editor && this.host === host) { this.editable = options.editable ?? this.editable; await this.syncIncremental(snapshot); return; }
@@ -32,7 +33,7 @@ export class ReteWorkflowAdapter {
     this.destroySurface(); this.host = host; this.editable = options.editable ?? true; host.replaceChildren();
     this.editor = new NodeEditor(); this.area = new AreaPlugin(host); this.selection = AreaExtensions.selector();
     const connection = new ConnectionPlugin(); connection.addPreset(ConnectionPresets.classic.setup());
-    const render = new AngularPlugin({ injector: this.injector }); render.addPreset(AngularPresets.classic.setup() as any);
+    const render = new AngularPlugin({ injector: this.injector }); render.addPreset(AngularPresets.classic.setup({ customize: { node: (context: any) => this.renderers.resolve(this.rendererKey(context?.data?.payload)) } }) as any);
     this.editor.use(this.area); this.area.use(render as any); this.area.use(connection);
     const wasHydrating = this.hydrating;
     this.hydrating = true;
@@ -63,6 +64,7 @@ export class ReteWorkflowAdapter {
     for (const port of item.definition?.input_ports ?? []) node.addInput(port.key, new ClassicPreset.Input(new ClassicPreset.Socket(port.data_type), port.label, Boolean(port.required)));
     for (const port of item.definition?.output_ports ?? []) node.addOutput(port.key, new ClassicPreset.Output(new ClassicPreset.Socket(port.data_type), port.label));
     (node as any).id = item.id; (node as any).__backendId = item.id;
+    (node as any).data = this.displayData(item);
     await editor.addNode(node);
     if (expectedGeneration !== this.mountGeneration || editor !== this.editor || area !== this.area) return;
     this.reteNodes.set(item.id, node); await area.translate(node.id, { x: item.x, y: item.y });
@@ -101,7 +103,7 @@ export class ReteWorkflowAdapter {
     await selectable.select(node.id, false);
   }
   async fitView(): Promise<void> { if (this.area && this.editor) await AreaExtensions.zoomAt(this.area, this.editor.getNodes()); }
-  setNodeData(id: string, data: Record<string, unknown>): void { const node = this.reteNodes.get(id); if (node) node.data = data; }
+  setNodeData(id: string, data: Record<string, unknown>): void { const node = this.reteNodes.get(id); if (node) node.data = { ...(node.data || {}), parameters: data }; }
   private async addConnection(edge: Edge, expectedGeneration = this.mountGeneration): Promise<boolean> {
     const editor = this.editor;
     if (!editor || expectedGeneration !== this.mountGeneration) return false; const source = this.reteNodes.get(edge.source.node_id); const target = this.reteNodes.get(edge.target.node_id);
@@ -118,6 +120,19 @@ export class ReteWorkflowAdapter {
       if (context.type === 'nodetranslate') this.commands.moveNode(String(context.data.id), Number(context.data.position?.x ?? 0), Number(context.data.position?.y ?? 0));
       return context;
     });
+  }
+  private rendererKey(payload: any): string | null { return String(payload?.data?.renderer_key || payload?.data?.rendererKey || payload?.renderer_key || '') || null; }
+  private displayData(item: EditorNode): Record<string, unknown> {
+    const binding = this.store.bindings().get(item.id) as any;
+    const selection = this.store.bindingSelections().get(item.id) as any;
+    return {
+      label: item.definition?.node_name ?? item.node_code,
+      renderer_key: item.definition?.renderer_key ?? null,
+      fileName: binding?.file_name ?? selection?.file?.name ?? '',
+      version: binding?.version ?? selection?.version?.version ?? '',
+      outputMode: binding?.output_mode ?? item.parameters?.['output_mode'] ?? '',
+      columnSummary: binding?.view_summary ?? selection?.view?.summary ?? '',
+    };
   }
   private isActiveMount(generation: number, host: HTMLDivElement): boolean { return generation === this.mountGeneration && host === this.host; }
   private destroySurface(): void { this.area?.destroy(); this.editor = undefined; this.area = undefined; this.selection = undefined; this.host = undefined; this.hydrating = false; this.reteNodes.clear(); }

@@ -12,10 +12,13 @@ import {
 import { FormsModule } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
 import { RouterLink } from '@angular/router';
+import { Subscription } from 'rxjs';
 
-import { DataAssetSelection, ModelVersionSummary } from '../../core/models/api.models';
+import { DataAssetSelection, DataCollectionSummary, DataFileSummary, DataFileVersionSummary, DataFileView, DataFileViewCreate, ModelVersionSummary } from '../../core/models/api.models';
 import { ApiClient } from '../../core/services/api-client.service';
+import { DataFileService } from '../../core/services/data-file.service';
 import { DataAssetPickerComponent } from '../../shared/components/data-asset-picker.component';
+import { DataFilePreviewPanelComponent } from '../data-sources/data-file-preview-panel.component';
 import { OperatorNameService } from '../../core/services/operator-name.service';
 import {
   OperatorParameterFormComponent,
@@ -357,6 +360,7 @@ export class WorkflowCanvasPanelComponent implements AfterViewInit, OnDestroy {
     MatButtonModule,
     RouterLink,
     DataAssetPickerComponent,
+    DataFilePreviewPanelComponent,
     OperatorParameterFormComponent,
   ],
   template: `
@@ -468,6 +472,39 @@ export class WorkflowCanvasPanelComponent implements AfterViewInit, OnDestroy {
           (parametersChange)="facade.setParameters(node.id, $event)"
           (validityChange)="facade.setParameterValidity(node.id, $event)"
         />
+        @if (dataFileNode(); as dataNode) {
+          <section class="runtime-binding data-file-binding">
+            <h3>数据文件输入</h3>
+            <p>选择文件版本，并通过预览表头创建固定的表格或时序输出视图。</p>
+            <label>数据集合
+              <select [ngModel]="selectedCollectionId()" (ngModelChange)="onCollectionChange($event)">
+                <option [ngValue]="null">请选择集合</option>
+                @for (collection of dataCollections(); track collection.id) {
+                  <option [ngValue]="collection.id">{{ collection.name }}</option>
+                }
+              </select>
+            </label>
+            <label>数据文件
+              <select [ngModel]="selectedFileId()" (ngModelChange)="onFileChange($event)" [disabled]="!dataFiles().length">
+                <option [ngValue]="null">请选择文件</option>
+                @for (file of dataFiles(); track file.id) {
+                  <option [ngValue]="file.id">{{ file.name }}</option>
+                }
+              </select>
+            </label>
+            <label>文件版本
+              <select [ngModel]="selectedFileVersionId()" (ngModelChange)="onVersionChange($event)" [disabled]="!dataFileVersions().length">
+                <option [ngValue]="null">请选择版本</option>
+                @for (version of dataFileVersions(); track version.id) {
+                  <option [ngValue]="version.id">{{ version.version }} · {{ version.status }}</option>
+                }
+              </select>
+            </label>
+            @if (selectedFileVersionId()) {
+              <app-data-file-preview-panel [fileVersionId]="selectedFileVersionId()" (viewChange)="onDataFileViewChange($event)" />
+            }
+          </section>
+        }
         @if (selectedDataBinding(); as binding) {
           <section class="runtime-binding">
             <h3>运行数据绑定</h3>
@@ -644,16 +681,27 @@ export class WorkflowCanvasPanelComponent implements AfterViewInit, OnDestroy {
     }
   `,
 })
-export class NodeInspectorPanelComponent {
+export class NodeInspectorPanelComponent implements OnDestroy {
   readonly store = inject(WorkflowEditorStore);
   readonly facade = inject(WorkflowEditorFacade);
   readonly operatorNames = inject(OperatorNameService);
   private readonly api = inject(ApiClient);
+  private readonly files = inject(DataFileService);
+  private readonly rete = inject(ReteWorkflowAdapter);
+  private readonly subscriptions: Subscription[] = [];
 
   readonly availableModels = signal<ModelVersionSummary[]>([]);
   readonly loadingModels = signal(false);
+  readonly dataCollections = signal<DataCollectionSummary[]>([]);
+  readonly dataFiles = signal<DataFileSummary[]>([]);
+  readonly dataFileVersions = signal<DataFileVersionSummary[]>([]);
+  readonly selectedCollectionId = signal<number | null>(null);
+  readonly selectedFileId = signal<number | null>(null);
+  readonly selectedFileVersionId = signal<number | null>(null);
+  private dataCollectionsLoaded = false;
+  readonly dataFileNode = computed(() => { const node = this.store.selectedNode(); return node?.node_code === 'data_file_input_v1' ? node : null; });
   private lastFetchedCode: string | null = null;
-  readonly selectedDataBinding = computed(() => { this.store.bindingRevision(); const node = this.store.selectedNode(); if (!node || !['dataset_channel_v1', 'dataset_asset_v1'].includes(node.node_code)) return null; return { id: node.id, selection: this.store.bindingSelections().get(node.id) ?? null, wholeAsset: node.node_code === 'dataset_asset_v1' }; });
+  readonly selectedDataBinding = computed(() => { this.store.bindingRevision(); const node = this.store.selectedNode(); if (!node || !['dataset_channel_v1', 'dataset_asset_v1'].includes(node.node_code)) return null; return { id: node.id, selection: this.store.bindingSelections().get(node.id) as DataAssetSelection | null, wholeAsset: node.node_code === 'dataset_asset_v1' }; });
 
   constructor() {
     effect(() => {
@@ -673,7 +721,52 @@ export class NodeInspectorPanelComponent {
         this.availableModels.set([]);
       }
     });
+    effect(() => {
+      const node = this.dataFileNode();
+      if (node) {
+        const binding = this.store.bindings().get(node.id);
+        if (binding?.kind === 'data_file') {
+          this.selectedFileVersionId.set(binding.file_version_id);
+          this.selectedFileId.set(null);
+        }
+        if (!this.dataCollectionsLoaded) this.loadCollections();
+      }
+    });
   }
+
+  ngOnDestroy(): void { this.subscriptions.forEach((subscription) => subscription.unsubscribe()); }
+
+  onCollectionChange(value: string): void {
+    const id = Number(value); this.selectedCollectionId.set(Number.isInteger(id) ? id : null); this.dataFiles.set([]); this.dataFileVersions.set([]); this.selectedFileId.set(null); this.selectedFileVersionId.set(null);
+    if (Number.isInteger(id)) this.subscriptions.push(this.files.listFiles(id).subscribe({ next: (items) => this.dataFiles.set(items), error: () => this.dataFiles.set([]) }));
+  }
+
+  onFileChange(value: string): void {
+    const id = Number(value); this.selectedFileId.set(Number.isInteger(id) ? id : null); this.dataFileVersions.set([]); this.selectedFileVersionId.set(null);
+    if (Number.isInteger(id)) this.subscriptions.push(this.files.listFileVersions(id).subscribe({ next: (items) => this.dataFileVersions.set(items), error: () => this.dataFileVersions.set([]) }));
+  }
+
+  onVersionChange(value: string): void { const id = Number(value); this.selectedFileVersionId.set(Number.isInteger(id) ? id : null); }
+
+  onDataFileViewChange(view: DataFileView): void {
+    const node = this.dataFileNode(); const versionId = this.selectedFileVersionId();
+    if (!node || !versionId) return;
+    const payload: DataFileViewCreate = { output_mode: view.output_mode, ...(view.selected_columns ? { selected_columns: view.selected_columns } : {}), ...(view.time_column ? { time_column: view.time_column } : {}), ...(view.value_column ? { value_column: view.value_column } : {}), ...(view.point_column ? { point_column: view.point_column } : {}) };
+    this.subscriptions.push(this.files.createView(versionId, payload).subscribe({
+      next: (created) => {
+        const file = this.dataFiles().find((item) => item.id === this.selectedFileId()) || undefined;
+        const version = this.dataFileVersions().find((item) => item.id === versionId) || undefined;
+        const binding = { kind: 'data_file' as const, file_version_id: versionId, data_view_id: Number(created.id), output_mode: view.output_mode, ...(file?.name ? { file_name: file.name } : {}), ...(version?.version ? { version: version.version } : {}), view_summary: this.viewSummary(view) };
+        this.facade.setDataFileBinding(node.id, binding, view.output_mode);
+        this.facade.setParameter(node.id, 'output_mode', view.output_mode);
+        this.rete.setNodeData(node.id, { fileName: file?.name || '', version: version?.version || '', outputMode: view.output_mode, columnSummary: binding.view_summary });
+      },
+      error: () => this.store.setMessage('error', '数据视图创建失败，请检查列映射后重试。'),
+    }));
+  }
+
+  private loadCollections(): void { this.dataCollectionsLoaded = true; this.subscriptions.push(this.files.listCollections().subscribe({ next: (items) => this.dataCollections.set(items), error: () => { this.dataCollections.set([]); this.dataCollectionsLoaded = false; } })); }
+  private viewSummary(view: DataFileView): string { return view.output_mode === 'table' ? (view.selected_columns || []).join('、') : [view.time_column, view.value_column, view.point_column].filter(Boolean).join(' → '); }
 
   requiresModel(node: EditorNode): boolean {
     if (node.node_code === 'seasonal_robust_anomaly') return true;

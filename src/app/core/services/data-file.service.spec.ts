@@ -28,24 +28,28 @@ describe('DataFileService', () => {
     const service = TestBed.inject(DataFileService);
     service.listCollections().subscribe();
     service.listFiles(4).subscribe();
-    service.getPreview('version/a', 25).subscribe();
+    service.listFileVersions(9).subscribe();
+    service.getPreview(7, 25).subscribe();
     service
-      .createView({
-        file_version_id: 'version/a',
+      .createView(7, {
+        file_version_id: 7,
         output_mode: 'table',
         selected_columns: ['flow'],
       })
       .subscribe();
+    service.getView(31).subscribe();
 
     expect(calls).toEqual([
       { method: 'GET', path: '/api/v1/data-collections' },
       { method: 'GET', path: '/api/v1/data-collections/4/files' },
-      { method: 'GET', path: '/api/v1/data-file-versions/version%2Fa/preview' },
+      { method: 'GET', path: '/api/v1/data-files/9/versions' },
+      { method: 'GET', path: '/api/v1/data-file-versions/7/preview' },
       {
         method: 'POST',
-        path: '/api/v1/data-views',
-        body: { file_version_id: 'version/a', output_mode: 'table', selected_columns: ['flow'] },
+        path: '/api/v1/data-file-versions/7/views',
+        body: { file_version_id: 7, output_mode: 'table', selected_columns: ['flow'] },
       },
+      { method: 'GET', path: '/api/v1/data-views/31' },
     ]);
   });
 });

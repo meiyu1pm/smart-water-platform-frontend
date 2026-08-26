@@ -5,7 +5,9 @@ import {
   DataCollectionSummary,
   DataFilePreview,
   DataFileSummary,
+  DataFileVersionSummary,
   DataFileView,
+  DataFileViewCreate,
 } from '../models/api.models';
 import { ApiClient } from './api-client.service';
 
@@ -36,22 +38,33 @@ export class DataFileService {
     return this.api.get<DataFileSummary>(`/api/v1/data-files/${fileId}`);
   }
 
+  listFileVersions(fileId: number): Observable<DataFileVersionSummary[]> {
+    return this.api.get<DataFileVersionSummary[]>(`/api/v1/data-files/${fileId}/versions`);
+  }
+
   uploadFile(collectionId: number, file: File, name?: string): Observable<DataFileSummary> {
     const form = new FormData();
     form.append('collection_id', String(collectionId));
     form.append('file', file, file.name);
     if (name?.trim()) form.append('name', name.trim());
-    return this.api.post<DataFileSummary, FormData>('/api/v1/data-files', form);
+    return this.api.post<DataFileSummary, FormData>('/api/v1/data-files/uploads', form);
   }
 
-  getPreview(versionId: string, limit = 50): Observable<DataFilePreview> {
+  getPreview(versionId: number, limit = 50): Observable<DataFilePreview> {
     return this.api.get<DataFilePreview>(
       `/api/v1/data-file-versions/${encodeURIComponent(versionId)}/preview`,
-      { limit },
+      { max_rows: limit },
     );
   }
 
-  createView(view: DataFileView): Observable<DataFileView> {
-    return this.api.post<DataFileView, DataFileView>('/api/v1/data-views', view);
+  createView(versionId: number, view: DataFileViewCreate): Observable<DataFileView> {
+    return this.api.post<DataFileView, DataFileViewCreate>(
+      `/api/v1/data-file-versions/${versionId}/views`,
+      view,
+    );
+  }
+
+  getView(viewId: number): Observable<DataFileView> {
+    return this.api.get<DataFileView>(`/api/v1/data-views/${viewId}`);
   }
 }

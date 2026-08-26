@@ -7,7 +7,7 @@ import { DataFilePreviewPanelComponent } from './data-file-preview-panel.compone
 
 describe('DataFilePreviewPanelComponent', () => {
   const preview = {
-    file_version_id: 'v1',
+    file_version_id: 1,
     columns: [
       { name: 'time', inferred_type: 'datetime', nullable: false, sample_values: [], warnings: [] },
       { name: 'flow', inferred_type: 'number', nullable: false, sample_values: [], warnings: [] },
@@ -30,7 +30,7 @@ describe('DataFilePreviewPanelComponent', () => {
 
   it('loads a bounded preview and emits a table view', () => {
     const fixture = TestBed.createComponent(DataFilePreviewPanelComponent);
-    fixture.componentRef.setInput('fileVersionId', 'v1');
+    fixture.componentRef.setInput('fileVersionId', 1);
     const emitted: unknown[] = [];
     fixture.componentInstance.viewChange.subscribe((value) => emitted.push(value));
     fixture.detectChanges();
@@ -39,13 +39,13 @@ describe('DataFilePreviewPanelComponent', () => {
     fixture.componentInstance.selectColumn('flow');
     fixture.componentInstance.apply();
     expect(emitted).toEqual([
-      { file_version_id: 'v1', output_mode: 'table', selected_columns: ['time'] },
+      { file_version_id: 1, output_mode: 'table', selected_columns: ['time'] },
     ]);
   });
 
   it('requires both time and value columns for timeseries output', () => {
     const fixture = TestBed.createComponent(DataFilePreviewPanelComponent);
-    fixture.componentRef.setInput('fileVersionId', 'v1');
+    fixture.componentRef.setInput('fileVersionId', 1);
     fixture.detectChanges();
     const component = fixture.componentInstance;
     component.setMode('timeseries');

@@ -1,6 +1,6 @@
 import { Injectable } from '@angular/core';
 import { DataAssetSelection } from '../../core/models/api.models';
-import { Definition, Edge, EditorNode, Graph, StoredBinding } from './workflow-editor.models';
+import { DataFileBinding, Definition, Edge, EditorNode, Graph, StoredBinding } from './workflow-editor.models';
 import { WorkflowEditorStore } from './workflow-editor-store';
 
 /**
@@ -28,10 +28,15 @@ export class WorkflowCommandBus {
   setParameters(id: string, parameters: Record<string, unknown>): void { if (JSON.stringify(this.store.nodes().find((n) => n.id === id)?.parameters) === JSON.stringify(parameters)) return; this.commit(() => this.store.nodes.update((items) => items.map((n) => n.id === id ? { ...n, parameters: { ...parameters } } : n))); }
   setParameterValidity(id: string, valid: boolean): void { const next = new Set(this.store.invalidParameterNodes()); if (valid) next.delete(id); else next.add(id); this.store.setInvalidParameterNodes(next); }
   toggleOutput(nodeId: string, port: string): void { this.commit(() => this.store.outputs.update((items) => items.some((o) => o.node_id === nodeId && o.port === port) ? items.filter((o) => !(o.node_id === nodeId && o.port === port)) : [...items, { node_id: nodeId, port }])); }
-  setBinding(nodeId: string, binding: StoredBinding | null, selection: DataAssetSelection | null): void { this.commit(() => { this.store.bindings.update((items) => { const next = new Map(items); if (binding) next.set(nodeId, binding); else next.delete(nodeId); return next; }); this.store.bindingSelections.update((items) => { const next = new Map(items); if (selection) next.set(nodeId, selection); else next.delete(nodeId); return next; }); this.store.setBindingRevision(); }); }
+  setBinding(nodeId: string, binding: StoredBinding | null, selection: DataAssetSelection | DataFileBinding | null): void { this.commit(() => { this.store.bindings.update((items) => { const next = new Map(items); if (binding) next.set(nodeId, binding); else next.delete(nodeId); return next; }); this.store.bindingSelections.update((items) => { const next = new Map(items); if (selection) next.set(nodeId, selection); else next.delete(nodeId); return next; }); this.store.setBindingRevision(); }); }
+  /** 数据文件输出模式切换时移除不再存在的固定输出端口连接。 */
+  clearInactiveDataFileEdges(nodeId: string, outputMode: 'table' | 'timeseries'): void {
+    const activePort = outputMode === 'table' ? 'table' : 'series';
+    this.commit(() => this.store.edges.update((items) => items.filter((edge) => edge.source.node_id !== nodeId || edge.source.port === activePort)));
+  }
   undo(): void { const previous = this.undoStack.pop(); if (!previous) return; this.redoStack.push(this.snapshot()); this.restore(previous, true); this.store.historyIndex.update((index) => Math.max(0, index - 1)); }
   redo(): void { const next = this.redoStack.pop(); if (!next) return; this.undoStack.push(this.snapshot()); this.restore(next, true); this.store.historyIndex.update((index) => index + 1); }
   private recordHistory(): void { const snapshot: Graph = { contract_version: '1.0', nodes: this.store.nodes().map((node) => ({ id: node.id, node_code: node.node_code, node_version: node.node_version, parameters: node.parameters, ui: { position: { x: node.x, y: node.y }, collapsed: node.collapsed } })), edges: this.store.edges(), outputs: this.store.outputs(), bindings: Object.fromEntries(this.store.bindings()) }; const history = this.store.history().slice(0, this.store.historyIndex() + 1); history.push(snapshot); this.store.setHistory(history.slice(-50), Math.min(history.length - 1, 49)); }
   private restore(value: EditorSnapshot, dirty: boolean): void { this.store.setNodes(value.nodes); this.store.setEdges(value.edges); this.store.setOutputs(value.outputs); this.store.setBindings(new Map(Object.entries(value.bindings))); this.store.setBindingSelections(new Map(Object.entries(value.bindingSelections))); this.store.setInvalidParameterNodes(new Set(value.invalidParameterNodes)); if (dirty) { this.store.autosaveState.set('dirty'); this.store.resetTransientValidation(); this.dirtyHook?.(); } }
 }
-export interface EditorSnapshot { nodes: EditorNode[]; edges: Edge[]; outputs: Array<{ node_id: string; port: string }>; bindings: Record<string, StoredBinding>; bindingSelections: Record<string, DataAssetSelection>; invalidParameterNodes: string[]; }
+export interface EditorSnapshot { nodes: EditorNode[]; edges: Edge[]; outputs: Array<{ node_id: string; port: string }>; bindings: Record<string, StoredBinding>; bindingSelections: Record<string, DataAssetSelection | DataFileBinding>; invalidParameterNodes: string[]; }

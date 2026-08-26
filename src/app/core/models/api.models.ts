@@ -564,7 +564,7 @@ export type DataFileKind =
   'table' | 'topology' | 'spatial' | 'device_catalog' | 'event_log' | 'document' | 'other' | string;
 
 export interface DataFileVersionSummary {
-  id: string;
+  id: number;
   file_id: number;
   version: string;
   status: string;
@@ -583,7 +583,7 @@ export interface DataFileSummary {
   format: string;
   status: string;
   version_count: number;
-  current_version_id: string | null;
+  current_version_id: number | null;
   current_version?: DataFileVersionSummary | null;
   size_bytes: number;
   parse_issue_count?: number;
@@ -600,7 +600,7 @@ export interface DataFileColumnPreview {
 }
 
 export interface DataFilePreview {
-  file_version_id: string;
+  file_version_id: number;
   columns: DataFileColumnPreview[];
   rows: Array<Record<string, unknown>>;
   total_rows: number | null;
@@ -610,13 +610,21 @@ export interface DataFilePreview {
 
 export type DataFileViewOutputMode = 'table' | 'timeseries';
 
-export interface DataFileView {
-  file_version_id: string;
+export interface DataFileViewCreate {
+  /** 预览组件携带的上下文；创建接口使用路径中的版本 ID。 */
+  file_version_id?: number;
   output_mode: DataFileViewOutputMode;
   selected_columns?: string[];
   time_column?: string;
   value_column?: string;
   point_column?: string;
+}
+
+export interface DataFileView extends DataFileViewCreate {
+  id: number;
+  file_version_id: number;
+  created_at?: string;
+  name?: string | null;
 }
 
 export type QueryValue = string | number | boolean | null | undefined;

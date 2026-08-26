@@ -309,7 +309,8 @@ export class DataFilePreviewPanelComponent implements OnChanges, OnDestroy {
   private request?: Subscription;
   private requestGeneration = 0;
 
-  @Input() fileVersionId: string | null = null;
+  @Input() fileVersionId: number | null = null;
+  // 旧数据资产页仍消费 DataFileView 类型；事件实际只发 create payload，不包含响应 ID。
   @Output() readonly viewChange = new EventEmitter<DataFileView>();
 
   readonly preview = signal<DataFilePreview | null>(null);
@@ -392,7 +393,7 @@ export class DataFilePreviewPanelComponent implements OnChanges, OnDestroy {
             value_column: this.valueColumn(),
             ...(this.pointColumn() ? { point_column: this.pointColumn() } : {}),
           }),
-    });
+    } as DataFileView);
   }
 
   displayValue(value: unknown): string {
