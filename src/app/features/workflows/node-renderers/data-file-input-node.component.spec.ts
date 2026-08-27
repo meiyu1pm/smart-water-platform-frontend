@@ -66,17 +66,22 @@ describe('DataFileInputNodeComponent', () => {
     expect(fixture.nativeElement.textContent).toContain('colA');
   });
 
-  it('renders SVG sparkline preview when outputMode is timeseries', () => {
+  it('renders ECharts timeseries preview when outputMode is timeseries', () => {
     fixture.componentRef.setInput('data', {
       fileName: 'stream.csv',
       outputMode: 'timeseries',
       data: {
         valueColumn: 'pressure',
-        sampleRows: [{ pressure: 10 }, { pressure: 20 }, { pressure: 15 }],
+        timeColumn: 'record_time',
+        sampleRows: [
+          { record_time: '2026-01-01T00:00:00Z', pressure: 10 },
+          { record_time: '2026-01-01T00:15:00Z', pressure: 20 },
+        ],
       },
     });
     fixture.detectChanges();
-    expect(fixture.nativeElement.querySelector('.sparkline-svg')).not.toBeNull();
+    expect(fixture.nativeElement.querySelector('.series-preview')).not.toBeNull();
+    expect(fixture.nativeElement.querySelector('.chart-host')).not.toBeNull();
     expect(fixture.nativeElement.querySelector('.resize-handle')).not.toBeNull();
   });
 

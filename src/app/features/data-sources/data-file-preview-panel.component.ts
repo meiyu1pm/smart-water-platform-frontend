@@ -241,29 +241,45 @@ export interface DataFileBindingEcho {
       color: #0369a1;
       font-weight: 600;
     }
-    /* 顶部滚动条轨道 */
+    /* 顶部滚动条轨道：完整高度展示，防止被截断 */
     .top-scrollbar-track {
       width: 100%;
-      height: 10px;
+      height: 16px;
       overflow-x: auto;
       overflow-y: hidden;
       background: #f8fafc;
-      border: 1px solid #e2e8f0;
+      border: 1px solid #cbd5e1;
       border-bottom: none;
       border-radius: 6px 6px 0 0;
+      scrollbar-width: thin;
+    }
+    .top-scrollbar-track::-webkit-scrollbar {
+      height: 12px;
+    }
+    .top-scrollbar-track::-webkit-scrollbar-track {
+      background: #f1f5f9;
+    }
+    .top-scrollbar-track::-webkit-scrollbar-thumb {
+      background: #94a3b8;
+      border-radius: 6px;
+      border: 2px solid #f1f5f9;
     }
     .top-scrollbar-thumb {
       height: 1px;
     }
-    /* 表格滚动容器：固定 6 行高度 (约 220px)，表头 sticky */
+    /* 表格滚动容器：固定 6 行高度 (约 220px)，表头 sticky，隐藏下方重复的横向滚动条 */
     .table-scroll {
       max-width: 100%;
       max-height: 220px;
       overflow-x: auto;
       overflow-y: auto;
-      border: 1px solid #e2e8f0;
+      border: 1px solid #cbd5e1;
       border-radius: 0 0 6px 6px;
       background: #ffffff;
+    }
+    .table-scroll::-webkit-scrollbar:horizontal {
+      display: none;
+      height: 0;
     }
     table {
       width: max-content;
@@ -566,7 +582,7 @@ export class DataFilePreviewPanelComponent
         this.loading.set(false);
         this.previewLoaded.emit({
           preview: value,
-          sampleRows: (value.rows || []).slice(0, 10),
+          sampleRows: value.rows || [],
         });
       },
       error: () => {

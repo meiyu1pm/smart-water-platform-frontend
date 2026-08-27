@@ -1123,6 +1123,34 @@ export class NodeInspectorPanelComponent implements OnDestroy {
               error: () => this.dataFileVersions.set([version]),
             }),
           );
+
+          // Fetch preview rows so canvas node can render ECharts immediately
+          this.subscriptions.push(
+            this.files.getPreview(version.id).subscribe({
+              next: (preview) => {
+                const node = this.dataFileNode();
+                if (node) {
+                  const b = this.store.bindings().get(node.id);
+                  let timeCol = '';
+                  let valCol = '';
+                  if (b?.kind === 'data_file' && b.view_summary) {
+                    const parts = b.view_summary.split(' → ').map((s) => s.trim());
+                    if (parts[0]) timeCol = parts[0];
+                    if (parts[1]) valCol = parts[1];
+                  }
+                  const prev = this.rete.getNodeData(node.id) || {};
+                  this.rete.setNodeData(node.id, {
+                    ...prev,
+                    sampleRows: preview.rows || [],
+                    columns: preview.columns.map((c) => c.name),
+                    timeColumn: timeCol || (prev['timeColumn'] as string) || '',
+                    valueColumn: valCol || (prev['valueColumn'] as string) || '',
+                  });
+                }
+              },
+            }),
+          );
+
           this.subscriptions.push(
             this.files.listCollections().subscribe({
               next: (collections) => {
@@ -1138,6 +1166,13 @@ export class NodeInspectorPanelComponent implements OnDestroy {
                         const node = this.dataFileNode();
                         if (node) {
                           const b = this.store.bindings().get(node.id);
+                          let timeCol = '';
+                          let valCol = '';
+                          if (b?.kind === 'data_file' && b.view_summary) {
+                            const parts = b.view_summary.split(' → ').map((s) => s.trim());
+                            if (parts[0]) timeCol = parts[0];
+                            if (parts[1]) valCol = parts[1];
+                          }
                           const prev = this.rete.getNodeData(node.id) || {};
                           this.rete.setNodeData(node.id, {
                             ...prev,
@@ -1151,6 +1186,8 @@ export class NodeInspectorPanelComponent implements OnDestroy {
                                   'table',
                             columnSummary:
                               b?.kind === 'data_file' ? b.view_summary : '',
+                            timeColumn: timeCol || (prev['timeColumn'] as string) || '',
+                            valueColumn: valCol || (prev['valueColumn'] as string) || '',
                           });
                         }
                       }

@@ -1,14 +1,26 @@
-import { Component, Input, OnChanges } from '@angular/core';
+import {
+  AfterViewInit,
+  Component,
+  ElementRef,
+  Input,
+  OnChanges,
+  OnDestroy,
+  SimpleChanges,
+  ViewChild,
+  signal,
+} from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RefDirective } from 'rete-angular-plugin/21';
+import * as echarts from 'echarts';
 
 /**
  * 数据文件输入节点的专属富媒体卡片渲染器。
  * 特性：
- * 1. 右下角支持拖拽自由缩放节点卡片大小；
+ * 1. 右下角支持拖拽自由实时缩放节点卡片大小（通过 PointerCapture 与 Signal 实时平滑重绘）；
  * 2. 动态单输出端口联动（表格输出暴露 table 端口，时序输出暴露 series 端口）；
- * 3. 内嵌自适应实时数据预览：表格模式展示 Mini 表格网格，时序模式展示 SVG 趋势曲线波形；
- * 4. 采用 Rete 原生 RefDirective 确保连线插槽坐标与拖拽自适应更新。
+ * 3. 内嵌真实时序时间轴曲线图（ECharts 驱动，支持鼠标滚轮缩放时间轴长度与下方滑块区间缩放）；
+ * 4. 内嵌表格模式 Mini 表格网格；
+ * 5. 采用 Rete 原生 RefDirective 确保连线插槽坐标与拖拽自适应更新。
  */
 @Component({
   selector: 'app-data-file-input-node',
@@ -17,16 +29,14 @@ import { RefDirective } from 'rete-angular-plugin/21';
   host: {
     'data-testid': 'node',
     '[class.selected]': 'data?.selected',
-    '[style.width.px]': 'currentWidth()',
-    '[style.height.px]': 'currentHeight()',
   },
   template: `
     <div
       class="custom-node-card"
       data-testid="node"
       [class.selected]="data?.selected"
-      [style.width.px]="currentWidth()"
-      [style.height.px]="currentHeight()"
+      [style.width.px]="nodeWidth()"
+      [style.height.px]="nodeHeight()"
     >
       <!-- 头部：算子标识与文件名 -->
       <header class="node-header">
@@ -44,7 +54,7 @@ import { RefDirective } from 'rete-angular-plugin/21';
       <!-- 已绑定数据时的状态与摘要 -->
       <div class="node-meta" *ngIf="fileName()">
         <div class="meta-tags">
-          <span class="tag version" *ngIf="version()">{{ version() }}</span>
+          <span class="tag version" *ngIf="version()" [title]="version()">{{ version() }}</span>
           <span class="tag mode" *ngIf="outputMode()">{{ outputMode() }}</span>
         </div>
         <div class="summary-row" *ngIf="columnSummary()" [title]="columnSummary()">
@@ -76,34 +86,14 @@ import { RefDirective } from 'rete-angular-plugin/21';
         </div>
       </div>
 
-      <!-- 富媒体预览区：时序模式 SVG Sparkline 趋势曲线 -->
+      <!-- 富媒体预览区：时序模式 ECharts 时序图（时间轴 + 滚轮缩放） -->
       <div
         class="preview-container series-preview"
         *ngIf="fileName() && outputMode() === 'timeseries'"
+        (wheel)="$event.stopPropagation()"
+        (pointerdown)="$event.stopPropagation()"
       >
-        <div class="sparkline-wrapper">
-          <svg class="sparkline-svg" viewBox="0 0 200 50" preserveAspectRatio="none">
-            <defs>
-              <linearGradient [id]="'gradient-' + data.id" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stop-color="#0284c7" stop-opacity="0.4" />
-                <stop offset="100%" stop-color="#0284c7" stop-opacity="0.02" />
-              </linearGradient>
-            </defs>
-            <path [attr.d]="svgAreaPath()" [attr.fill]="'url(#gradient-' + data.id + ')'" />
-            <path
-              [attr.d]="svgLinePath()"
-              fill="none"
-              stroke="#0284c7"
-              stroke-width="2"
-              stroke-linejoin="round"
-              stroke-linecap="round"
-            />
-          </svg>
-          <div class="sparkline-footer">
-            <span class="metric-label">📈 时序波动趋势</span>
-            <span class="metric-range">{{ valueRangeText() }}</span>
-          </div>
-        </div>
+        <div #chartHost class="chart-host"></div>
       </div>
 
       <!-- 单一输出端口（根据当前 outputMode 过滤） -->
@@ -137,7 +127,7 @@ import { RefDirective } from 'rete-angular-plugin/21';
       <div
         class="resize-handle"
         (pointerdown)="onResizeStart($event)"
-        title="拖拽调整节点卡片大小"
+        title="拖拽实时调整节点卡片大小"
       >
         <svg viewBox="0 0 10 10" width="10" height="10">
           <line x1="9" y1="1" x2="1" y2="9" stroke="#94a3b8" stroke-width="1.5" stroke-linecap="round" />
@@ -159,7 +149,7 @@ import { RefDirective } from 'rete-angular-plugin/21';
       border: 1.5px solid #cbd5e1;
       border-radius: 10px;
       box-shadow: 0 4px 14px rgba(15, 23, 42, 0.08);
-      transition: border-color 0.2s ease, box-shadow 0.2s ease;
+      transition: border-color 0.15s ease, box-shadow 0.15s ease;
       overflow: hidden;
       cursor: pointer;
       display: flex;
@@ -213,16 +203,16 @@ import { RefDirective } from 'rete-angular-plugin/21';
       white-space: nowrap;
     }
     .node-meta {
-      padding: 6px 10px;
+      padding: 5px 10px;
       display: flex;
       flex-direction: column;
-      gap: 4px;
+      gap: 3px;
       border-bottom: 1px solid #f1f5f9;
       background: #fafafa;
       flex-shrink: 0;
     }
     .node-body.placeholder {
-      padding: 14px 10px;
+      padding: 18px 10px;
       background: #f8fafc;
       text-align: center;
       flex: 1;
@@ -252,7 +242,7 @@ import { RefDirective } from 'rete-angular-plugin/21';
     .tag.version {
       background: #ede9fe;
       color: #6d28d9;
-      max-width: 120px;
+      max-width: 140px;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
@@ -275,15 +265,24 @@ import { RefDirective } from 'rete-angular-plugin/21';
       text-overflow: ellipsis;
       white-space: nowrap;
     }
-    /* 富媒体预览区容器 */
+    /* 预览区容器 */
     .preview-container {
       flex: 1;
-      min-height: 50px;
-      padding: 6px 10px;
+      min-height: 80px;
+      padding: 4px 8px;
       background: #ffffff;
       overflow: hidden;
       display: flex;
       flex-direction: column;
+      position: relative;
+    }
+    .series-preview {
+      padding: 0;
+    }
+    .chart-host {
+      width: 100%;
+      height: 100%;
+      min-height: 100px;
     }
     /* Mini 表格样式 */
     .mini-table {
@@ -339,49 +338,21 @@ import { RefDirective } from 'rete-angular-plugin/21';
     .mini-td:last-child {
       border-right: none;
     }
-    /* Mini 时序 Sparkline 样式 */
-    .sparkline-wrapper {
-      width: 100%;
-      height: 100%;
-      display: flex;
-      flex-direction: column;
-      justify-content: space-between;
-    }
-    .sparkline-svg {
-      width: 100%;
-      flex: 1;
-      min-height: 35px;
-      display: block;
-    }
-    .sparkline-footer {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      font-size: 9px;
-      color: #64748b;
-      margin-top: 2px;
-    }
-    .metric-label {
-      font-weight: 600;
-      color: #0369a1;
-    }
-    .metric-range {
-      color: #94a3b8;
-    }
     /* 输出端口容器 */
     .outputs-container {
-      padding: 4px 0 6px;
+      padding: 3px 0 5px;
       display: flex;
       flex-direction: column;
       gap: 2px;
       flex-shrink: 0;
       border-top: 1px solid #f1f5f9;
+      background: #ffffff;
     }
     .output-row {
       display: flex;
       align-items: center;
       justify-content: flex-end;
-      height: 24px;
+      height: 22px;
       padding-left: 12px;
       position: relative;
     }
@@ -407,73 +378,137 @@ import { RefDirective } from 'rete-angular-plugin/21';
       display: flex;
       align-items: center;
       justify-content: center;
-      z-index: 5;
-      opacity: 0.6;
+      z-index: 10;
+      opacity: 0.7;
       transition: opacity 0.15s ease;
+      touch-action: none;
     }
     .resize-handle:hover {
       opacity: 1;
     }
   `,
 })
-export class DataFileInputNodeComponent implements OnChanges {
+export class DataFileInputNodeComponent
+  implements AfterViewInit, OnChanges, OnDestroy
+{
   @Input() data: any = {};
   @Input() emit: (data: unknown) => void = () => undefined;
   @Input() rendered: () => void = () => undefined;
 
+  @ViewChild('chartHost') chartHost?: ElementRef<HTMLDivElement>;
+
   seed = 0;
+  readonly nodeWidth = signal(360);
+  readonly nodeHeight = signal(240);
 
-  ngOnChanges(): void {
+  private chart: echarts.ECharts | null = null;
+  private resizeObserver: ResizeObserver | null = null;
+
+  ngAfterViewInit(): void {
+    this.initChart();
+  }
+
+  ngOnChanges(changes: SimpleChanges): void {
     this.seed++;
-    requestAnimationFrame(() => this.rendered());
+    if (this.data?.width) {
+      this.nodeWidth.set(Math.max(260, Number(this.data.width)));
+    } else {
+      this.nodeWidth.set(this.defaultWidth());
+    }
+    if (this.data?.height) {
+      this.nodeHeight.set(Math.max(140, Number(this.data.height)));
+    } else {
+      this.nodeHeight.set(this.defaultHeight());
+    }
+
+    requestAnimationFrame(() => {
+      this.initChart();
+      this.rendered();
+    });
   }
 
-  currentWidth(): number {
-    return Math.max(220, Number(this.data?.width) || 240);
+  ngOnDestroy(): void {
+    this.resizeObserver?.disconnect();
+    this.chart?.dispose();
+    this.chart = null;
   }
 
-  currentHeight(): number {
-    const raw = Number(this.data?.height);
-    if (raw && raw > 100) return raw;
-    // Default auto height based on content
-    return this.fileName() ? 200 : 130;
+  defaultWidth(): number {
+    if (!this.fileName()) return 240;
+    return this.outputMode() === 'timeseries' ? 380 : 320;
+  }
+
+  defaultHeight(): number {
+    if (!this.fileName()) return 130;
+    return this.outputMode() === 'timeseries' ? 240 : 200;
   }
 
   onResizeStart(e: PointerEvent): void {
     e.stopPropagation();
     e.preventDefault();
+    const target = e.currentTarget as HTMLElement;
+    try {
+      target.setPointerCapture(e.pointerId);
+    } catch {}
+
     const startX = e.clientX;
     const startY = e.clientY;
-    const startW = this.currentWidth();
-    const startH = this.currentHeight();
+    const startW = this.nodeWidth();
+    const startH = this.nodeHeight();
 
-    const onMove = (moveEv: PointerEvent) => {
-      const newW = Math.max(220, Math.min(600, startW + (moveEv.clientX - startX)));
-      const newH = Math.max(130, Math.min(500, startH + (moveEv.clientY - startY)));
+    const onPointerMove = (ev: PointerEvent) => {
+      ev.stopPropagation();
+      ev.preventDefault();
+      const newW = Math.round(
+        Math.max(260, Math.min(800, startW + (ev.clientX - startX))),
+      );
+      const newH = Math.round(
+        Math.max(140, Math.min(600, startH + (ev.clientY - startY))),
+      );
+      this.nodeWidth.set(newW);
+      this.nodeHeight.set(newH);
       this.data.width = newW;
       this.data.height = newH;
-      this.seed++;
+      this.chart?.resize();
       this.rendered();
     };
 
-    const onUp = () => {
-      window.removeEventListener('pointermove', onMove);
-      window.removeEventListener('pointerup', onUp);
+    const onPointerUp = (ev: PointerEvent) => {
+      ev.stopPropagation();
+      ev.preventDefault();
+      target.removeEventListener('pointermove', onPointerMove);
+      target.removeEventListener('pointerup', onPointerUp);
+      target.removeEventListener('pointercancel', onPointerUp);
+      window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('pointerup', onPointerUp);
+      try {
+        target.releasePointerCapture(e.pointerId);
+      } catch {}
       this.seed++;
+      this.chart?.resize();
       this.rendered();
     };
 
-    window.addEventListener('pointermove', onMove);
-    window.addEventListener('pointerup', onUp);
+    target.addEventListener('pointermove', onPointerMove);
+    target.addEventListener('pointerup', onPointerUp);
+    target.addEventListener('pointercancel', onPointerUp);
+    window.addEventListener('pointermove', onPointerMove);
+    window.addEventListener('pointerup', onPointerUp);
   }
 
   getOutputs(): Array<{ key: string; value: any }> {
     const outputs = this.data?.outputs || {};
     const mode = (this.outputMode() || '').toLowerCase();
-    const all = Object.keys(outputs).map((key) => ({ key, value: outputs[key] }));
+    const all = Object.keys(outputs).map((key) => ({
+      key,
+      value: outputs[key],
+    }));
     if (mode === 'timeseries') {
       const filtered = all.filter(
-        (o) => o.key === 'series' || o.key.includes('series') || o.key.includes('time'),
+        (o) =>
+          o.key === 'series' ||
+          o.key.includes('series') ||
+          o.key.includes('time'),
       );
       return filtered.length ? filtered : all.slice(1);
     }
@@ -490,7 +525,9 @@ export class DataFileInputNodeComponent implements OnChanges {
     const nested = this.data?.['data'];
     const value =
       this.data?.[key] ??
-      (nested && typeof nested === 'object' ? (nested as Record<string, unknown>)[key] : undefined);
+      (nested && typeof nested === 'object'
+        ? (nested as Record<string, unknown>)[key]
+        : undefined);
     return value === null || value === undefined ? '' : String(value);
   }
 
@@ -512,7 +549,10 @@ export class DataFileInputNodeComponent implements OnChanges {
 
   previewColumns(): string[] {
     const nested = this.data?.['data'] || this.data || {};
-    if (Array.isArray(nested.selectedColumns) && nested.selectedColumns.length > 0) {
+    if (
+      Array.isArray(nested.selectedColumns) &&
+      nested.selectedColumns.length > 0
+    ) {
       return nested.selectedColumns.slice(0, 4);
     }
     if (Array.isArray(nested.columns) && nested.columns.length > 0) {
@@ -520,7 +560,11 @@ export class DataFileInputNodeComponent implements OnChanges {
     }
     const sum = this.columnSummary();
     if (sum && !sum.includes('→')) {
-      return sum.split('、').map((s) => s.trim()).filter(Boolean).slice(0, 4);
+      return sum
+        .split('、')
+        .map((s) => s.trim())
+        .filter(Boolean)
+        .slice(0, 4);
     }
     return ['col_1', 'col_2', 'col_3'];
   }
@@ -528,9 +572,8 @@ export class DataFileInputNodeComponent implements OnChanges {
   sampleRows(): Array<Record<string, unknown>> {
     const nested = this.data?.['data'] || this.data || {};
     if (Array.isArray(nested.sampleRows) && nested.sampleRows.length > 0) {
-      return nested.sampleRows.slice(0, 3);
+      return nested.sampleRows.slice(0, 4);
     }
-    // Default dummy rows
     return [
       { col_1: '001', col_2: '32.0', col_3: '21.17' },
       { col_1: '002', col_2: '32.1', col_3: '21.27' },
@@ -543,50 +586,144 @@ export class DataFileInputNodeComponent implements OnChanges {
     return String(val);
   }
 
-  private getNumericalPoints(): number[] {
-    const nested = this.data?.['data'] || this.data || {};
-    const valCol = nested.valueColumn || 'pressure' || 'inlet_flow' || 'value';
-    if (Array.isArray(nested.sampleRows) && nested.sampleRows.length > 1) {
-      const nums = nested.sampleRows
-        .map((r: any) => {
-          const v = Number(r[valCol] ?? Object.values(r).find((x) => typeof x === 'number' || (!isNaN(Number(x)) && x !== '')));
-          return isNaN(v) ? null : v;
-        })
-        .filter((n: any): n is number => n !== null);
-      if (nums.length > 1) return nums;
+  private initChart(): void {
+    if (this.outputMode() !== 'timeseries' || !this.fileName()) {
+      this.chart?.dispose();
+      this.chart = null;
+      return;
     }
-    // Deterministic synthetic waveform based on file name length
-    const base = this.fileName().length || 10;
-    return Array.from({ length: 16 }, (_, i) =>
-      Math.sin((i + base) * 0.5) * 5 + 32 + (i % 3) * 0.4,
-    );
+
+    if (!this.chartHost?.nativeElement) {
+      return;
+    }
+
+    try {
+      if (!this.chart) {
+        this.chart = echarts.init(this.chartHost.nativeElement, null, {
+          renderer: 'svg',
+        });
+        if (typeof ResizeObserver !== 'undefined') {
+          this.resizeObserver = new ResizeObserver(() => {
+            this.chart?.resize();
+          });
+          this.resizeObserver.observe(this.chartHost.nativeElement);
+        }
+      }
+
+      this.renderChart();
+    } catch {
+      // Safe fallback in headless/test environments
+    }
   }
 
-  svgLinePath(): string {
-    const points = this.getNumericalPoints();
-    if (points.length < 2) return 'M 0,25 L 200,25';
-    const min = Math.min(...points);
-    const max = Math.max(...points);
-    const range = max - min || 1;
-    return points
-      .map((p, i) => {
-        const x = (i / (points.length - 1)) * 200;
-        const y = 45 - ((p - min) / range) * 38;
-        return `${i === 0 ? 'M' : 'L'} ${x.toFixed(1)},${y.toFixed(1)}`;
-      })
-      .join(' ');
+  private renderChart(): void {
+    if (!this.chart) return;
+
+    const seriesData = this.getTimeSeriesData();
+    const nested = this.data?.['data'] || this.data || {};
+    const valColName = nested.valueColumn || 'measurement';
+
+    const option: echarts.EChartsOption = {
+      animation: false,
+      title: {
+        text: '节点时序输出',
+        left: 'center',
+        top: 2,
+        textStyle: { fontSize: 11, fontWeight: 'bold', color: '#334155' },
+      },
+      legend: {
+        top: 16,
+        left: 'center',
+        textStyle: { fontSize: 10, color: '#64748b' },
+        data: [valColName],
+      },
+      grid: {
+        top: 36,
+        left: 36,
+        right: 12,
+        bottom: 24,
+      },
+      tooltip: {
+        trigger: 'axis',
+        confine: true,
+        textStyle: { fontSize: 11 },
+      },
+      xAxis: {
+        type: 'time',
+        boundaryGap: ['0%', '0%'] as any,
+        axisLabel: { fontSize: 9, color: '#64748b' },
+        axisLine: { lineStyle: { color: '#cbd5e1' } },
+        splitLine: { show: false },
+      },
+      yAxis: {
+        type: 'value',
+        name: '数值',
+        nameTextStyle: { fontSize: 9, color: '#94a3b8' },
+        scale: true,
+        axisLabel: { fontSize: 9, color: '#64748b' },
+        axisLine: { show: false },
+        splitLine: { lineStyle: { color: '#f1f5f9' } },
+      },
+      dataZoom: [
+        { type: 'inside' }, // 允许通过鼠标滚轮缩放时间轴
+        {
+          type: 'slider',
+          height: 12,
+          bottom: 1,
+          borderColor: '#cbd5e1',
+          fillerColor: 'rgba(2, 132, 199, 0.15)',
+          handleSize: '100%',
+          textStyle: { fontSize: 7 },
+        },
+      ],
+      series: [
+        {
+          name: valColName,
+          type: 'line',
+          data: seriesData,
+          smooth: true,
+          showSymbol: false,
+          lineStyle: { color: '#2563eb', width: 2 },
+          areaStyle: {
+            color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+              { offset: 0, color: 'rgba(37, 99, 235, 0.22)' },
+              { offset: 1, color: 'rgba(37, 99, 235, 0.01)' },
+            ]),
+          },
+        },
+      ],
+    };
+
+    this.chart.setOption(option, { notMerge: true });
   }
 
-  svgAreaPath(): string {
-    const line = this.svgLinePath();
-    return `${line} L 200,50 L 0,50 Z`;
-  }
-
-  valueRangeText(): string {
-    const points = this.getNumericalPoints();
-    const min = Math.min(...points);
-    const max = Math.max(...points);
-    return `${min.toFixed(1)} ~ ${max.toFixed(1)}`;
+  private getTimeSeriesData(): Array<[string, number]> {
+    const nested = this.data?.['data'] || this.data || {};
+    const timeCol = nested.timeColumn || 'record_time' || 'time';
+    const valCol = nested.valueColumn || 'inlet_flow' || 'pressure' || 'value';
+    const rows = nested.sampleRows || [];
+    if (Array.isArray(rows) && rows.length > 0) {
+      const points: Array<[string, number]> = [];
+      for (const r of rows) {
+        const t = String(r[timeCol] ?? r['record_time'] ?? r['time'] ?? '');
+        const rawV =
+          r[valCol] ?? Object.values(r).find((x) => typeof x === 'number');
+        const v = Number(rawV);
+        if (t && !isNaN(v)) {
+          points.push([t, v]);
+        }
+      }
+      if (points.length > 0) {
+        return points;
+      }
+    }
+    // Synthetic realistic sinusoid waveform fallback if no preview rows yet
+    const now = new Date('2026-01-01T00:00:00Z').getTime();
+    return Array.from({ length: 30 }, (_, i) => {
+      const t = new Date(now + i * 15 * 60 * 1000).toISOString();
+      const v = Math.sin(i * 0.5) * 5 + 30 + (i % 3) * 0.4;
+      return [t, Number(v.toFixed(3))];
+    });
   }
 }
 
