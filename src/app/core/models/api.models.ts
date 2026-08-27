@@ -670,8 +670,13 @@ export interface WorkflowRunSummary {
   finished_at: string | null;
 }
 
+export type WorkflowRunListItem = Omit<
+  WorkflowRunSummary,
+  'input_bindings' | 'parameter_overrides' | 'graph_snapshot'
+>;
+
 export interface WorkflowRunPage {
-  items: WorkflowRunSummary[];
+  items: WorkflowRunListItem[];
   page: number;
   page_size: number;
   total: number;
@@ -753,25 +758,6 @@ export interface OperatorSummary {
   active_version: OperatorVersionSummary | null;
   version_count: number;
   versions?: OperatorVersionSummary[];
-}
-
-export interface AlgorithmDocumentVersion {
-  document_version_id: string;
-  version: string;
-  locale: string;
-  source_type: string;
-  status: string;
-  markdown: string | null;
-  created_at: string;
-}
-
-export interface AlgorithmDocument {
-  document_id: string;
-  title: string;
-  doc_kind: string;
-  status: string;
-  current_version_id: string | null;
-  versions: AlgorithmDocumentVersion[];
 }
 
 export interface WorkflowTemplateSummary {

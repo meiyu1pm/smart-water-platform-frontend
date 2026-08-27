@@ -3,10 +3,9 @@ import { Component, HostListener, OnDestroy, inject, signal } from '@angular/cor
 import { FormsModule } from '@angular/forms';
 import { SafeHtml } from '@angular/platform-browser';
 import { ActivatedRoute, RouterLink } from '@angular/router';
+import { catchError, forkJoin, map, of, switchMap } from 'rxjs';
 
 import {
-  AlgorithmDocument,
-  AlgorithmDocumentVersion,
   ModelVersionSummary,
   OperatorSummary,
   OperatorVersionSummary,
@@ -16,6 +15,10 @@ import { ApiClient } from '../../core/services/api-client.service';
 import { AlgorithmDocumentRendererService } from '../../core/services/algorithm-document-renderer.service';
 import { NotificationService } from '../../core/services/notification.service';
 import { OperatorNameService } from '../../core/services/operator-name.service';
+import {
+  StaticOperatorDocument,
+  StaticOperatorDocumentService,
+} from '../../core/services/operator-document.service';
 import { AuthService } from '../../core/services/auth.service';
 import { DataAssetPickerComponent } from '../../shared/components/data-asset-picker.component';
 import { OperatorParameterFormComponent } from '../../shared/components/operator-parameter-form.component';
@@ -36,18 +39,6 @@ export function operatorDocumentScopeKey(operator: OperatorSummary | null): stri
   }
   const operatorCode = operator.code;
   return typeof operatorCode === 'string' && operatorCode.trim() ? operatorCode.trim() : null;
-}
-
-export function currentAlgorithmDocumentVersion(
-  document: AlgorithmDocument,
-): AlgorithmDocumentVersion | null {
-  if (document.current_version_id) {
-    const current = document.versions.find(
-      (version) => version.document_version_id === document.current_version_id,
-    );
-    if (current) return current;
-  }
-  return document.versions.find((version) => version.status === 'published') ?? null;
 }
 
 interface OperatorFacetOption {
@@ -788,28 +779,31 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
               <div class="tab-body documents-tab-body">
                 @if (loadingDocuments()) {
                   <p class="muted" style="padding: 16px 0;">正在加载算子文档…</p>
-                } @else if (documents().length === 0) {
+                } @else if (documents().length === 0 && !documentMessage()) {
                   <div class="empty-docs-box">
                     <p class="muted">该算子暂未发布文档。</p>
                   </div>
                 }
-                @for (doc of documents(); track doc.document_id) {
+                @if (documentMessage()) {
+                  <div class="empty-docs-box">
+                    <p class="muted">{{ documentMessage() }}</p>
+                  </div>
+                }
+                @for (doc of documents(); track doc.id) {
                   <section class="doc-card">
                     <div class="doc-card-header">
                       <h3>{{ doc.title }}</h3>
-                      @if (currentDocumentVersion(doc); as docVersion) {
-                        <span class="doc-version-tag">文档版本 v{{ docVersion.version }}</span>
-                      }
+                      <span class="doc-version-tag">文档版本 v{{ doc.version }}</span>
                     </div>
-                    @if (currentDocumentVersion(doc); as docVersion) {
-                      @if (docVersion.markdown) {
-                        <article
-                          class="markdown"
-                          [innerHTML]="renderMarkdown(docVersion.markdown)"
-                        ></article>
-                      } @else {
-                        <p class="muted">该文档版本暂无可展示的 Markdown 内容。</p>
-                      }
+                    @if (doc.markdownError) {
+                      <p class="muted">该文档暂时无法读取，请稍后重试。</p>
+                    } @else if (doc.markdown) {
+                      <article
+                        class="markdown"
+                        [innerHTML]="renderMarkdown(doc.markdown)"
+                      ></article>
+                    } @else {
+                      <p class="muted">该文档暂无可展示的 Markdown 内容。</p>
                     }
                   </section>
                 }
@@ -1950,13 +1944,15 @@ export class OperatorCenterPage implements OnDestroy {
   private readonly route = inject(ActivatedRoute);
   private readonly notice = inject(NotificationService);
   private readonly documentRenderer = inject(AlgorithmDocumentRendererService);
+  private readonly operatorDocuments = inject(StaticOperatorDocumentService);
   readonly operatorNames = inject(OperatorNameService);
   readonly auth = inject(AuthService);
   readonly operators = signal<OperatorSummary[]>([]);
   readonly facets = signal<Record<string, OperatorFacetOption[]>>({});
   readonly templates = signal<WorkflowTemplateSummary[]>([]);
   readonly selected = signal<OperatorSummary | null>(null);
-  readonly documents = signal<AlgorithmDocument[]>([]);
+  readonly documents = signal<StaticOperatorDocument[]>([]);
+  readonly documentMessage = signal('');
   readonly loadingDocuments = signal(false);
   readonly models = signal<ModelVersionSummary[]>([]);
   readonly loadingModels = signal(false);
@@ -1990,6 +1986,8 @@ export class OperatorCenterPage implements OnDestroy {
   modelStrategy = '';
   private resizeCleanup: (() => void) | null = null;
   private lastCatalogLayout: HTMLElement | null = null;
+  private selectionRequestGeneration = 0;
+  private documentRequestGeneration = 0;
 
   constructor() {
     this.kind = this.route.snapshot.queryParamMap.get('kind') || '';
@@ -2083,8 +2081,11 @@ export class OperatorCenterPage implements OnDestroy {
       .subscribe({ next: (items) => this.templates.set(items || []) });
   }
   select(operator: OperatorSummary): void {
+    const selectionGeneration = ++this.selectionRequestGeneration;
+    this.documentRequestGeneration += 1;
     this.selected.set(operator);
     this.documents.set([]);
+    this.documentMessage.set('');
     this.models.set([]);
     this.trainingSelection.set(null);
     this.trainingMessage.set('');
@@ -2093,6 +2094,7 @@ export class OperatorCenterPage implements OnDestroy {
     if (this.activeTab() === 'training') this.loadModels(operator);
     this.api.get<OperatorSummary>(`/api/v1/operators/${operator.code}`).subscribe({
       next: (detail) => {
+        if (selectionGeneration !== this.selectionRequestGeneration) return;
         this.selected.set(detail);
         if (this.activeTab() === 'documents') this.loadDocuments(detail);
         if (this.activeTab() === 'training') this.loadModels(detail);
@@ -2285,23 +2287,50 @@ export class OperatorCenterPage implements OnDestroy {
     return operatorDocumentScopeKey(operator);
   }
   loadDocuments(operator: OperatorSummary): void {
+    const documentGeneration = ++this.documentRequestGeneration;
     const code = this.documentScopeKey(operator);
     if (!code || !this.auth.hasPermission('algorithm:read')) {
       this.documents.set([]);
+      this.documentMessage.set('');
       this.loadingDocuments.set(false);
       return;
     }
+    this.documentMessage.set('');
     this.loadingDocuments.set(true);
-    this.api.get<AlgorithmDocument[]>(`/api/v1/algorithms/${code}/documents`).subscribe({
-      next: (documents) => {
-        this.documents.set(documents || []);
-        this.loadingDocuments.set(false);
-      },
-      error: () => {
-        this.documents.set([]);
-        this.loadingDocuments.set(false);
-      },
-    });
+    this.operatorDocuments
+      .documentsForOperator(code)
+      .pipe(
+        switchMap((documents) =>
+          documents.length
+            ? forkJoin(
+                documents.map((document) =>
+                  this.operatorDocuments.loadMarkdown(document).pipe(
+                    map((markdown) => ({ ...document, markdown })),
+                    catchError(() => of({ ...document, markdown: null, markdownError: true })),
+                  ),
+                ),
+              )
+            : of([]),
+        ),
+      )
+      .subscribe({
+        next: (documents) => {
+          if (documentGeneration !== this.documentRequestGeneration) return;
+          this.documents.set(documents);
+          this.documentMessage.set(
+            documents.some((document) => document.markdownError)
+              ? '部分算子文档暂时无法读取。'
+              : '',
+          );
+          this.loadingDocuments.set(false);
+        },
+        error: () => {
+          if (documentGeneration !== this.documentRequestGeneration) return;
+          this.documents.set([]);
+          this.documentMessage.set('算子文档索引暂时无法加载。');
+          this.loadingDocuments.set(false);
+        },
+      });
   }
   startListResize(event: PointerEvent, layout: HTMLElement): void {
     if (window.innerWidth <= 900) return;
@@ -2379,9 +2408,6 @@ export class OperatorCenterPage implements OnDestroy {
   }
   renderMarkdown(markdown: string): SafeHtml {
     return this.documentRenderer.render(markdown);
-  }
-  currentDocumentVersion(document: AlgorithmDocument): AlgorithmDocumentVersion | null {
-    return currentAlgorithmDocumentVersion(document);
   }
   getParameterSpecs(version: OperatorVersionSummary): ParameterSpecItem[] {
     return extractParameterSpecs(version);
