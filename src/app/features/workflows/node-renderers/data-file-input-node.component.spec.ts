@@ -22,6 +22,8 @@ describe('DataFileInputNodeComponent', () => {
     fixture.detectChanges();
     expect(fixture.nativeElement.textContent).toContain('flow.csv');
     expect(fixture.nativeElement.textContent).toContain('timeseries');
+    // The custom shell must retain the Classic node renderer, including sockets.
+    expect(fixture.nativeElement.querySelector('[data-testid="node"]')).not.toBeNull();
   });
 
   it('uses the dedicated renderer while unknown keys fall back to generic rendering', () => {

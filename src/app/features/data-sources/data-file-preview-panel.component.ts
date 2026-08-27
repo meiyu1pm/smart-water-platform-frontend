@@ -15,6 +15,7 @@ import {
   DataFileColumnPreview,
   DataFilePreview,
   DataFileView,
+  DataFileViewSelection,
   DataFileViewOutputMode,
 } from '../../core/models/api.models';
 import { DataFileService } from '../../core/services/data-file.service';
@@ -47,6 +48,8 @@ import { DataFileService } from '../../core/services/data-file.service';
         <p class="state error" role="alert">{{ error }}</p>
       } @else if (!fileVersionId) {
         <p class="state">请选择一个文件版本查看预览。</p>
+      } @else if (!profileReady()) {
+        <p class="state" aria-live="polite">{{ profileStateMessage() }}</p>
       } @else if (preview(); as value) {
         <div class="mode-switch" role="group" aria-label="输出模式">
           <button
@@ -310,6 +313,7 @@ export class DataFilePreviewPanelComponent implements OnChanges, OnDestroy {
   private requestGeneration = 0;
 
   @Input() fileVersionId: number | null = null;
+  @Input() profileStatus: string | null = null;
   // 旧数据资产页仍消费 DataFileView 类型；事件实际只发 create payload，不包含响应 ID。
   @Output() readonly viewChange = new EventEmitter<DataFileView>();
 
@@ -322,6 +326,7 @@ export class DataFilePreviewPanelComponent implements OnChanges, OnDestroy {
   readonly valueColumn = signal('');
   readonly pointColumn = signal('');
   readonly activeRole = signal<'time' | 'value' | 'point'>('time');
+  readonly profileReady = signal(true);
   readonly roles = [
     { key: 'time' as const, label: '时间列' },
     { key: 'value' as const, label: '数值列' },
@@ -329,7 +334,7 @@ export class DataFilePreviewPanelComponent implements OnChanges, OnDestroy {
   ];
 
   ngOnChanges(changes: SimpleChanges): void {
-    if ('fileVersionId' in changes) this.loadPreview();
+    if ('fileVersionId' in changes || 'profileStatus' in changes) this.loadPreview();
   }
 
   ngOnDestroy(): void {
@@ -376,6 +381,7 @@ export class DataFilePreviewPanelComponent implements OnChanges, OnDestroy {
   }
 
   canApply(): boolean {
+    if (!this.profileReady()) return false;
     return this.outputMode() === 'table'
       ? this.selectedColumns().length > 0
       : Boolean(this.timeColumn() && this.valueColumn());
@@ -383,7 +389,7 @@ export class DataFilePreviewPanelComponent implements OnChanges, OnDestroy {
 
   apply(): void {
     if (!this.fileVersionId || !this.canApply()) return;
-    this.viewChange.emit({
+    const selection: DataFileViewSelection = {
       file_version_id: this.fileVersionId,
       output_mode: this.outputMode(),
       ...(this.outputMode() === 'table'
@@ -393,7 +399,9 @@ export class DataFilePreviewPanelComponent implements OnChanges, OnDestroy {
             value_column: this.valueColumn(),
             ...(this.pointColumn() ? { point_column: this.pointColumn() } : {}),
           }),
-    } as DataFileView);
+    };
+    // 旧数据资产页仍消费 DataFileView 事件；工作流属性面板会将该选择转换成 canonical create payload。
+    this.viewChange.emit(selection as unknown as DataFileView);
   }
 
   displayValue(value: unknown): string {
@@ -411,7 +419,13 @@ export class DataFilePreviewPanelComponent implements OnChanges, OnDestroy {
     this.timeColumn.set('');
     this.valueColumn.set('');
     this.pointColumn.set('');
+    const status = this.profileStatus?.toLowerCase() || '';
+    this.profileReady.set(!status || status === 'ready');
     if (!versionId) {
+      this.loading.set(false);
+      return;
+    }
+    if (!this.profileReady()) {
       this.loading.set(false);
       return;
     }
@@ -429,5 +443,13 @@ export class DataFilePreviewPanelComponent implements OnChanges, OnDestroy {
         this.errorMessage.set('无法读取文件预览，请稍后重试。');
       },
     });
+  }
+
+  profileStateMessage(): string {
+    const status = this.profileStatus?.toLowerCase();
+    if (status === 'pending' || status === 'running') return '文件正在解析，完成后才能预览和创建数据视图。';
+    if (status === 'failed') return '文件解析失败，暂时无法预览。请重新上传或稍后重试。';
+    if (status === 'unsupported') return '该文件格式暂不支持结构化预览。';
+    return '文件尚未完成解析，暂时无法预览。';
   }
 }

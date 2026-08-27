@@ -5,6 +5,7 @@ import {
   DataCollectionSummary,
   DataFilePreview,
   DataFileSummary,
+  DataFileUploadResult,
   DataFileVersionSummary,
   DataFileView,
   DataFileViewCreate,
@@ -42,12 +43,16 @@ export class DataFileService {
     return this.api.get<DataFileVersionSummary[]>(`/api/v1/data-files/${fileId}/versions`);
   }
 
-  uploadFile(collectionId: number, file: File, name?: string): Observable<DataFileSummary> {
+  getFileVersion(versionId: number): Observable<DataFileVersionSummary> {
+    return this.api.get<DataFileVersionSummary>(`/api/v1/data-file-versions/${versionId}`);
+  }
+
+  uploadFile(collectionId: number, file: File, name?: string): Observable<DataFileUploadResult> {
     const form = new FormData();
     form.append('collection_id', String(collectionId));
     form.append('file', file, file.name);
-    if (name?.trim()) form.append('name', name.trim());
-    return this.api.post<DataFileSummary, FormData>('/api/v1/data-files/uploads', form);
+    form.append('file_name', name?.trim() || file.name);
+    return this.api.post<DataFileUploadResult, FormData>('/api/v1/data-files/uploads', form);
   }
 
   getPreview(versionId: number, limit = 50): Observable<DataFilePreview> {

@@ -114,6 +114,15 @@ describe('workflow editor architecture', () => {
     expect(ReteWorkflowAdapter.prototype.sync.toString()).not.toContain('destroy');
   });
 
+  it('resolves a custom renderer from the Rete node payload and updates display data in place', () => {
+    const adapter = Object.create(ReteWorkflowAdapter.prototype) as any;
+    const node = { data: { renderer_key: 'data-file-input', fileName: 'old.csv' } };
+    adapter.reteNodes = new Map([['file', node]]);
+    expect(adapter.rendererKey({ type: 'node', payload: node })).toBe('data-file-input');
+    adapter.setNodeData('file', { fileName: 'new.csv', outputMode: 'table' });
+    expect(node.data).toMatchObject({ renderer_key: 'data-file-input', fileName: 'new.csv', outputMode: 'table' });
+  });
+
   it('protects incremental Rete synchronization from user command paths', async () => {
     const commandCalls: string[] = [];
     const adapter = Object.create(ReteWorkflowAdapter.prototype) as any;

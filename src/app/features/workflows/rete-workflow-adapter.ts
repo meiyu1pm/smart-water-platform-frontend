@@ -33,7 +33,7 @@ export class ReteWorkflowAdapter {
     this.destroySurface(); this.host = host; this.editable = options.editable ?? true; host.replaceChildren();
     this.editor = new NodeEditor(); this.area = new AreaPlugin(host); this.selection = AreaExtensions.selector();
     const connection = new ConnectionPlugin(); connection.addPreset(ConnectionPresets.classic.setup());
-    const render = new AngularPlugin({ injector: this.injector }); render.addPreset(AngularPresets.classic.setup({ customize: { node: (context: any) => this.renderers.resolve(this.rendererKey(context?.data?.payload)) } }) as any);
+    const render = new AngularPlugin({ injector: this.injector }); render.addPreset(AngularPresets.classic.setup({ customize: { node: (context: any) => this.renderers.resolve(this.rendererKey(context)) } }) as any);
     this.editor.use(this.area); this.area.use(render as any); this.area.use(connection);
     const wasHydrating = this.hydrating;
     this.hydrating = true;
@@ -103,7 +103,7 @@ export class ReteWorkflowAdapter {
     await selectable.select(node.id, false);
   }
   async fitView(): Promise<void> { if (this.area && this.editor) await AreaExtensions.zoomAt(this.area, this.editor.getNodes()); }
-  setNodeData(id: string, data: Record<string, unknown>): void { const node = this.reteNodes.get(id); if (node) node.data = { ...(node.data || {}), parameters: data }; }
+  setNodeData(id: string, data: Record<string, unknown>): void { const node = this.reteNodes.get(id); if (node) node.data = { ...(node.data || {}), ...data }; }
   private async addConnection(edge: Edge, expectedGeneration = this.mountGeneration): Promise<boolean> {
     const editor = this.editor;
     if (!editor || expectedGeneration !== this.mountGeneration) return false; const source = this.reteNodes.get(edge.source.node_id); const target = this.reteNodes.get(edge.target.node_id);
@@ -121,7 +121,11 @@ export class ReteWorkflowAdapter {
       return context;
     });
   }
-  private rendererKey(payload: any): string | null { return String(payload?.data?.renderer_key || payload?.data?.rendererKey || payload?.renderer_key || '') || null; }
+  private rendererKey(context: any): string | null {
+    const payload = context?.data?.payload ?? context?.payload ?? context;
+    const data = payload?.data ?? payload;
+    return String(data?.renderer_key || data?.rendererKey || '') || null;
+  }
   private displayData(item: EditorNode): Record<string, unknown> {
     const binding = this.store.bindings().get(item.id) as any;
     const selection = this.store.bindingSelections().get(item.id) as any;

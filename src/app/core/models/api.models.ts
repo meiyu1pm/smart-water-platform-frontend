@@ -566,7 +566,10 @@ export type DataFileKind =
 export interface DataFileVersionSummary {
   id: number;
   file_id: number;
-  version: string;
+  version_no: number;
+  version_code: string;
+  /** 兼容尚未升级的静态数据；新接口使用 version_no/version_code。 */
+  version?: string;
   status: string;
   sha256: string;
   size_bytes: number;
@@ -585,10 +588,18 @@ export interface DataFileSummary {
   version_count: number;
   current_version_id: number | null;
   current_version?: DataFileVersionSummary | null;
+  profile_status?: 'pending' | 'ready' | 'failed' | 'unsupported' | string | null;
+  row_count?: number | null;
   size_bytes: number;
   parse_issue_count?: number;
   created_at: string;
   updated_at: string;
+}
+
+export interface DataFileUploadResult {
+  file: DataFileSummary;
+  version: DataFileVersionSummary;
+  task_id?: string | null;
 }
 
 export interface DataFileColumnPreview {
@@ -610,9 +621,9 @@ export interface DataFilePreview {
 
 export type DataFileViewOutputMode = 'table' | 'timeseries';
 
-export interface DataFileViewCreate {
-  /** 预览组件携带的上下文；创建接口使用路径中的版本 ID。 */
-  file_version_id?: number;
+/** 预览面板的平面选择草稿；提交前由工作流面板转换为 DataFileViewCreate。 */
+export interface DataFileViewSelection {
+  file_version_id: number;
   output_mode: DataFileViewOutputMode;
   selected_columns?: string[];
   time_column?: string;
@@ -620,11 +631,18 @@ export interface DataFileViewCreate {
   point_column?: string;
 }
 
+export interface DataFileViewCreate {
+  name?: string;
+  view_kind: DataFileViewOutputMode;
+  mapping: Record<string, unknown>;
+}
+
 export interface DataFileView extends DataFileViewCreate {
   id: number;
   file_version_id: number;
+  view_code: string;
+  status: string;
   created_at?: string;
-  name?: string | null;
 }
 
 export type QueryValue = string | number | boolean | null | undefined;

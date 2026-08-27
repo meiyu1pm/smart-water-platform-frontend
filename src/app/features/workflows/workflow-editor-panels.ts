@@ -496,12 +496,19 @@ export class WorkflowCanvasPanelComponent implements AfterViewInit, OnDestroy {
               <select [ngModel]="selectedFileVersionId()" (ngModelChange)="onVersionChange($event)" [disabled]="!dataFileVersions().length">
                 <option [ngValue]="null">请选择版本</option>
                 @for (version of dataFileVersions(); track version.id) {
-                  <option [ngValue]="version.id">{{ version.version }} · {{ version.status }}</option>
+                  <option [ngValue]="version.id">{{ version.version_code || ('v' + version.version_no) }} · {{ version.profile_status || version.status }}</option>
                 }
               </select>
             </label>
             @if (selectedFileVersionId()) {
-              <app-data-file-preview-panel [fileVersionId]="selectedFileVersionId()" (viewChange)="onDataFileViewChange($event)" />
+              <app-data-file-preview-panel
+                [fileVersionId]="selectedFileVersionId()"
+                [profileStatus]="selectedDataFileVersion()?.profile_status || null"
+                (viewChange)="onDataFileViewChange($event)"
+              />
+            }
+            @if (dataFileBindingSummary(); as bindingSummary) {
+              <p class="frozen-binding" aria-live="polite">当前绑定：{{ bindingSummary.fileName || '数据文件' }} · {{ bindingSummary.version || ('版本 #' + bindingSummary.fileVersionId) }} · {{ bindingSummary.outputMode }}<br />{{ bindingSummary.viewSummary || '已保存视图' }}</p>
             }
           </section>
         }
@@ -672,6 +679,13 @@ export class WorkflowCanvasPanelComponent implements AfterViewInit, OnDestroy {
       margin: -2px 0 12px;
       font-size: 12px;
     }
+    .frozen-binding {
+      padding: 8px;
+      border-radius: var(--sw-radius-sm, 6px);
+      background: var(--sw-color-info-soft, #eff6ff);
+      color: var(--sw-text-muted, #475569);
+      line-height: 1.5;
+    }
     .empty {
       display: grid;
       height: 100%;
@@ -700,6 +714,16 @@ export class NodeInspectorPanelComponent implements OnDestroy {
   readonly selectedFileVersionId = signal<number | null>(null);
   private dataCollectionsLoaded = false;
   readonly dataFileNode = computed(() => { const node = this.store.selectedNode(); return node?.node_code === 'data_file_input_v1' ? node : null; });
+  readonly selectedDataFileVersion = computed(() => {
+    const id = this.selectedFileVersionId();
+    return id ? this.dataFileVersions().find((version) => version.id === id) || null : null;
+  });
+  readonly dataFileBindingSummary = computed(() => {
+    const node = this.dataFileNode();
+    const binding = node ? this.store.bindings().get(node.id) : null;
+    if (!binding || binding.kind !== 'data_file') return null;
+    return { fileName: binding.file_name || '', version: binding.version || '', fileVersionId: binding.file_version_id, outputMode: binding.output_mode, viewSummary: binding.view_summary || '' };
+  });
   private lastFetchedCode: string | null = null;
   readonly selectedDataBinding = computed(() => { this.store.bindingRevision(); const node = this.store.selectedNode(); if (!node || !['dataset_channel_v1', 'dataset_asset_v1'].includes(node.node_code)) return null; return { id: node.id, selection: this.store.bindingSelections().get(node.id) as DataAssetSelection | null, wholeAsset: node.node_code === 'dataset_asset_v1' }; });
 
@@ -728,6 +752,14 @@ export class NodeInspectorPanelComponent implements OnDestroy {
         if (binding?.kind === 'data_file') {
           this.selectedFileVersionId.set(binding.file_version_id);
           this.selectedFileId.set(null);
+          if (!this.dataFileVersions().some((version) => version.id === binding.file_version_id)) {
+            this.subscriptions.push(this.files.getFileVersion(binding.file_version_id).subscribe({
+              next: (version) => {
+                if (this.selectedFileVersionId() === version.id) this.dataFileVersions.set([version]);
+              },
+              error: () => undefined,
+            }));
+          }
         }
         if (!this.dataCollectionsLoaded) this.loadCollections();
       }
@@ -751,22 +783,25 @@ export class NodeInspectorPanelComponent implements OnDestroy {
   onDataFileViewChange(view: DataFileView): void {
     const node = this.dataFileNode(); const versionId = this.selectedFileVersionId();
     if (!node || !versionId) return;
-    const payload: DataFileViewCreate = { output_mode: view.output_mode, ...(view.selected_columns ? { selected_columns: view.selected_columns } : {}), ...(view.time_column ? { time_column: view.time_column } : {}), ...(view.value_column ? { value_column: view.value_column } : {}), ...(view.point_column ? { point_column: view.point_column } : {}) };
+    const draft = view as unknown as { output_mode?: 'table' | 'timeseries'; selected_columns?: string[]; time_column?: string; value_column?: string; point_column?: string };
+    const outputMode = draft.output_mode || view.view_kind;
+    const mapping = outputMode === 'table' ? { selected_columns: draft.selected_columns || [] } : { time_column: draft.time_column || '', value_column: draft.value_column || '', ...(draft.point_column ? { point_column: draft.point_column } : {}) };
+    const payload: DataFileViewCreate = { view_kind: outputMode, mapping };
     this.subscriptions.push(this.files.createView(versionId, payload).subscribe({
       next: (created) => {
         const file = this.dataFiles().find((item) => item.id === this.selectedFileId()) || undefined;
         const version = this.dataFileVersions().find((item) => item.id === versionId) || undefined;
-        const binding = { kind: 'data_file' as const, file_version_id: versionId, data_view_id: Number(created.id), output_mode: view.output_mode, ...(file?.name ? { file_name: file.name } : {}), ...(version?.version ? { version: version.version } : {}), view_summary: this.viewSummary(view) };
-        this.facade.setDataFileBinding(node.id, binding, view.output_mode);
-        this.facade.setParameter(node.id, 'output_mode', view.output_mode);
-        this.rete.setNodeData(node.id, { fileName: file?.name || '', version: version?.version || '', outputMode: view.output_mode, columnSummary: binding.view_summary });
+        const binding = { kind: 'data_file' as const, file_version_id: versionId, data_view_id: Number(created.id), output_mode: outputMode, ...(file?.name ? { file_name: file.name } : {}), ...(version ? { version: version.version_code || `v${version.version_no}` } : {}), view_summary: this.viewSummary(view) };
+        this.facade.setDataFileBinding(node.id, binding, outputMode);
+        this.facade.setParameter(node.id, 'output_mode', outputMode);
+        this.rete.setNodeData(node.id, { fileName: file?.name || '', version: version?.version_code || '', outputMode, columnSummary: binding.view_summary });
       },
       error: () => this.store.setMessage('error', '数据视图创建失败，请检查列映射后重试。'),
     }));
   }
 
   private loadCollections(): void { this.dataCollectionsLoaded = true; this.subscriptions.push(this.files.listCollections().subscribe({ next: (items) => this.dataCollections.set(items), error: () => { this.dataCollections.set([]); this.dataCollectionsLoaded = false; } })); }
-  private viewSummary(view: DataFileView): string { return view.output_mode === 'table' ? (view.selected_columns || []).join('、') : [view.time_column, view.value_column, view.point_column].filter(Boolean).join(' → '); }
+  private viewSummary(view: DataFileView): string { const draft = view as unknown as { output_mode?: 'table' | 'timeseries'; selected_columns?: string[]; time_column?: string; value_column?: string; point_column?: string }; const mode = draft.output_mode || view.view_kind; return mode === 'table' ? (draft.selected_columns || []).join('、') : [draft.time_column, draft.value_column, draft.point_column].filter(Boolean).join(' → '); }
 
   requiresModel(node: EditorNode): boolean {
     if (node.node_code === 'seasonal_robust_anomaly') return true;

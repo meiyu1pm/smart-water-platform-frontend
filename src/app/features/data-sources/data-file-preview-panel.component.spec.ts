@@ -56,4 +56,20 @@ describe('DataFilePreviewPanelComponent', () => {
     component.selectColumn('flow');
     expect(component.canApply()).toBe(true);
   });
+
+  it('does not request or apply a view before asynchronous profiling is ready', () => {
+    const getPreview = vi.fn(() => of(preview));
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      imports: [DataFilePreviewPanelComponent],
+      providers: [{ provide: DataFileService, useValue: { getPreview } }],
+    });
+    const fixture = TestBed.createComponent(DataFilePreviewPanelComponent);
+    fixture.componentRef.setInput('fileVersionId', 1);
+    fixture.componentRef.setInput('profileStatus', 'pending');
+    fixture.detectChanges();
+    expect(getPreview).not.toHaveBeenCalled();
+    expect(fixture.componentInstance.canApply()).toBe(false);
+    expect(fixture.componentInstance.profileStateMessage()).toContain('正在解析');
+  });
 });

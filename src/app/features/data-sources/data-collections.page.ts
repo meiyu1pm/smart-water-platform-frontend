@@ -4,7 +4,8 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatCardModule } from '@angular/material/card';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
-import { Subscription } from 'rxjs';
+import { EMPTY, Subscription, forkJoin, interval, of } from 'rxjs';
+import { catchError, exhaustMap, tap } from 'rxjs/operators';
 
 import { DataCollectionSummary, DataFileSummary, DataFileView } from '../../core/models/api.models';
 import { AuthService } from '../../core/services/auth.service';
@@ -178,6 +179,7 @@ import { DataFilePreviewPanelComponent } from './data-file-preview-panel.compone
     @if (selectedFile(); as file) {
       <app-data-file-preview-panel
         [fileVersionId]="file.current_version_id"
+        [profileStatus]="file.profile_status || null"
         (viewChange)="onViewChange($event)"
       />
       @if (!file.current_version_id) {
@@ -476,13 +478,18 @@ export class DataCollectionsPage {
 
   constructor() {
     this.load();
+    this.subscriptions.add(
+      interval(8000)
+        .pipe(exhaustMap(() => this.refreshExpandedFiles()))
+        .subscribe(),
+    );
   }
 
   ngOnDestroy(): void {
     this.subscriptions.unsubscribe();
   }
   canWrite(): boolean {
-    return this.auth.hasPermission('data_source:write');
+    return this.auth.hasPermission('data_collection:write') || this.auth.hasPermission('data_file:write');
   }
 
   load(): void {
@@ -549,8 +556,8 @@ export class DataCollectionsPage {
     if (!file || !this.canWrite()) return;
     this.subscriptions.add(
       this.service.uploadFile(collection.id, file).subscribe({
-        next: () => {
-          this.notifications.success('文件上传已提交。');
+        next: (result) => {
+          this.notifications.success(result.task_id ? '文件已上传，正在解析。' : '文件上传已完成。');
           this.loadFiles(collection.id);
           this.load();
         },
@@ -563,10 +570,13 @@ export class DataCollectionsPage {
     this.selectedFile.set(file);
   }
   onViewChange(view: DataFileView): void {
-    this.notifications.success(`已选择 ${view.output_mode === 'table' ? '表格' : '时序'} 输出列。`);
+    this.notifications.success(`已选择 ${view.view_kind === 'table' ? '表格' : '时序'} 输出列。`);
   }
 
   fileStatus(file: DataFileSummary): string {
+    if (file.profile_status === 'pending' || file.profile_status === 'running') return '解析中';
+    if (file.profile_status === 'unsupported') return '格式不支持';
+    if (file.profile_status === 'failed') return '解析失败';
     if (file.parse_issue_count && file.parse_issue_count > 0) return '有解析问题';
     if (file.status === 'ready') return '可用';
     if (file.status === 'failed') return '解析失败';
@@ -592,6 +602,9 @@ export class DataCollectionsPage {
           const map = new Map(this.filesByCollection());
           map.set(collectionId, items || []);
           this.filesByCollection.set(map);
+          const selected = this.selectedFile();
+          const refreshed = (items || []).find((item) => item.id === selected?.id);
+          if (refreshed) this.selectedFile.set(refreshed);
           const next = new Set(this.filesLoading());
           next.delete(collectionId);
           this.filesLoading.set(next);
@@ -604,6 +617,27 @@ export class DataCollectionsPage {
           failed.add(collectionId);
           this.filesError.set(failed);
         },
+      }),
+    );
+  }
+
+  private refreshExpandedFiles() {
+    const ids = [...this.expanded()];
+    if (!ids.length) return EMPTY;
+    return forkJoin(
+      ids.map((id) => this.service.listFiles(id).pipe(catchError(() => of(null)))),
+    ).pipe(
+      tap((results) => {
+        const map = new Map(this.filesByCollection());
+        results.forEach((items, index) => {
+          if (items) {
+            map.set(ids[index], items);
+            const selected = this.selectedFile();
+            const refreshed = items.find((item) => item.id === selected?.id);
+            if (refreshed) this.selectedFile.set(refreshed);
+          }
+        });
+        this.filesByCollection.set(map);
       }),
     );
   }
