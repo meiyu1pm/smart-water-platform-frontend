@@ -8,7 +8,10 @@ import { NotificationService } from '../../core/services/notification.service';
 import { DataCollectionsPage } from './data-collections.page';
 
 describe('DataCollectionsPage', () => {
+  let createView: ReturnType<typeof vi.fn>;
+
   beforeEach(() => {
+    createView = vi.fn(() => of({ id: 1 }));
     TestBed.configureTestingModule({
       imports: [DataCollectionsPage],
       providers: [
@@ -36,6 +39,7 @@ describe('DataCollectionsPage', () => {
                 },
               ]),
             listFiles: () => of([]),
+            createView,
           },
         },
       ],
@@ -51,5 +55,22 @@ describe('DataCollectionsPage', () => {
     expect(page.filteredCollections()).toHaveLength(1);
     page.search.set('不存在');
     expect(page.filteredCollections()).toHaveLength(0);
+  });
+
+  it('persists an applied column mapping as an immutable data view', () => {
+    const page = TestBed.createComponent(DataCollectionsPage).componentInstance;
+
+    page.onViewChange({
+      file_version_id: 7,
+      output_mode: 'timeseries',
+      time_column: 'time',
+      value_column: 'flow',
+      point_column: 'point',
+    });
+
+    expect(createView).toHaveBeenCalledWith(7, {
+      view_kind: 'timeseries',
+      mapping: { time_column: 'time', value_column: 'flow', point_column: 'point' },
+    });
   });
 });

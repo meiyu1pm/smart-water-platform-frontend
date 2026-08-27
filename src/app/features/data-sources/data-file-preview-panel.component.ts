@@ -313,6 +313,7 @@ export class DataFilePreviewPanelComponent implements OnChanges, OnDestroy {
 
   @Input() fileVersionId: number | null = null;
   @Input() profileStatus: string | null = null;
+  @Input() canCreateView = true;
   @Output() readonly viewChange = new EventEmitter<DataFileViewSelection>();
 
   readonly preview = signal<DataFilePreview | null>(null);
@@ -379,7 +380,7 @@ export class DataFilePreviewPanelComponent implements OnChanges, OnDestroy {
   }
 
   canApply(): boolean {
-    if (!this.profileReady()) return false;
+    if (!this.profileReady() || !this.canCreateView) return false;
     return this.outputMode() === 'table'
       ? this.selectedColumns().length > 0
       : Boolean(this.timeColumn() && this.valueColumn());

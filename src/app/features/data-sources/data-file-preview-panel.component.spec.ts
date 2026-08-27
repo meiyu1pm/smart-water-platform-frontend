@@ -72,4 +72,12 @@ describe('DataFilePreviewPanelComponent', () => {
     expect(fixture.componentInstance.canApply()).toBe(false);
     expect(fixture.componentInstance.profileStateMessage()).toContain('正在解析');
   });
+
+  it('disables view creation without data-view permission', () => {
+    const fixture = TestBed.createComponent(DataFilePreviewPanelComponent);
+    fixture.componentRef.setInput('fileVersionId', 1);
+    fixture.componentRef.setInput('canCreateView', false);
+    fixture.detectChanges();
+    expect(fixture.componentInstance.canApply()).toBe(false);
+  });
 });

@@ -10,6 +10,7 @@ import { catchError, exhaustMap, tap } from 'rxjs/operators';
 import {
   DataCollectionSummary,
   DataFileSummary,
+  DataFileViewCreate,
   DataFileViewSelection,
 } from '../../core/models/api.models';
 import { AuthService } from '../../core/services/auth.service';
@@ -40,7 +41,7 @@ import { DataFilePreviewPanelComponent } from './data-file-preview-panel.compone
       </div>
       <div class="actions">
         <button mat-stroked-button type="button" (click)="load()">刷新</button>
-        @if (canWrite()) {
+        @if (canCreateCollection()) {
           <button
             mat-flat-button
             color="primary"
@@ -69,7 +70,7 @@ import { DataFilePreviewPanelComponent } from './data-file-preview-panel.compone
       >
     </section>
 
-    @if (showCreate() && canWrite()) {
+    @if (showCreate() && canCreateCollection()) {
       <mat-card class="create-card">
         <h2>新建数据集</h2>
         <div class="create-row">
@@ -138,7 +139,7 @@ import { DataFilePreviewPanelComponent } from './data-file-preview-panel.compone
                 <div class="file-list">
                   <div class="file-toolbar">
                     <span>文件成员</span>
-                    @if (canWrite()) {
+                    @if (canUploadFile()) {
                       <label class="upload-button"
                         >上传文件<input type="file" (change)="uploadFile(collection, $event)"
                       /></label>
@@ -184,6 +185,7 @@ import { DataFilePreviewPanelComponent } from './data-file-preview-panel.compone
       <app-data-file-preview-panel
         [fileVersionId]="file.current_version_id"
         [profileStatus]="file.profile_status || null"
+        [canCreateView]="canCreateView()"
         (viewChange)="onViewChange($event)"
       />
       @if (!file.current_version_id) {
@@ -492,9 +494,9 @@ export class DataCollectionsPage {
   ngOnDestroy(): void {
     this.subscriptions.unsubscribe();
   }
-  canWrite(): boolean {
-    return this.auth.hasPermission('data_collection:write') || this.auth.hasPermission('data_file:write');
-  }
+  canCreateCollection(): boolean { return this.auth.hasPermission('data_collection:write'); }
+  canUploadFile(): boolean { return this.auth.hasPermission('data_file:write'); }
+  canCreateView(): boolean { return this.auth.hasPermission('data_view:write'); }
 
   load(): void {
     this.loading.set(true);
@@ -530,7 +532,7 @@ export class DataCollectionsPage {
   }
 
   createCollection(): void {
-    if (!this.newName.trim() || !this.canWrite()) return;
+    if (!this.newName.trim() || !this.canCreateCollection()) return;
     this.creating.set(true);
     this.subscriptions.add(
       this.service
@@ -557,7 +559,7 @@ export class DataCollectionsPage {
 
   uploadFile(collection: DataCollectionSummary, event: Event): void {
     const file = (event.target as HTMLInputElement).files?.[0];
-    if (!file || !this.canWrite()) return;
+    if (!file || !this.canUploadFile()) return;
     this.subscriptions.add(
       this.service.uploadFile(collection.id, file).subscribe({
         next: (result) => {
@@ -574,13 +576,30 @@ export class DataCollectionsPage {
     this.selectedFile.set(file);
   }
   onViewChange(view: DataFileViewSelection): void {
-    this.notifications.success(`已选择 ${view.output_mode === 'table' ? '表格' : '时序'} 输出列。`);
+    if (!this.canCreateView()) return;
+    const mapping = view.output_mode === 'table'
+      ? { selected_columns: view.selected_columns || [] }
+      : {
+          time_column: view.time_column || '',
+          value_column: view.value_column || '',
+          ...(view.point_column ? { point_column: view.point_column } : {}),
+        };
+    const payload: DataFileViewCreate = { view_kind: view.output_mode, mapping };
+    this.subscriptions.add(
+      this.service.createView(view.file_version_id, payload).subscribe({
+        next: () => this.notifications.success(
+          `${view.output_mode === 'table' ? '表格' : '时序'}数据视图已创建。`,
+        ),
+        error: (error) => this.notifications.error(error, '数据视图创建失败。'),
+      }),
+    );
   }
 
   fileStatus(file: DataFileSummary): string {
     if (file.profile_status === 'pending' || file.profile_status === 'running') return '解析中';
     if (file.profile_status === 'unsupported') return '格式不支持';
     if (file.profile_status === 'failed') return '解析失败';
+    if (file.profile_status === 'ready') return '可用';
     if (file.parse_issue_count && file.parse_issue_count > 0) return '有解析问题';
     if (file.status === 'ready') return '可用';
     if (file.status === 'failed') return '解析失败';
