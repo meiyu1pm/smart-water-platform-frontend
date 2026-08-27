@@ -168,6 +168,7 @@ export class AppShellComponent {
   private readonly notifications = inject(NotificationService);
   readonly workspace = signal(false);
   private readonly items: NavigationItem[] = [
+    { label: '快速试用', route: '/quick-trial' },
     { label: '平台概览', route: '/dashboard' },
     { label: '场景中心', route: '/scenes', permission: 'workflow:read' },
     { label: '数据源与导入', route: '/data-sources', permission: 'data_source:read' },
