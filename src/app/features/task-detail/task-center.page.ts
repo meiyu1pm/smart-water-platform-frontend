@@ -1,186 +1,33 @@
-import { Component, HostListener, inject, signal } from '@angular/core';
+import { Component, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 import { MatSelectModule } from '@angular/material/select';
 import { Router } from '@angular/router';
-import { AgGridAngular } from 'ag-grid-angular';
-import { ICellRendererAngularComp } from 'ag-grid-angular';
-import {
-  AllCommunityModule,
-  ColDef,
-  GridOptions,
-  ICellRendererParams,
-  ModuleRegistry,
-  themeQuartz,
-} from 'ag-grid-community';
+import { finalize } from 'rxjs';
 
 import { TaskDetail, TaskPage } from '../../core/models/api.models';
 import { ApiClient } from '../../core/services/api-client.service';
 import { AuthService } from '../../core/services/auth.service';
 import { NotificationService } from '../../core/services/notification.service';
 import { StatusChipComponent } from '../../shared/components/status-chip.component';
-import { formatBeijingTime } from '../../shared/pipes/beijing-time.pipe';
+import { BeijingTimePipe } from '../../shared/pipes/beijing-time.pipe';
 
-ModuleRegistry.registerModules([AllCommunityModule]);
-
-interface TaskGridContext {
-  open(task: TaskDetail): void;
-  rerun(task: TaskDetail): void;
-  remove(task: TaskDetail): void;
-  canRerun(task: TaskDetail): boolean;
-  canDelete(): boolean;
-}
-
-@Component({
-  selector: 'app-task-status-cell',
-  imports: [StatusChipComponent],
-  template: `<app-status-chip [status]="status" />`,
-  styles: `
-    :host {
-      display: flex;
-      height: 100%;
-      align-items: center;
-    }
-  `,
-})
-export class TaskStatusCellComponent implements ICellRendererAngularComp {
-  status = '';
-
-  agInit(params: ICellRendererParams<TaskDetail, string>): void {
-    this.status = params.value ?? '';
-  }
-
-  refresh(params: ICellRendererParams<TaskDetail, string>): boolean {
-    this.status = params.value ?? '';
-    return true;
-  }
-}
-
-@Component({
-  selector: 'app-task-actions-cell',
-  imports: [MatButtonModule],
-  template: `
-    <div class="task-actions">
-      <button mat-button type="button" (click)="open()">详情</button>
-      @if (task && context.canRerun(task)) {
-        <button mat-button type="button" (click)="rerun()">重新运行</button>
-      }
-      @if (context.canDelete()) {
-        <button mat-button type="button" (click)="remove()">删除</button>
-      }
-    </div>
-  `,
-  styles: `
-    :host,
-    .task-actions {
-      display: flex;
-      height: 100%;
-      align-items: center;
-      gap: 2px;
-      white-space: nowrap;
-    }
-  `,
-})
-export class TaskActionsCellComponent implements ICellRendererAngularComp {
-  task?: TaskDetail;
-  context!: TaskGridContext;
-
-  agInit(params: ICellRendererParams<TaskDetail, unknown, TaskGridContext>): void {
-    this.task = params.data;
-    this.context = params.context;
-  }
-
-  refresh(params: ICellRendererParams<TaskDetail, unknown, TaskGridContext>): boolean {
-    this.task = params.data;
-    this.context = params.context;
-    return true;
-  }
-
-  open(): void {
-    if (this.task) this.context.open(this.task);
-  }
-
-  rerun(): void {
-    if (this.task) this.context.rerun(this.task);
-  }
-
-  remove(): void {
-    if (this.task) this.context.remove(this.task);
-  }
-}
-
-export function createTaskColumnDefs(compact: boolean): ColDef<TaskDetail>[] {
-  const columns: ColDef<TaskDetail>[] = [
-    {
-      field: 'task_type',
-      headerName: '任务类型和名称',
-      flex: 1.4,
-      minWidth: 190,
-      cellClass: 'task-type-cell',
-    },
-    {
-      field: 'status',
-      headerName: '状态',
-      width: 116,
-      cellRenderer: TaskStatusCellComponent,
-    },
-    {
-      field: 'progress',
-      headerName: '进度',
-      width: 90,
-      valueFormatter: ({ value }) => `${value ?? 0}%`,
-    },
-    {
-      headerName: '尝试次数',
-      width: 100,
-      valueGetter: ({ data }) => `${data?.attempt_no ?? 0}/${data?.max_attempts ?? 0}`,
-      hide: compact,
-    },
-    {
-      field: 'created_at',
-      headerName: '创建时间',
-      width: 172,
-      valueFormatter: ({ value }) => formatBeijingTime(value),
-      hide: compact,
-    },
-    {
-      field: 'heartbeat_at',
-      headerName: '更新时间',
-      width: 172,
-      valueFormatter: ({ value, data }) =>
-        formatBeijingTime(value ?? data?.finished_at ?? data?.started_at ?? data?.created_at),
-      hide: compact,
-    },
-    {
-      field: 'trace_id',
-      headerName: 'trace_id',
-      minWidth: 210,
-      flex: 1,
-      hide: compact,
-    },
-    {
-      headerName: '操作',
-      width: compact ? 220 : 250,
-      minWidth: 190,
-      pinned: compact ? undefined : 'right',
-      cellRenderer: TaskActionsCellComponent,
-      sortable: false,
-    },
-  ];
-  return columns;
+export function taskUpdatedAt(task: TaskDetail): string | null {
+  return task.heartbeat_at ?? task.finished_at ?? task.started_at ?? task.created_at ?? null;
 }
 
 @Component({
   selector: 'app-task-center-page',
   imports: [
-    AgGridAngular,
+    BeijingTimePipe,
     FormsModule,
     MatButtonModule,
     MatFormFieldModule,
     MatInputModule,
     MatSelectModule,
+    StatusChipComponent,
   ],
   template: `
     <header class="head">
@@ -192,37 +39,77 @@ export function createTaskColumnDefs(compact: boolean): ColDef<TaskDetail>[] {
       <button mat-stroked-button (click)="load()">刷新</button>
     </header>
     <section class="filters">
-      <mat-form-field appearance="outline"
-        ><mat-label>任务类型</mat-label><input matInput [(ngModel)]="taskType"
-      /></mat-form-field>
-      <mat-form-field appearance="outline"
-        ><mat-label>状态</mat-label
-        ><mat-select [(ngModel)]="status"
-          ><mat-option value="">全部</mat-option>
+      <mat-form-field appearance="outline">
+        <mat-label>任务类型</mat-label>
+        <input matInput [(ngModel)]="taskType" />
+      </mat-form-field>
+      <mat-form-field appearance="outline">
+        <mat-label>状态</mat-label>
+        <mat-select [(ngModel)]="status">
+          <mat-option value="">全部</mat-option>
           @for (item of statuses; track item) {
             <mat-option [value]="item">{{ item }}</mat-option>
           }
-        </mat-select></mat-form-field
-      >
+        </mat-select>
+      </mat-form-field>
       <button mat-flat-button (click)="applyFilters()">查询</button>
     </section>
-    <section class="panel">
-      <ag-grid-angular
-        class="task-grid"
-        [theme]="gridTheme"
-        [rowData]="pageData().items"
-        [columnDefs]="columnDefs()"
-        [defaultColDef]="defaultColDef"
-        [context]="gridContext"
-        [gridOptions]="gridOptions"
-        [domLayout]="'autoHeight'"
-        [overlayNoRowsTemplate]="'暂无匹配任务。'"
-      />
+    <section class="panel" [attr.aria-busy]="loading()">
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th>任务类型和名称</th>
+              <th>状态</th>
+              <th>进度</th>
+              <th class="secondary">尝试次数</th>
+              <th class="secondary">创建时间</th>
+              <th class="secondary">更新时间</th>
+              <th class="audit">trace_id</th>
+              <th class="actions-column">操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            @if (loading()) {
+              <tr>
+                <td class="empty" colspan="8">正在读取任务记录…</td>
+              </tr>
+            } @else {
+              @for (task of pageData().items; track task.task_id) {
+                <tr>
+                  <td class="task-type">{{ task.task_type }}</td>
+                  <td><app-status-chip [status]="task.status" /></td>
+                  <td>{{ task.progress }}%</td>
+                  <td class="secondary">{{ task.attempt_no ?? 0 }}/{{ task.max_attempts ?? 0 }}</td>
+                  <td class="secondary">{{ task.created_at | beijingTime }}</td>
+                  <td class="secondary">{{ updatedAt(task) | beijingTime }}</td>
+                  <td class="audit trace">{{ task.trace_id }}</td>
+                  <td class="actions-column">
+                    <div class="actions">
+                      <button mat-button type="button" (click)="open(task)">详情</button>
+                      @if (canRerun(task)) {
+                        <button mat-button type="button" (click)="rerun(task)">重新运行</button>
+                      }
+                      @if (auth.hasPermission('task:delete')) {
+                        <button mat-button type="button" (click)="remove(task)">删除</button>
+                      }
+                    </div>
+                  </td>
+                </tr>
+              } @empty {
+                <tr>
+                  <td class="empty" colspan="8">暂无匹配任务。</td>
+                </tr>
+              }
+            }
+          </tbody>
+        </table>
+      </div>
       <footer>
-        <span>共 {{ pageData().total }} 条</span
-        ><button mat-button [disabled]="page() <= 1" (click)="changePage(-1)">上一页</button
-        ><span>第 {{ page() }} 页</span
-        ><button
+        <span>共 {{ pageData().total }} 条</span>
+        <button mat-button [disabled]="page() <= 1" (click)="changePage(-1)">上一页</button>
+        <span>第 {{ page() }} 页</span>
+        <button
           mat-button
           [disabled]="page() * pageData().page_size >= pageData().total"
           (click)="changePage(1)"
@@ -235,7 +122,8 @@ export function createTaskColumnDefs(compact: boolean): ColDef<TaskDetail>[] {
   styles: `
     .head,
     .filters,
-    footer {
+    footer,
+    .actions {
       display: flex;
       align-items: center;
       gap: var(--sw-space-3);
@@ -265,22 +153,71 @@ export function createTaskColumnDefs(compact: boolean): ColDef<TaskDetail>[] {
       overflow: hidden;
       box-shadow: var(--sw-shadow-sm);
     }
-    .task-grid {
-      display: block;
+    .table-scroll {
+      overflow-x: auto;
+    }
+    table {
       width: 100%;
-      min-height: 180px;
+      min-width: 1040px;
+      border-collapse: collapse;
+    }
+    th,
+    td {
+      height: 52px;
+      padding: 0 var(--sw-space-3);
+      border-bottom: 1px solid var(--sw-border);
+      text-align: left;
+      vertical-align: middle;
+      white-space: nowrap;
+    }
+    th {
+      height: 48px;
+      background: var(--sw-surface-subtle);
+      color: var(--sw-text-muted);
+      font-size: 13px;
+      font-weight: 700;
+    }
+    tbody tr:hover {
+      background: var(--sw-primary-container);
+    }
+    .task-type {
+      color: var(--sw-primary);
+      font-weight: 700;
+    }
+    .trace {
+      max-width: 240px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .actions-column {
+      position: sticky;
+      right: 0;
+      background: var(--sw-surface);
+    }
+    th.actions-column {
+      background: var(--sw-surface-subtle);
+    }
+    .actions {
+      gap: 2px;
+    }
+    .empty {
+      height: 160px;
+      color: var(--sw-text-muted);
+      text-align: center;
     }
     footer {
       justify-content: flex-end;
       padding: var(--sw-space-3) var(--sw-space-4);
-      border-top: 1px solid var(--sw-border);
       color: var(--sw-text-muted);
     }
-    :host ::ng-deep .task-type-cell {
-      color: var(--sw-primary);
-      font-weight: 700;
-    }
-    @media (max-width: 720px) {
+    @media (max-width: 900px) {
+      table {
+        min-width: 650px;
+      }
+      .secondary,
+      .audit {
+        display: none;
+      }
       .head {
         align-items: flex-start;
       }
@@ -301,7 +238,7 @@ export class TaskCenterPage {
   private readonly notifications = inject(NotificationService);
   readonly pageData = signal<TaskPage>({ items: [], page: 1, page_size: 20, total: 0 });
   readonly page = signal(1);
-  readonly columnDefs = signal(createTaskColumnDefs(window.innerWidth < 900));
+  readonly loading = signal(false);
   readonly statuses = [
     'pending',
     'queued',
@@ -311,35 +248,6 @@ export class TaskCenterPage {
     'failed',
     'cancelled',
   ];
-  readonly defaultColDef: ColDef<TaskDetail> = {
-    sortable: false,
-    resizable: true,
-    suppressHeaderMenuButton: true,
-  };
-  readonly gridOptions: GridOptions<TaskDetail> = {
-    animateRows: false,
-    ensureDomOrder: true,
-    rowHeight: 52,
-    headerHeight: 48,
-    suppressCellFocus: false,
-  };
-  readonly gridTheme = themeQuartz.withParams({
-    accentColor: 'var(--sw-primary)',
-    backgroundColor: 'var(--sw-surface)',
-    foregroundColor: 'var(--sw-text)',
-    borderColor: 'var(--sw-border)',
-    headerBackgroundColor: 'var(--sw-surface-subtle)',
-    rowHoverColor: 'var(--sw-primary-container)',
-    wrapperBorderRadius: '0px',
-    fontFamily: 'var(--sw-font-family)',
-  });
-  readonly gridContext: TaskGridContext = {
-    open: (task) => void this.router.navigate(['/tasks', task.task_id]),
-    rerun: (task) => this.rerun(task),
-    remove: (task) => this.remove(task),
-    canRerun: (task) => this.canRerun(task),
-    canDelete: () => this.auth.hasPermission('task:delete'),
-  };
   taskType = '';
   status = '';
 
@@ -347,12 +255,8 @@ export class TaskCenterPage {
     this.load();
   }
 
-  @HostListener('window:resize')
-  onResize(): void {
-    this.columnDefs.set(createTaskColumnDefs(window.innerWidth < 900));
-  }
-
   load(): void {
+    this.loading.set(true);
     this.api
       .get<TaskPage>('/api/v1/tasks', {
         page: this.page(),
@@ -360,6 +264,7 @@ export class TaskCenterPage {
         task_type: this.taskType || null,
         status: this.status || null,
       })
+      .pipe(finalize(() => this.loading.set(false)))
       .subscribe({
         next: (value) => this.pageData.set(value),
         error: (error) => this.notifications.error(error, '无法读取任务记录。'),
@@ -370,10 +275,15 @@ export class TaskCenterPage {
     this.page.set(1);
     this.load();
   }
-
   changePage(offset: number): void {
     this.page.update((value) => Math.max(1, value + offset));
     this.load();
+  }
+  updatedAt(task: TaskDetail): string | null {
+    return taskUpdatedAt(task);
+  }
+  open(task: TaskDetail): void {
+    void this.router.navigate(['/tasks', task.task_id]);
   }
 
   canRerun(task: TaskDetail): boolean {

@@ -190,16 +190,22 @@ export class WorkflowRunsPage {
   }
   load(): void {
     this.loading.set(true);
-    this.api.get<WorkflowRunPage>('/api/v1/workflow-runs', { page: 1, page_size: 50 }).subscribe({
-      next: (page) => {
-        this.page.set(page);
-        this.loading.set(false);
-      },
-      error: (error: unknown) => {
-        this.loading.set(false);
-        this.notifications.error(error, '读取运行记录失败。');
-      },
-    });
+    this.api
+      .get<WorkflowRunPage>('/api/v1/workflow-runs', {
+        page: 1,
+        page_size: 50,
+        view: 'summary',
+      })
+      .subscribe({
+        next: (page) => {
+          this.page.set(page);
+          this.loading.set(false);
+        },
+        error: (error: unknown) => {
+          this.loading.set(false);
+          this.notifications.error(error, '读取运行记录失败。');
+        },
+      });
   }
   statusLabel(status: string): string {
     return (
