@@ -33,6 +33,7 @@
             "styles": [
               "node_modules/dockview-angular/dist/styles/dockview.css",
               "node_modules/katex/dist/katex.min.css",
+              "public/assets/fonts/material-icons/material-icons.css",
               "src/styles.scss"
             ]
           },
