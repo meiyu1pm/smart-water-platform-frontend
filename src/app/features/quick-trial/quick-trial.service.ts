@@ -46,6 +46,32 @@ export interface TempUploadResult {
   preview: DataFilePreview;
 }
 
+function parseDateMs(raw: unknown): number {
+  if (!raw) return NaN;
+  if (typeof raw === 'number') return raw;
+  const str = String(raw).trim();
+  const isoLike = str.includes(' ') && !str.includes('T') ? str.replace(' ', 'T') : str;
+  const t = Date.parse(isoLike);
+  if (!isNaN(t)) return t;
+  const t2 = Date.parse(str);
+  return isNaN(t2) ? NaN : t2;
+}
+
+function formatDateStr(timestampMs: number, templateStr: string): string {
+  const d = new Date(timestampMs);
+  if (templateStr.includes(' ') && !templateStr.includes('T')) {
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const Y = d.getFullYear();
+    const M = pad(d.getMonth() + 1);
+    const D = pad(d.getDate());
+    const h = pad(d.getHours());
+    const m = pad(d.getMinutes());
+    const s = pad(d.getSeconds());
+    return `${Y}-${M}-${D} ${h}:${m}:${s}`;
+  }
+  return d.toISOString();
+}
+
 @Injectable({ providedIn: 'root' })
 export class QuickTrialService {
   private readonly api = inject(ApiClient);
@@ -149,21 +175,27 @@ export class QuickTrialService {
 
     // 1. 提取并清洗有效时序点
     const historyPoints: TimeSeriesPoint[] = [];
+    let sampleTimeFormat = '';
+
     for (const r of sampleRows) {
-      const t = String(r[timeColumn] || r['record_time'] || r['time'] || '');
+      const rawTime = r[timeColumn] ?? r['record_time'] ?? r['时间'] ?? r['time'] ?? '';
+      const tStr = String(rawTime).trim();
       const rawV = r[valueColumn] ?? Object.values(r).find((v) => typeof v === 'number');
-      const num = Number(rawV);
-      if (t && !isNaN(num)) {
-        historyPoints.push({ time: t, value: Number(num.toFixed(3)) });
+      const num = typeof rawV === 'number' ? rawV : parseFloat(String(rawV));
+
+      if (tStr && !isNaN(num) && !isNaN(parseDateMs(tStr))) {
+        if (!sampleTimeFormat) sampleTimeFormat = tStr;
+        historyPoints.push({ time: tStr, value: Number(num.toFixed(3)) });
       }
     }
 
-    // 2. 如果无点位，生成平滑周期性基准数据
+    // 2. 如果无匹配点位，生成平滑周期性基准数据
     if (historyPoints.length < 8) {
-      const baseTime = new Date('2026-01-01T00:00:00Z').getTime();
+      const baseTime = new Date('2024-01-01T00:00:00Z').getTime();
+      sampleTimeFormat = '2024-01-01 00:00:00';
       for (let i = 0; i < 48; i++) {
-        const t = new Date(baseTime + i * 15 * 60 * 1000).toISOString();
-        const v = 21.2 + Math.sin(i * 0.4) * 3.5 + (i % 4) * 0.2;
+        const t = formatDateStr(baseTime + i * 15 * 60 * 1000, sampleTimeFormat);
+        const v = 5.8 + Math.sin(i * 0.4) * 1.5 + (i % 4) * 0.15;
         historyPoints.push({ time: t, value: Number(v.toFixed(3)) });
       }
     }
@@ -171,8 +203,8 @@ export class QuickTrialService {
     // 3. 计算采样时间间隔（默认为 15 分钟）
     let intervalMinutes = 15;
     if (historyPoints.length >= 2) {
-      const t1 = new Date(historyPoints[0].time).getTime();
-      const t2 = new Date(historyPoints[1].time).getTime();
+      const t1 = parseDateMs(historyPoints[0].time);
+      const t2 = parseDateMs(historyPoints[1].time);
       const diff = Math.abs(t2 - t1) / (60 * 1000);
       if (diff > 0 && diff <= 1440) {
         intervalMinutes = Math.round(diff);
@@ -181,13 +213,13 @@ export class QuickTrialService {
 
     // 4. 执行预测外推算法（时序周期回归 + 置信区间）
     const horizonSteps = 32; // 预测未来 32 个步长
-    const lastTimestamp = new Date(historyPoints[historyPoints.length - 1].time).getTime();
+    const lastTimestamp = parseDateMs(historyPoints[historyPoints.length - 1].time) || Date.now();
     const values = historyPoints.map((p) => p.value);
     const mean = values.reduce((a, b) => a + b, 0) / values.length;
     const std =
       Math.sqrt(
         values.map((x) => Math.pow(x - mean, 2)).reduce((a, b) => a + b, 0) / values.length,
-      ) || 1.2;
+      ) || 0.8;
 
     const forecastPoints: TimeSeriesPoint[] = [];
     const lowerBand: TimeSeriesPoint[] = [];
@@ -196,14 +228,16 @@ export class QuickTrialService {
     const seasonLength = Math.min(24, Math.max(8, Math.floor(historyPoints.length / 2)));
 
     for (let step = 1; step <= horizonSteps; step++) {
-      const nextTime = new Date(lastTimestamp + step * intervalMinutes * 60 * 1000).toISOString();
-      const seasonalIndex = (historyPoints.length + step) % seasonLength;
-      const seasonalBase = values[values.length - 1 - (seasonalIndex % values.length)] || mean;
-      const noise = Math.sin(step * 0.3) * 0.4;
-      const predictedVal = Number((seasonalBase * 0.95 + mean * 0.05 + noise).toFixed(3));
+      const nextTimeMs = lastTimestamp + step * intervalMinutes * 60 * 1000;
+      const nextTime = formatDateStr(nextTimeMs, sampleTimeFormat);
 
-      const uncertainty = std * 0.6 * Math.sqrt(step / 4 + 1);
-      const lower = Number((predictedVal - uncertainty).toFixed(3));
+      const seasonalIndex = (historyPoints.length + step) % seasonLength;
+      const seasonalBase = values[values.length - 1 - (seasonalIndex % values.length)] ?? mean;
+      const noise = Math.sin(step * 0.3) * 0.25;
+      const predictedVal = Number(Math.max(0, seasonalBase * 0.95 + mean * 0.05 + noise).toFixed(3));
+
+      const uncertainty = std * 0.5 * Math.sqrt(step / 4 + 1);
+      const lower = Number(Math.max(0, predictedVal - uncertainty).toFixed(3));
       const upper = Number((predictedVal + uncertainty).toFixed(3));
 
       forecastPoints.push({ time: nextTime, value: predictedVal });

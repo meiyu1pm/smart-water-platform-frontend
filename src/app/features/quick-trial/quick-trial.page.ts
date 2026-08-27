@@ -813,6 +813,7 @@ import { NotificationService } from '../../core/services/notification.service';
     .chart-canvas {
       width: 100%;
       height: 100%;
+      min-height: 340px;
     }
     /* 初始场景展示 */
     .scenario-showcase {
@@ -936,7 +937,17 @@ export class QuickTrialPage implements OnInit, AfterViewInit, OnDestroy {
   readonly running = signal(false);
   readonly result = signal<ForecastResult | null>(null);
 
-  @ViewChild('chartHost') chartHost?: ElementRef<HTMLDivElement>;
+  private _chartHost?: ElementRef<HTMLDivElement>;
+  @ViewChild('chartHost') set chartHost(el: ElementRef<HTMLDivElement> | undefined) {
+    this._chartHost = el;
+    if (el?.nativeElement && this.result()) {
+      setTimeout(() => this.initChart(), 20);
+    }
+  }
+  get chartHost(): ElementRef<HTMLDivElement> | undefined {
+    return this._chartHost;
+  }
+
   private chart: echarts.ECharts | null = null;
   private resizeObserver: ResizeObserver | null = null;
 
@@ -962,7 +973,7 @@ export class QuickTrialPage implements OnInit, AfterViewInit, OnDestroy {
   });
 
   ngOnInit(): void {
-    // 动态探测平台上真实可用的 Demo 文件版本 ID
+    // 动态探测平台上真实可用的 Demo 文件版本 ID 并预读样本行
     this.dataFiles.listCollections().subscribe({
       next: (collections) => {
         if (!collections.length) return;
@@ -972,6 +983,11 @@ export class QuickTrialPage implements OnInit, AfterViewInit, OnDestroy {
             const demo = files.find((f) => /leak|demo/i.test(f.name)) || files[0];
             if (demo?.current_version_id) {
               this.demoVersionId.set(demo.current_version_id);
+              this.dataFiles.getPreview(demo.current_version_id).subscribe({
+                next: (preview) => {
+                  this.sampleRows.set(preview.rows || []);
+                },
+              });
             }
           },
         });
@@ -1029,11 +1045,11 @@ export class QuickTrialPage implements OnInit, AfterViewInit, OnDestroy {
 
         const colNames = res.preview.columns.map((c) => c.name);
         const timeCol =
-          colNames.find((c) => /time|date|timestamp/i.test(c)) ||
+          colNames.find((c) => /time|date|timestamp|时间/i.test(c)) ||
           colNames[0] ||
           '';
         const valCol =
-          colNames.find((c) => /flow|val|pressure|metric|num/i.test(c)) ||
+          colNames.find((c) => /flow|val|pressure|metric|num|流量|压力/i.test(c)) ||
           colNames[1] ||
           colNames[0] ||
           '';
@@ -1087,60 +1103,82 @@ export class QuickTrialPage implements OnInit, AfterViewInit, OnDestroy {
       : 's01_leak_demo.csv';
     const timeCol = this.selectedTimeCol();
     const valCol = this.selectedValueCol();
-    const rows = this.sampleRows();
+    const currentRows = this.sampleRows();
+    const verId = this.activeVersionId();
 
-    setTimeout(() => {
-      this.quickTrial
-        .executeQuickForecast({
-          task:
-            this.scenarios.find((s) => s.id === this.selectedTaskId())?.name ||
-            '时序预测',
-          algorithm: this.selectedAlgorithm(),
-          fileName,
-          timeColumn: timeCol,
-          valueColumn: valCol,
-          sampleRows: rows,
-        })
-        .subscribe({
-          next: (res) => {
-            this.result.set(res);
-            this.running.set(false);
+    const execute = (sampleRows: Array<Record<string, unknown>>) => {
+      setTimeout(() => {
+        this.quickTrial
+          .executeQuickForecast({
+            task:
+              this.scenarios.find((s) => s.id === this.selectedTaskId())?.name ||
+              '时序预测',
+            algorithm: this.selectedAlgorithm(),
+            fileName,
+            timeColumn: timeCol,
+            valueColumn: valCol,
+            sampleRows,
+          })
+          .subscribe({
+            next: (res) => {
+              this.result.set(res);
+              this.running.set(false);
 
-            // 运行后清理上传的临时试用文件
-            if (this.customUploadedFile() && this.customCollectionId()) {
-              const fileId = this.customUploadedFile()!.id;
-              const colId = this.customCollectionId()!;
-              this.quickTrial.cleanupTemporaryFile(colId, fileId).subscribe();
-            }
+              // 运行后清理上传的临时试用文件
+              if (this.customUploadedFile() && this.customCollectionId()) {
+                const fileId = this.customUploadedFile()!.id;
+                const colId = this.customCollectionId()!;
+                this.quickTrial.cleanupTemporaryFile(colId, fileId).subscribe();
+              }
 
-            requestAnimationFrame(() => {
-              this.initChart();
-            });
-          },
-          error: (err) => {
-            this.running.set(false);
-            this.notifications.error(err, '快速试用运行异常');
-          },
-        });
-    }, 1200);
+              setTimeout(() => {
+                this.initChart();
+              }, 40);
+            },
+            error: (err) => {
+              this.running.set(false);
+              this.notifications.error(err, '快速试用运行异常');
+            },
+          });
+      }, 800);
+    };
+
+    if (currentRows.length === 0 && verId) {
+      this.dataFiles.getPreview(verId).subscribe({
+        next: (preview) => {
+          this.sampleRows.set(preview.rows || []);
+          execute(preview.rows || []);
+        },
+        error: () => {
+          execute([]);
+        },
+      });
+    } else {
+      execute(currentRows);
+    }
   }
 
   private initChart(): void {
-    if (!this.chartHost?.nativeElement || !this.result()) return;
+    const host = this._chartHost?.nativeElement;
+    const res = this.result();
+    if (!host || !res) return;
 
     try {
-      if (!this.chart) {
-        this.chart = echarts.init(this.chartHost.nativeElement, null, {
-          renderer: 'svg',
-        });
-        if (typeof ResizeObserver !== 'undefined') {
-          this.resizeObserver = new ResizeObserver(() => {
-            this.chart?.resize();
-          });
-          this.resizeObserver.observe(this.chartHost.nativeElement);
-        }
+      if (this.chart) {
+        this.chart.dispose();
+        this.chart = null;
       }
-      this.renderForecastChart(this.result()!);
+      this.chart = echarts.init(host, null, {
+        renderer: 'svg',
+      });
+      if (typeof ResizeObserver !== 'undefined') {
+        this.resizeObserver?.disconnect();
+        this.resizeObserver = new ResizeObserver(() => {
+          this.chart?.resize();
+        });
+        this.resizeObserver.observe(host);
+      }
+      this.renderForecastChart(res);
     } catch {
       // Safe fallback
     }
