@@ -14,7 +14,7 @@ import { MatButtonModule } from '@angular/material/button';
 import { RouterLink } from '@angular/router';
 import { Subscription } from 'rxjs';
 
-import { DataAssetSelection, DataCollectionSummary, DataFileSummary, DataFileVersionSummary, DataFileView, DataFileViewCreate, ModelVersionSummary } from '../../core/models/api.models';
+import { DataAssetSelection, DataCollectionSummary, DataFileSummary, DataFileVersionSummary, DataFileViewCreate, DataFileViewSelection, ModelVersionSummary } from '../../core/models/api.models';
 import { ApiClient } from '../../core/services/api-client.service';
 import { DataFileService } from '../../core/services/data-file.service';
 import { DataAssetPickerComponent } from '../../shared/components/data-asset-picker.component';
@@ -780,12 +780,11 @@ export class NodeInspectorPanelComponent implements OnDestroy {
 
   onVersionChange(value: string): void { const id = Number(value); this.selectedFileVersionId.set(Number.isInteger(id) ? id : null); }
 
-  onDataFileViewChange(view: DataFileView): void {
+  onDataFileViewChange(view: DataFileViewSelection): void {
     const node = this.dataFileNode(); const versionId = this.selectedFileVersionId();
     if (!node || !versionId) return;
-    const draft = view as unknown as { output_mode?: 'table' | 'timeseries'; selected_columns?: string[]; time_column?: string; value_column?: string; point_column?: string };
-    const outputMode = draft.output_mode || view.view_kind;
-    const mapping = outputMode === 'table' ? { selected_columns: draft.selected_columns || [] } : { time_column: draft.time_column || '', value_column: draft.value_column || '', ...(draft.point_column ? { point_column: draft.point_column } : {}) };
+    const outputMode = view.output_mode;
+    const mapping = outputMode === 'table' ? { selected_columns: view.selected_columns || [] } : { time_column: view.time_column || '', value_column: view.value_column || '', ...(view.point_column ? { point_column: view.point_column } : {}) };
     const payload: DataFileViewCreate = { view_kind: outputMode, mapping };
     this.subscriptions.push(this.files.createView(versionId, payload).subscribe({
       next: (created) => {
@@ -801,7 +800,7 @@ export class NodeInspectorPanelComponent implements OnDestroy {
   }
 
   private loadCollections(): void { this.dataCollectionsLoaded = true; this.subscriptions.push(this.files.listCollections().subscribe({ next: (items) => this.dataCollections.set(items), error: () => { this.dataCollections.set([]); this.dataCollectionsLoaded = false; } })); }
-  private viewSummary(view: DataFileView): string { const draft = view as unknown as { output_mode?: 'table' | 'timeseries'; selected_columns?: string[]; time_column?: string; value_column?: string; point_column?: string }; const mode = draft.output_mode || view.view_kind; return mode === 'table' ? (draft.selected_columns || []).join('、') : [draft.time_column, draft.value_column, draft.point_column].filter(Boolean).join(' → '); }
+  private viewSummary(view: DataFileViewSelection): string { return view.output_mode === 'table' ? (view.selected_columns || []).join('、') : [view.time_column, view.value_column, view.point_column].filter(Boolean).join(' → '); }
 
   requiresModel(node: EditorNode): boolean {
     if (node.node_code === 'seasonal_robust_anomaly') return true;

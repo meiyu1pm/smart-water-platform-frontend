@@ -552,7 +552,6 @@ export interface DataCollectionSummary {
   id: number;
   name: string;
   description: string | null;
-  item_count: number;
   file_count: number;
   storage_bytes: number;
   parse_issue_count: number;
@@ -580,7 +579,6 @@ export interface DataFileVersionSummary {
 
 export interface DataFileSummary {
   id: number;
-  collection_id: number;
   name: string;
   file_kind: DataFileKind;
   format: string;

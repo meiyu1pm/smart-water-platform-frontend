@@ -14,7 +14,6 @@ import { Subscription } from 'rxjs';
 import {
   DataFileColumnPreview,
   DataFilePreview,
-  DataFileView,
   DataFileViewSelection,
   DataFileViewOutputMode,
 } from '../../core/models/api.models';
@@ -314,8 +313,7 @@ export class DataFilePreviewPanelComponent implements OnChanges, OnDestroy {
 
   @Input() fileVersionId: number | null = null;
   @Input() profileStatus: string | null = null;
-  // 旧数据资产页仍消费 DataFileView 类型；事件实际只发 create payload，不包含响应 ID。
-  @Output() readonly viewChange = new EventEmitter<DataFileView>();
+  @Output() readonly viewChange = new EventEmitter<DataFileViewSelection>();
 
   readonly preview = signal<DataFilePreview | null>(null);
   readonly loading = signal(false);
@@ -400,8 +398,7 @@ export class DataFilePreviewPanelComponent implements OnChanges, OnDestroy {
             ...(this.pointColumn() ? { point_column: this.pointColumn() } : {}),
           }),
     };
-    // 旧数据资产页仍消费 DataFileView 事件；工作流属性面板会将该选择转换成 canonical create payload。
-    this.viewChange.emit(selection as unknown as DataFileView);
+    this.viewChange.emit(selection);
   }
 
   displayValue(value: unknown): string {

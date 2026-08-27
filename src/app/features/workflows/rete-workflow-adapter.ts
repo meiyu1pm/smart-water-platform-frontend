@@ -103,7 +103,12 @@ export class ReteWorkflowAdapter {
     await selectable.select(node.id, false);
   }
   async fitView(): Promise<void> { if (this.area && this.editor) await AreaExtensions.zoomAt(this.area, this.editor.getNodes()); }
-  setNodeData(id: string, data: Record<string, unknown>): void { const node = this.reteNodes.get(id); if (node) node.data = { ...(node.data || {}), ...data }; }
+  setNodeData(id: string, data: Record<string, unknown>): void {
+    const node = this.reteNodes.get(id);
+    if (!node) return;
+    node.data = { ...(node.data || {}), ...data };
+    void this.area?.update('node', node.id);
+  }
   private async addConnection(edge: Edge, expectedGeneration = this.mountGeneration): Promise<boolean> {
     const editor = this.editor;
     if (!editor || expectedGeneration !== this.mountGeneration) return false; const source = this.reteNodes.get(edge.source.node_id); const target = this.reteNodes.get(edge.target.node_id);

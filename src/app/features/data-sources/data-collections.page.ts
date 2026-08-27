@@ -7,7 +7,11 @@ import { MatInputModule } from '@angular/material/input';
 import { EMPTY, Subscription, forkJoin, interval, of } from 'rxjs';
 import { catchError, exhaustMap, tap } from 'rxjs/operators';
 
-import { DataCollectionSummary, DataFileSummary, DataFileView } from '../../core/models/api.models';
+import {
+  DataCollectionSummary,
+  DataFileSummary,
+  DataFileViewSelection,
+} from '../../core/models/api.models';
 import { AuthService } from '../../core/services/auth.service';
 import { DataFileService } from '../../core/services/data-file.service';
 import { NotificationService } from '../../core/services/notification.service';
@@ -569,8 +573,8 @@ export class DataCollectionsPage {
   openPreview(file: DataFileSummary): void {
     this.selectedFile.set(file);
   }
-  onViewChange(view: DataFileView): void {
-    this.notifications.success(`已选择 ${view.view_kind === 'table' ? '表格' : '时序'} 输出列。`);
+  onViewChange(view: DataFileViewSelection): void {
+    this.notifications.success(`已选择 ${view.output_mode === 'table' ? '表格' : '时序'} 输出列。`);
   }
 
   fileStatus(file: DataFileSummary): string {
