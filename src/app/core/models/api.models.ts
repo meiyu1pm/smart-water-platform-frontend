@@ -547,6 +547,102 @@ export interface CsvImportMapping {
   auto_quality_profile?: boolean;
 }
 
+/** A heterogeneous business data collection. This API is additive to the legacy dataset assets. */
+export interface DataCollectionSummary {
+  id: number;
+  name: string;
+  description: string | null;
+  file_count: number;
+  storage_bytes: number;
+  parse_issue_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export type DataFileKind =
+  'table' | 'topology' | 'spatial' | 'device_catalog' | 'event_log' | 'document' | 'other' | string;
+
+export interface DataFileVersionSummary {
+  id: number;
+  file_id: number;
+  version_no: number;
+  version_code: string;
+  /** 兼容尚未升级的静态数据；新接口使用 version_no/version_code。 */
+  version?: string;
+  status: string;
+  sha256: string;
+  size_bytes: number;
+  row_count: number | null;
+  profile_status?: 'pending' | 'running' | 'ready' | 'failed' | string;
+  created_at: string;
+}
+
+export interface DataFileSummary {
+  id: number;
+  name: string;
+  file_kind: DataFileKind;
+  format: string;
+  status: string;
+  version_count: number;
+  current_version_id: number | null;
+  current_version?: DataFileVersionSummary | null;
+  profile_status?: 'pending' | 'ready' | 'failed' | 'unsupported' | string | null;
+  row_count?: number | null;
+  size_bytes: number;
+  parse_issue_count?: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DataFileUploadResult {
+  file: DataFileSummary;
+  version: DataFileVersionSummary;
+  task_id?: string | null;
+}
+
+export interface DataFileColumnPreview {
+  name: string;
+  inferred_type: string;
+  nullable: boolean;
+  sample_values: string[];
+  warnings: string[];
+}
+
+export interface DataFilePreview {
+  file_version_id: number;
+  columns: DataFileColumnPreview[];
+  rows: Array<Record<string, unknown>>;
+  total_rows: number | null;
+  truncated: boolean;
+  preview_limit: number;
+}
+
+export type DataFileViewOutputMode = 'table' | 'timeseries';
+
+/** 预览面板的平面选择草稿；提交前由工作流面板转换为 DataFileViewCreate。 */
+export interface DataFileViewSelection {
+  file_version_id: number;
+  output_mode: DataFileViewOutputMode;
+  selected_columns?: string[];
+  time_column?: string;
+  value_column?: string;
+  point_column?: string;
+}
+
+export interface DataFileViewCreate {
+  name?: string;
+  view_kind: DataFileViewOutputMode;
+  mapping: Record<string, unknown>;
+}
+
+export interface DataFileView extends DataFileViewCreate {
+  id: number;
+  file_version_id: number;
+  view_code: string;
+  status: string;
+  created_at?: string;
+}
+
 export type QueryValue = string | number | boolean | null | undefined;
 
 export interface WorkflowRunSummary {

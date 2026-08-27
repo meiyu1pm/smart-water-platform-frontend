@@ -51,7 +51,12 @@ interface NavigationItem {
               >{{ item.label }}</a
             >
           }
-          <a mat-list-item href="https://schwarz-hal.github.io/smart-water-platform-docs/" target="_blank" rel="noopener noreferrer">
+          <a
+            mat-list-item
+            href="https://schwarz-hal.github.io/smart-water-platform-docs/"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
             文档中心
           </a>
         </mat-nav-list>
@@ -166,6 +171,7 @@ export class AppShellComponent {
     { label: '平台概览', route: '/dashboard' },
     { label: '场景中心', route: '/scenes', permission: 'workflow:read' },
     { label: '数据源与导入', route: '/data-sources', permission: 'data_source:read' },
+    { label: '数据集管理', route: '/data-collections', permission: 'data_source:read' },
     { label: '算子中心', route: '/operators', permission: 'operator:read' },
     { label: '工作流', route: '/workflows', permission: 'workflow:read' },
     { label: '工作流运行记录', route: '/workflow-runs', permission: 'workflow:read' },

@@ -24,6 +24,8 @@ export interface Definition {
   output_ports: Port[];
   parameter_schema?: { properties?: Record<string, Record<string, unknown>>; required?: string[] };
   ui_schema?: Record<string, Record<string, unknown>>;
+  /** 后端 ui_schema.renderer.component 对应的可选 Angular 节点渲染器。 */
+  renderer_key?: string | null;
   default_params?: Record<string, unknown>;
   algorithm?: Record<string, unknown> | null;
   executor_type?: string;
@@ -47,7 +49,8 @@ export interface Edge {
   target: { node_id: string; port: string };
 }
 
-export interface StoredBinding {
+export interface DatasetBinding {
+  kind?: 'dataset';
   dataset_asset_id: number;
   dataset_version_id: number;
   monitor_point_id?: number;
@@ -56,6 +59,18 @@ export interface StoredBinding {
   start?: string | null;
   end?: string | null;
 }
+
+export interface DataFileBinding {
+  kind: 'data_file';
+  file_version_id: number;
+  data_view_id: number;
+  output_mode: 'table' | 'timeseries';
+  file_name?: string;
+  version?: string;
+  view_summary?: string;
+}
+
+export type StoredBinding = DatasetBinding | DataFileBinding;
 
 export interface Graph {
   contract_version: '1.0' | string;

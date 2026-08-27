@@ -248,6 +248,17 @@ describe('workflow editor architecture', () => {
     expect(store.nodes()[0].parameters).toEqual({ window: 24 });
   });
 
+  it('round-trips data-file bindings while keeping resource IDs out of node parameters', () => {
+    const serializer = new WorkflowGraphSerializer();
+    const definition: Definition = { node_code: 'data_file_input_v1', version: '1.0.0', node_name: '数据文件', description: '', category: 'data_source', runtime_type: 'platform', input_ports: [], output_ports: [{ key: 'table', label: '表格', data_type: 'table' }, { key: 'series', label: '时序', data_type: 'timeseries' }] };
+    const binding = { kind: 'data_file' as const, file_version_id: 12, data_view_id: 31, output_mode: 'timeseries' as const, file_name: 'flow.csv' };
+    const nodes = [{ id: 'file', node_code: definition.node_code, node_version: definition.version, parameters: { binding_key: 'file', output_mode: 'timeseries', data_view_id: 31 }, x: 0, y: 0, collapsed: false, definition }];
+    const graph = serializer.serialize(nodes, [], [], new Map([['file', binding]]));
+    expect(graph.nodes[0]['parameters']).toEqual({ binding_key: 'file', output_mode: 'timeseries' });
+    const restored = serializer.deserialize(graph, new Map([[definition.node_code, definition]]));
+    expect(restored.bindings.get('file')).toEqual(binding);
+  });
+
   it('keeps the Workspace independent from the legacy shell and sends expected_revision through Facade', () => {
     const requests: Array<{ method: string; body: any }> = [];
     TestBed.configureTestingModule({
@@ -287,6 +298,18 @@ describe('workflow editor architecture', () => {
   it('keeps sync incremental instead of rebuilding the Rete editor', () => {
     expect(ReteWorkflowAdapter.prototype.sync.toString()).not.toContain('mount');
     expect(ReteWorkflowAdapter.prototype.sync.toString()).not.toContain('destroy');
+  });
+
+  it('resolves a custom renderer from the Rete node payload and updates display data in place', () => {
+    const adapter = Object.create(ReteWorkflowAdapter.prototype) as any;
+    const node = { id: 'file', data: { renderer_key: 'data-file-input', fileName: 'old.csv' } };
+    const update = vi.fn(() => Promise.resolve());
+    adapter.reteNodes = new Map([['file', node]]);
+    adapter.area = { update };
+    expect(adapter.rendererKey({ type: 'node', payload: node })).toBe('data-file-input');
+    adapter.setNodeData('file', { fileName: 'new.csv', outputMode: 'table' });
+    expect(node.data).toMatchObject({ renderer_key: 'data-file-input', fileName: 'new.csv', outputMode: 'table' });
+    expect(update).toHaveBeenCalledWith('node', 'file');
   });
 
   it('protects incremental Rete synchronization from user command paths', async () => {

@@ -16,7 +16,7 @@ export class WorkflowGraphSerializer {
     });
     const graph: Graph = {
       contract_version: '1.0',
-      nodes: nodes.filter((n) => validNodes.has(n.id)).map((n) => ({ id: n.id, node_code: n.node_code, node_version: n.node_version, parameters: n.parameters, ui: { position: { x: n.x, y: n.y }, collapsed: n.collapsed } })),
+      nodes: nodes.filter((n) => validNodes.has(n.id)).map((n) => ({ id: n.id, node_code: n.node_code, node_version: n.node_version, parameters: this.safeParameters(n), ui: { position: { x: n.x, y: n.y }, collapsed: n.collapsed } })),
       edges: safeEdges,
       outputs: safeOutputs,
     };
@@ -32,8 +32,23 @@ export class WorkflowGraphSerializer {
     const edges = this.sanitizeEdges(nodes, graph.edges ?? []);
     const outputs = (graph.outputs ?? []).filter((o) => nodes.find((n) => n.id === o.node_id)?.definition?.output_ports.some((p) => p.key === o.port));
     const bindings = new Map<string, StoredBinding>();
-    for (const [id, value] of Object.entries(graph.bindings ?? {})) if (value && Number.isInteger(Number(value.dataset_version_id))) bindings.set(id, { ...value });
+    for (const [id, value] of Object.entries(graph.bindings ?? {})) {
+      const raw = value as unknown as Record<string, unknown>;
+      if (raw?.['kind'] === 'data_file' && Number.isInteger(Number(raw['file_version_id'])) && Number.isInteger(Number(raw['data_view_id'])) && (raw['output_mode'] === 'table' || raw['output_mode'] === 'timeseries')) {
+        bindings.set(id, { ...raw, file_version_id: Number(raw['file_version_id']), data_view_id: Number(raw['data_view_id']) } as StoredBinding);
+      } else if (raw && Number.isInteger(Number(raw['dataset_version_id']))) {
+        bindings.set(id, { ...raw, dataset_asset_id: Number(raw['dataset_asset_id']), dataset_version_id: Number(raw['dataset_version_id']) } as StoredBinding);
+      }
+    }
     return { nodes, edges, outputs, bindings };
+  }
+  private safeParameters(node: EditorNode): Record<string, unknown> {
+    if (node.node_code !== 'data_file_input_v1') return node.parameters;
+    const parameters = { ...node.parameters };
+    delete parameters['file_version_id'];
+    delete parameters['data_view_id'];
+    delete parameters['file_name'];
+    return parameters;
   }
   sanitizeEdges(nodes: EditorNode[], edges: Edge[]): Edge[] {
     const byId = new Map(nodes.map((n) => [n.id, n])); const seen = new Set<string>(); const result: Edge[] = [];

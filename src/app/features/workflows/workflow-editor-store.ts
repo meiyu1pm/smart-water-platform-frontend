@@ -10,6 +10,7 @@ import {
   ValidationStatus,
 } from './workflow-editor.models';
 import { DataAssetSelection } from '../../core/models/api.models';
+import type { DataFileBinding } from './workflow-editor.models';
 
 /**
  * 架构边界：上游是 CommandBus/Facade 的领域写入，下游是页面、面板和 Rete Adapter 的只读信号。
@@ -24,7 +25,7 @@ export class WorkflowEditorStore {
   readonly edges = signal<Edge[]>([]);
   readonly outputs = signal<Array<{ node_id: string; port: string }>>([]);
   readonly bindings = signal<Map<string, StoredBinding>>(new Map());
-  readonly bindingSelections = signal<Map<string, DataAssetSelection>>(new Map());
+  readonly bindingSelections = signal<Map<string, DataAssetSelection | DataFileBinding>>(new Map());
   readonly selectedId = signal<string | null>(null);
   readonly invalidParameterNodes = signal<ReadonlySet<string>>(new Set());
   readonly workflowId = signal<number | null>(null);
@@ -48,7 +49,7 @@ export class WorkflowEditorStore {
   readonly selectedNode = computed(() => this.nodes().find((n) => n.id === this.selectedId()) ?? null);
   readonly bindingsReady = computed(() =>
     this.nodes()
-      .filter((n) => n.node_code === 'dataset_channel_v1' || n.node_code === 'dataset_asset_v1')
+      .filter((n) => n.node_code === 'dataset_channel_v1' || n.node_code === 'dataset_asset_v1' || n.node_code === 'data_file_input_v1')
       .every((n) => this.bindings().has(n.id)),
   );
 
@@ -57,7 +58,7 @@ export class WorkflowEditorStore {
   setEdges(value: Edge[]): void { this.edges.set(value); }
   setOutputs(value: Array<{ node_id: string; port: string }>): void { this.outputs.set(value); }
   setBindings(value: Map<string, StoredBinding>): void { this.bindings.set(new Map(value)); }
-  setBindingSelections(value: Map<string, DataAssetSelection>): void { this.bindingSelections.set(new Map(value)); }
+  setBindingSelections(value: Map<string, DataAssetSelection | DataFileBinding>): void { this.bindingSelections.set(new Map(value)); }
   setHistory(history: Graph[], index: number): void { this.history.set(history); this.historyIndex.set(index); }
   setBindingRevision(): void { this.bindingRevision.update((value) => value + 1); }
   setInvalidParameterNodes(value: ReadonlySet<string>): void { this.invalidParameterNodes.set(new Set(value)); }
