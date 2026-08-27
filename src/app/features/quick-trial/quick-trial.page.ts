@@ -3,6 +3,7 @@ import {
   Component,
   ElementRef,
   OnDestroy,
+  OnInit,
   ViewChild,
   computed,
   inject,
@@ -18,13 +19,21 @@ import {
   QuickTrialService,
 } from './quick-trial.service';
 import { DataFileService } from '../../core/services/data-file.service';
-import { DataFileSummary } from '../../core/models/api.models';
+import {
+  DataFilePreview,
+  DataFileSummary,
+  DataFileViewSelection,
+} from '../../core/models/api.models';
+import {
+  DataFileBindingEcho,
+  DataFilePreviewPanelComponent,
+} from '../data-sources/data-file-preview-panel.component';
 import { NotificationService } from '../../core/services/notification.service';
 
 @Component({
   selector: 'app-quick-trial-page',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, DataFilePreviewPanelComponent],
   template: `
     <div class="trial-container">
       <!-- 居中头部：Logo 与品牌标头 -->
@@ -98,11 +107,11 @@ import { NotificationService } from '../../core/services/notification.service';
             class="data-input-box"
             (click)="toggleDataDrawer()"
             [class.active]="drawerOpen()"
-            title="点击选择或上传数据"
+            title="点击选择输出列或上传数据"
           >
             <span class="data-icon">{{ customUploadedFile() ? '📁' : '📊' }}</span>
             <span class="data-summary-text">{{ dataInputDisplay() }}</span>
-            <span class="edit-badge">{{ drawerOpen() ? '收起' : '更换' }}</span>
+            <span class="edit-badge">{{ drawerOpen() ? '收起预览' : '选择输出列 / 更换' }}</span>
           </div>
         </div>
 
@@ -122,7 +131,7 @@ import { NotificationService } from '../../core/services/notification.service';
         </button>
       </section>
 
-      <!-- 数据选择与上传抽屉 -->
+      <!-- 数据选择与上传抽屉 (内嵌标准预览与列选择面板) -->
       @if (drawerOpen()) {
         <section class="data-drawer-panel">
           <div class="drawer-header">
@@ -130,14 +139,14 @@ import { NotificationService } from '../../core/services/notification.service';
               <button
                 type="button"
                 [class.active]="dataMode() === 'demo'"
-                (click)="dataMode.set('demo')"
+                (click)="switchToDemoMode()"
               >
                 🌟 平台示例数据
               </button>
               <button
                 type="button"
                 [class.active]="dataMode() === 'upload'"
-                (click)="dataMode.set('upload')"
+                (click)="switchToUploadMode()"
               >
                 📤 上传本地 CSV
               </button>
@@ -151,50 +160,8 @@ import { NotificationService } from '../../core/services/notification.service';
             </button>
           </div>
 
-          <!-- Demo 示例数据模式 -->
-          @if (dataMode() === 'demo') {
-            <div class="demo-options-grid">
-              <article
-                class="demo-card"
-                [class.selected]="
-                  selectedField() === 'inlet_flow' && !customUploadedFile()
-                "
-                (click)="selectDemoField('inlet_flow')"
-              >
-                <div class="demo-title">
-                  <strong>DMA 进水总流量时序 (m³/h)</strong>
-                  <span class="badge">推荐</span>
-                </div>
-                <p>
-                  文件：<code>s01_leak_demo.csv</code> · 时间列：<code
-                    >record_time</code
-                  >
-                  · 数值列：<code>inlet_flow</code>
-                </p>
-              </article>
-
-              <article
-                class="demo-card"
-                [class.selected]="
-                  selectedField() === 'pressure' && !customUploadedFile()
-                "
-                (click)="selectDemoField('pressure')"
-              >
-                <div class="demo-title">
-                  <strong>DMA 节点水压时序 (m)</strong>
-                </div>
-                <p>
-                  文件：<code>s01_leak_demo.csv</code> · 时间列：<code
-                    >record_time</code
-                  >
-                  · 数值列：<code>pressure</code>
-                </p>
-              </article>
-            </div>
-          }
-
-          <!-- 上传本地文件模式 -->
-          @if (dataMode() === 'upload') {
+          <!-- 上传本地文件拖拽区 (仅在未上传或 upload 模式下显示) -->
+          @if (dataMode() === 'upload' && !customUploadedFile()) {
             <div class="upload-zone">
               <input
                 #fileInput
@@ -206,56 +173,45 @@ import { NotificationService } from '../../core/services/notification.service';
               @if (uploading()) {
                 <div class="upload-loading">
                   <span class="spinner"></span>
-                  <span>正在解析文件结构与字段 Profile...</span>
-                </div>
-              } @else if (customUploadedFile(); as file) {
-                <div class="uploaded-file-info">
-                  <div class="file-badge">
-                    <span>📄 {{ file.name }}</span>
-                    <button
-                      type="button"
-                      class="remove-file-btn"
-                      (click)="clearCustomFile()"
-                    >
-                      移除并恢复示例
-                    </button>
-                  </div>
-                  <div class="mapping-selectors">
-                    <div class="mapping-item">
-                      <label>时间列：</label>
-                      <select
-                        [ngModel]="selectedTimeCol()"
-                        (ngModelChange)="selectedTimeCol.set($event)"
-                      >
-                        @for (col of uploadedColumns(); track col) {
-                          <option [value]="col">{{ col }}</option>
-                        }
-                      </select>
-                    </div>
-                    <div class="mapping-item">
-                      <label>预测数值列：</label>
-                      <select
-                        [ngModel]="selectedValueCol()"
-                        (ngModelChange)="selectedValueCol.set($event)"
-                      >
-                        @for (col of uploadedColumns(); track col) {
-                          <option [value]="col">{{ col }}</option>
-                        }
-                      </select>
-                    </div>
-                  </div>
-                  <small class="temp-file-note"
-                    >ℹ️
-                    此文件为临时试用文件，运行得出预测结果后将自动清理回收。</small
-                  >
+                  <span>正在上传并解析文件结构...</span>
                 </div>
               } @else {
                 <div class="drop-target" (click)="fileInput.click()">
                   <span class="upload-icon">☁️</span>
-                  <strong>点击或拖拽上传本地 CSV 时序文件</strong>
-                  <p>支持包含时间列与数值指标的标准 CSV 文件</p>
+                  <strong>点击或拖拽上传本地 CSV 时序数据文件</strong>
+                  <p>上传后可在下方交互式预览并点选输入列，运行完成后将自动清理回收该临时文件。</p>
                 </div>
               }
+            </div>
+          }
+
+          @if (dataMode() === 'upload' && customUploadedFile(); as file) {
+            <div class="uploaded-banner">
+              <div class="file-info-line">
+                <span>📄 临时试用文件：<strong>{{ file.name }}</strong></span>
+                <button
+                  type="button"
+                  class="remove-file-btn"
+                  (click)="clearCustomFile()"
+                >
+                  移除并恢复示例
+                </button>
+              </div>
+              <small class="temp-note">ℹ️ 此文件为临时试用文件，运行得出预测结果后将自动清理回收。</small>
+            </div>
+          }
+
+          <!-- 标准文件预览与列选择面板组件 (DataFilePreviewPanelComponent) -->
+          @if (activeVersionId(); as verId) {
+            <div class="preview-panel-host">
+              <app-data-file-preview-panel
+                [fileVersionId]="verId"
+                [profileStatus]="'ready'"
+                [canCreateView]="true"
+                [initialBinding]="currentBindingEcho()"
+                (viewChange)="onViewSelectionChange($event)"
+                (previewLoaded)="onPreviewLoaded($event)"
+              />
             </div>
           }
         </section>
@@ -268,9 +224,9 @@ import { NotificationService } from '../../core/services/notification.service';
             <div class="progress-bar-fill"></div>
           </div>
           <div class="step-badges">
-            <span class="step-item active">1. 时序数据特征提取</span>
-            <span class="step-item active">2. 周期趋势建模</span>
-            <span class="step-item active">3. 未来序列外推</span>
+            <span class="step-item active">1. 提取所选时序数据特征</span>
+            <span class="step-item active">2. 拟合周期与趋势特征</span>
+            <span class="step-item active">3. 外推预测未来时序</span>
             <span class="step-item">4. 生成 95% 置信区间</span>
           </div>
         </section>
@@ -286,7 +242,7 @@ import { NotificationService } from '../../core/services/notification.service';
                 <strong>{{ res.task }} 结果</strong>
               </div>
               <span class="algo-tag">{{ res.algorithm }}</span>
-              <span class="file-tag">{{ res.fileName }}</span>
+              <span class="file-tag">{{ res.fileName }} ({{ res.timeColumn }} ➔ {{ res.valueColumn }})</span>
             </div>
             <div class="header-actions">
               <button
@@ -573,10 +529,10 @@ import { NotificationService } from '../../core/services/notification.service';
     /* 抽屉面板 */
     .data-drawer-panel {
       background: #ffffff;
-      border: 1px solid #cbd5e1;
-      border-radius: 12px;
-      padding: 16px 20px;
-      box-shadow: 0 10px 25px rgba(15, 23, 42, 0.06);
+      border: 1.5px solid #cbd5e1;
+      border-radius: 14px;
+      padding: 18px 20px;
+      box-shadow: 0 12px 30px rgba(15, 23, 42, 0.08);
       display: flex;
       flex-direction: column;
       gap: 16px;
@@ -602,12 +558,12 @@ import { NotificationService } from '../../core/services/notification.service';
       gap: 8px;
     }
     .drawer-tabs button {
-      padding: 6px 14px;
+      padding: 7px 16px;
       border: 1px solid #e2e8f0;
       border-radius: 8px;
       background: #f8fafc;
       color: #475569;
-      font-size: 12px;
+      font-size: 13px;
       font-weight: 600;
       cursor: pointer;
       transition: all 0.15s ease;
@@ -624,62 +580,14 @@ import { NotificationService } from '../../core/services/notification.service';
       cursor: pointer;
       font-size: 16px;
     }
-    .demo-options-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 12px;
-    }
-    .demo-card {
-      padding: 12px 14px;
-      border: 1.5px solid #e2e8f0;
-      border-radius: 8px;
-      cursor: pointer;
-      transition: all 0.15s ease;
-      background: #fafafa;
-    }
-    .demo-card:hover {
-      border-color: #38bdf8;
-      background: #f0f9ff;
-    }
-    .demo-card.selected {
-      border-color: #0284c7;
-      background: #f0f9ff;
-      box-shadow: 0 0 0 2px rgba(2, 132, 199, 0.2);
-    }
-    .demo-title {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 4px;
-    }
-    .demo-title strong {
-      font-size: 13px;
-      color: #0f172a;
-    }
-    .demo-title .badge {
-      font-size: 10px;
-      background: #22c55e;
-      color: #ffffff;
-      padding: 1px 6px;
-      border-radius: 4px;
-    }
-    .demo-card p {
-      margin: 0;
-      font-size: 11px;
-      color: #64748b;
-    }
-    .demo-card code {
-      color: #0369a1;
-      font-weight: 600;
-    }
-    /* 上传区域 */
+    /* 上传拖拽区域 */
     .file-input-hidden {
       display: none;
     }
     .drop-target {
-      padding: 24px;
+      padding: 22px;
       border: 2px dashed #cbd5e1;
-      border-radius: 8px;
+      border-radius: 10px;
       text-align: center;
       cursor: pointer;
       background: #f8fafc;
@@ -704,20 +612,31 @@ import { NotificationService } from '../../core/services/notification.service';
       font-size: 11px;
       color: #94a3b8;
     }
-    .uploaded-file-info {
+    .upload-loading {
+      padding: 24px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      font-size: 13px;
+      color: #0284c7;
+      font-weight: 600;
+      background: #f0f9ff;
+      border-radius: 8px;
+    }
+    .uploaded-banner {
       display: flex;
       flex-direction: column;
-      gap: 10px;
-      padding: 12px;
+      gap: 4px;
+      padding: 10px 14px;
       background: #f8fafc;
       border-radius: 8px;
       border: 1px solid #e2e8f0;
     }
-    .file-badge {
+    .file-info-line {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      font-weight: 700;
       font-size: 13px;
       color: #0f172a;
     }
@@ -726,28 +645,16 @@ import { NotificationService } from '../../core/services/notification.service';
       background: transparent;
       color: #ef4444;
       font-size: 12px;
+      font-weight: 600;
       cursor: pointer;
     }
-    .mapping-selectors {
-      display: flex;
-      gap: 16px;
-    }
-    .mapping-item {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      font-size: 12px;
-    }
-    .mapping-item select {
-      padding: 4px 8px;
-      border: 1px solid #cbd5e1;
-      border-radius: 6px;
-      background: #ffffff;
-      font-size: 12px;
-    }
-    .temp-file-note {
+    .temp-note {
       color: #64748b;
       font-size: 11px;
+    }
+    .preview-panel-host {
+      border-top: 1px solid #f1f5f9;
+      padding-top: 10px;
     }
     /* 运行状态卡片 */
     .running-state-card {
@@ -1000,7 +907,7 @@ import { NotificationService } from '../../core/services/notification.service';
     }
   `,
 })
-export class QuickTrialPage implements AfterViewInit, OnDestroy {
+export class QuickTrialPage implements OnInit, AfterViewInit, OnDestroy {
   private readonly router = inject(Router);
   private readonly quickTrial = inject(QuickTrialService);
   private readonly dataFiles = inject(DataFileService);
@@ -1010,16 +917,19 @@ export class QuickTrialPage implements AfterViewInit, OnDestroy {
   readonly selectedTaskId = signal('timeseries-forecast');
   readonly selectedAlgorithm = signal('auto');
   readonly dataMode = signal<'demo' | 'upload'>('demo');
-  readonly selectedField = signal<'inlet_flow' | 'pressure'>('inlet_flow');
   readonly drawerOpen = signal(false);
 
-  // 上传的自定义临时文件
+  // Demo 版本 ID 与自定义上传临时文件
+  readonly demoVersionId = signal<number>(3); // 默认 s01_leak_demo.csv 的版本 3
   readonly customUploadedFile = signal<DataFileSummary | null>(null);
   readonly customCollectionId = signal<number | null>(null);
-  readonly uploadedColumns = signal<string[]>([]);
-  readonly uploadedSampleRows = signal<Array<Record<string, unknown>>>([]);
+  readonly customVersionId = signal<number | null>(null);
+
+  // 列选择状态
   readonly selectedTimeCol = signal('record_time');
   readonly selectedValueCol = signal('inlet_flow');
+  readonly selectedPointCol = signal<string | undefined>(undefined);
+  readonly sampleRows = signal<Array<Record<string, unknown>>>([]);
   readonly uploading = signal(false);
 
   // 运行与结果状态
@@ -1030,12 +940,44 @@ export class QuickTrialPage implements AfterViewInit, OnDestroy {
   private chart: echarts.ECharts | null = null;
   private resizeObserver: ResizeObserver | null = null;
 
+  readonly activeVersionId = computed(() => {
+    if (this.dataMode() === 'upload') {
+      return this.customVersionId();
+    }
+    return this.demoVersionId();
+  });
+
+  readonly currentBindingEcho = computed<DataFileBindingEcho>(() => ({
+    output_mode: 'timeseries',
+    time_column: this.selectedTimeCol(),
+    value_column: this.selectedValueCol(),
+    point_column: this.selectedPointCol(),
+  }));
+
   readonly dataInputDisplay = computed(() => {
     if (this.customUploadedFile()) {
       return `${this.customUploadedFile()?.name} (${this.selectedTimeCol()} ➔ ${this.selectedValueCol()})`;
     }
-    return `示例数据：DMA供水流量 (s01_leak_demo.csv · record_time ➔ ${this.selectedField()})`;
+    return `示例数据：DMA供水流量 (s01_leak_demo.csv · ${this.selectedTimeCol()} ➔ ${this.selectedValueCol()})`;
   });
+
+  ngOnInit(): void {
+    // 动态探测平台上真实可用的 Demo 文件版本 ID
+    this.dataFiles.listCollections().subscribe({
+      next: (collections) => {
+        if (!collections.length) return;
+        const dma = collections.find((c) => /dma|demo/i.test(c.name)) || collections[0];
+        this.dataFiles.listFiles(dma.id).subscribe({
+          next: (files) => {
+            const demo = files.find((f) => /leak|demo/i.test(f.name)) || files[0];
+            if (demo?.current_version_id) {
+              this.demoVersionId.set(demo.current_version_id);
+            }
+          },
+        });
+      },
+    });
+  }
 
   ngAfterViewInit(): void {
     if (this.result()) {
@@ -1053,19 +995,23 @@ export class QuickTrialPage implements AfterViewInit, OnDestroy {
     this.drawerOpen.update((v) => !v);
   }
 
+  switchToDemoMode(): void {
+    this.dataMode.set('demo');
+    this.selectedTimeCol.set('record_time');
+    this.selectedValueCol.set('inlet_flow');
+  }
+
+  switchToUploadMode(): void {
+    this.dataMode.set('upload');
+  }
+
   onTaskChange(taskId: string): void {
     this.selectedTaskId.set(taskId);
     if (taskId === 'anomaly-detection') {
-      this.selectedField.set('pressure');
+      this.selectedValueCol.set('pressure');
     } else {
-      this.selectedField.set('inlet_flow');
+      this.selectedValueCol.set('inlet_flow');
     }
-  }
-
-  selectDemoField(field: 'inlet_flow' | 'pressure'): void {
-    this.clearCustomFile();
-    this.selectedField.set(field);
-    this.drawerOpen.set(false);
   }
 
   onFileSelected(event: Event): void {
@@ -1078,10 +1024,10 @@ export class QuickTrialPage implements AfterViewInit, OnDestroy {
       next: (res) => {
         this.customUploadedFile.set(res.file);
         this.customCollectionId.set(res.collectionId);
-        const colNames = res.preview.columns.map((c) => c.name);
-        this.uploadedColumns.set(colNames);
-        this.uploadedSampleRows.set(res.preview.rows || []);
+        this.customVersionId.set(res.versionId);
+        this.sampleRows.set(res.preview.rows || []);
 
+        const colNames = res.preview.columns.map((c) => c.name);
         const timeCol =
           colNames.find((c) => /time|date|timestamp/i.test(c)) ||
           colNames[0] ||
@@ -1094,7 +1040,7 @@ export class QuickTrialPage implements AfterViewInit, OnDestroy {
         this.selectedTimeCol.set(timeCol);
         this.selectedValueCol.set(valCol);
         this.uploading.set(false);
-        this.notifications.success(`临时数据 ${file.name} 解析就绪`);
+        this.notifications.success(`临时数据 ${file.name} 上传成功，请在下方点选输出列`);
       },
       error: (err) => {
         this.uploading.set(false);
@@ -1111,8 +1057,23 @@ export class QuickTrialPage implements AfterViewInit, OnDestroy {
     }
     this.customUploadedFile.set(null);
     this.customCollectionId.set(null);
-    this.uploadedColumns.set([]);
-    this.uploadedSampleRows.set([]);
+    this.customVersionId.set(null);
+    this.switchToDemoMode();
+  }
+
+  onViewSelectionChange(selection: DataFileViewSelection): void {
+    if (selection.output_mode === 'timeseries') {
+      if (selection.time_column) this.selectedTimeCol.set(selection.time_column);
+      if (selection.value_column) this.selectedValueCol.set(selection.value_column);
+      this.selectedPointCol.set(selection.point_column);
+      this.notifications.success(
+        `已选定输入列：时间[${selection.time_column}] · 预测目标[${selection.value_column}]`,
+      );
+    }
+  }
+
+  onPreviewLoaded(event: { preview: DataFilePreview; sampleRows: Array<Record<string, unknown>> }): void {
+    this.sampleRows.set(event.sampleRows || []);
   }
 
   runQuickTrial(): void {
@@ -1124,9 +1085,9 @@ export class QuickTrialPage implements AfterViewInit, OnDestroy {
     const fileName = isCustom
       ? this.customUploadedFile()!.name
       : 's01_leak_demo.csv';
-    const timeCol = isCustom ? this.selectedTimeCol() : 'record_time';
-    const valCol = isCustom ? this.selectedValueCol() : this.selectedField();
-    const rows = isCustom ? this.uploadedSampleRows() : [];
+    const timeCol = this.selectedTimeCol();
+    const valCol = this.selectedValueCol();
+    const rows = this.sampleRows();
 
     setTimeout(() => {
       this.quickTrial
@@ -1145,7 +1106,7 @@ export class QuickTrialPage implements AfterViewInit, OnDestroy {
             this.result.set(res);
             this.running.set(false);
 
-            // Auto cleanup uploaded temporary file after calculation
+            // 运行后清理上传的临时试用文件
             if (this.customUploadedFile() && this.customCollectionId()) {
               const fileId = this.customUploadedFile()!.id;
               const colId = this.customCollectionId()!;

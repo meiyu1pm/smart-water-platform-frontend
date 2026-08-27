@@ -52,6 +52,23 @@ describe('QuickTrialPage', () => {
 
     dataFileSpy = {
       listCollections: vi.fn().mockReturnValue(of([])),
+      listFiles: vi.fn().mockReturnValue(of([])),
+      getPreview: vi.fn().mockReturnValue(
+        of({
+          file_version_id: 3,
+          columns: [
+            { name: 'record_time', inferred_type: 'datetime', non_null_count: 50, null_count: 0 },
+            { name: 'inlet_flow', inferred_type: 'number', non_null_count: 50, null_count: 0 },
+          ],
+          rows: [
+            { record_time: '2026-01-01 00:00:00', inlet_flow: 21.2 },
+            { record_time: '2026-01-01 00:15:00', inlet_flow: 21.8 },
+          ],
+          total_rows: 50,
+          truncated: false,
+          preview_limit: 50,
+        }),
+      ),
     };
 
     await TestBed.configureTestingModule({
@@ -77,12 +94,25 @@ describe('QuickTrialPage', () => {
     expect(fixture.nativeElement.textContent).toContain('时序预测');
   });
 
-  it('toggles data selection drawer when clicked', () => {
+  it('toggles data selection drawer and displays preview panel', () => {
     expect(component.drawerOpen()).toBe(false);
     component.toggleDataDrawer();
     expect(component.drawerOpen()).toBe(true);
     fixture.detectChanges();
     expect(fixture.nativeElement.querySelector('.data-drawer-panel')).not.toBeNull();
+    expect(fixture.nativeElement.querySelector('app-data-file-preview-panel')).not.toBeNull();
+  });
+
+  it('updates selected columns when preview panel emits viewChange', () => {
+    component.onViewSelectionChange({
+      file_version_id: 3,
+      output_mode: 'timeseries',
+      time_column: '时间',
+      value_column: '流量(m³/h)',
+    });
+    expect(component.selectedTimeCol()).toBe('时间');
+    expect(component.selectedValueCol()).toBe('流量(m³/h)');
+    expect(component.dataInputDisplay()).toContain('时间 ➔ 流量(m³/h)');
   });
 
   it('executes quick forecast and renders metrics strip', async () => {

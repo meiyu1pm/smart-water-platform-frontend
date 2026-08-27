@@ -121,9 +121,9 @@ export interface DataFileBindingEcho {
                       type="button"
                       class="column-button"
                       [class.selected]="isSelected(column.name)"
-                      [class.warning]="column.warnings.length > 0"
+                      [class.warning]="(column.warnings?.length ?? 0) > 0"
                       [attr.aria-pressed]="isSelected(column.name)"
-                      [attr.title]="column.warnings.join('；') || column.inferred_type"
+                      [attr.title]="column.warnings?.join('；') || column.inferred_type"
                       (click)="selectColumn(column.name)"
                     >
                       <span class="col-name">{{ column.name }}</span>
