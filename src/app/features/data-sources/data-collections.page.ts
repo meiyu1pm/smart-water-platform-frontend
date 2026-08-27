@@ -115,26 +115,38 @@ import { DataFilePreviewPanelComponent } from './data-file-preview-panel.compone
         <div class="collection-list">
           @for (collection of filteredCollections(); track collection.id) {
             <section class="collection-row">
-              <button
-                class="collection-summary"
-                type="button"
-                (click)="toggleCollection(collection)"
-              >
-                <span class="expand-icon" aria-hidden="true">{{
-                  isExpanded(collection.id) ? '⌄' : '›'
-                }}</span>
-                <span class="collection-info"
-                  ><strong>{{ collection.name }}</strong
-                  ><small>{{ collection.description || '未填写说明' }}</small></span
+              <div class="collection-header">
+                <button
+                  class="collection-summary"
+                  type="button"
+                  (click)="toggleCollection(collection)"
                 >
-                <span class="collection-meta"
-                  ><span>{{ collection.file_count }} 个文件</span
-                  ><span>{{ formatBytes(collection.storage_bytes) }}</span
-                  ><span [class.issue-text]="collection.parse_issue_count > 0"
-                    >{{ collection.parse_issue_count }} 个问题</span
-                  ></span
-                >
-              </button>
+                  <span class="expand-icon" aria-hidden="true">{{
+                    isExpanded(collection.id) ? '⌄' : '›'
+                  }}</span>
+                  <span class="collection-info"
+                    ><strong>{{ collection.name }}</strong
+                    ><small>{{ collection.description || '未填写说明' }}</small></span
+                  >
+                  <span class="collection-meta"
+                    ><span>{{ collection.file_count }} 个文件</span
+                    ><span>{{ formatBytes(collection.storage_bytes) }}</span
+                    ><span [class.issue-text]="collection.parse_issue_count > 0"
+                      >{{ collection.parse_issue_count }} 个问题</span
+                    ></span
+                  >
+                </button>
+                @if (canDeleteCollection()) {
+                  <button
+                    mat-stroked-button
+                    class="delete-button"
+                    type="button"
+                    (click)="deleteCollection(collection, $event)"
+                  >
+                    删除数据集
+                  </button>
+                }
+              </div>
               @if (isExpanded(collection.id)) {
                 <div class="file-list">
                   <div class="file-toolbar">
@@ -170,6 +182,16 @@ import { DataFilePreviewPanelComponent } from './data-file-preview-panel.compone
                         <button mat-stroked-button type="button" (click)="openPreview(file)">
                           查看预览
                         </button>
+                        @if (canManageCollection()) {
+                          <button
+                            mat-stroked-button
+                            class="remove-button"
+                            type="button"
+                            (click)="removeFile(collection, file, $event)"
+                          >
+                            移出数据集
+                          </button>
+                        }
                       </div>
                     }
                   }
@@ -287,13 +309,26 @@ import { DataFilePreviewPanelComponent } from './data-file-preview-panel.compone
       border-radius: 10px;
       overflow: hidden;
     }
+    .collection-header {
+      display: flex;
+      align-items: stretch;
+      gap: 10px;
+      background: #fff;
+    }
     .collection-summary {
-      width: 100%;
+      flex: 1;
+      min-width: 0;
       border: 0;
       background: #fff;
       padding: 13px 15px;
       text-align: left;
       cursor: pointer;
+    }
+    .delete-button {
+      align-self: center;
+      flex: 0 0 auto;
+      margin-right: 12px;
+      color: #b91c1c;
     }
     .collection-summary:hover,
     .collection-summary:focus-visible {
@@ -430,6 +465,15 @@ import { DataFilePreviewPanelComponent } from './data-file-preview-panel.compone
       .collection-summary {
         align-items: flex-start;
       }
+      .collection-header {
+        align-items: stretch;
+        flex-direction: column;
+        gap: 0;
+      }
+      .delete-button {
+        align-self: flex-start;
+        margin: 0 12px 10px 48px;
+      }
       .collection-meta {
         display: none;
       }
@@ -495,6 +539,8 @@ export class DataCollectionsPage {
     this.subscriptions.unsubscribe();
   }
   canCreateCollection(): boolean { return this.auth.hasPermission('data_collection:write'); }
+  canDeleteCollection(): boolean { return this.auth.hasPermission('data_collection:delete'); }
+  canManageCollection(): boolean { return this.auth.hasPermission('data_collection:write'); }
   canUploadFile(): boolean { return this.auth.hasPermission('data_file:write'); }
   canCreateView(): boolean { return this.auth.hasPermission('data_view:write'); }
 
@@ -568,6 +614,47 @@ export class DataCollectionsPage {
           this.load();
         },
         error: (error) => this.notifications.error(error, '文件上传失败。'),
+      }),
+    );
+  }
+
+  deleteCollection(collection: DataCollectionSummary, event?: Event): void {
+    event?.stopPropagation();
+    if (!this.canDeleteCollection()) return;
+    if (!window.confirm(`确定删除数据集“${collection.name}”？数据集将移入回收站。`)) return;
+    this.subscriptions.add(
+      this.service.deleteCollection(collection.id).subscribe({
+        next: () => {
+          if (this.selectedFile() && this.filesByCollection().get(collection.id)?.some((file) => file.id === this.selectedFile()?.id)) {
+            this.selectedFile.set(null);
+          }
+          const expanded = new Set(this.expanded());
+          expanded.delete(collection.id);
+          this.expanded.set(expanded);
+          const files = new Map(this.filesByCollection());
+          files.delete(collection.id);
+          this.filesByCollection.set(files);
+          this.notifications.success('数据集已移入回收站。');
+          this.load();
+        },
+        error: (error) => this.notifications.error(error, '删除数据集失败。'),
+      }),
+    );
+  }
+
+  removeFile(collection: DataCollectionSummary, file: DataFileSummary, event?: Event): void {
+    event?.stopPropagation();
+    if (!this.canManageCollection()) return;
+    if (!window.confirm(`确定将“${file.name}”移出数据集“${collection.name}”？原文件不会被删除。`)) return;
+    this.subscriptions.add(
+      this.service.removeFileFromCollection(collection.id, file.id).subscribe({
+        next: () => {
+          if (this.selectedFile()?.id === file.id) this.selectedFile.set(null);
+          this.notifications.success('文件已移出数据集，原文件仍保留。');
+          this.loadFiles(collection.id);
+          this.load();
+        },
+        error: (error) => this.notifications.error(error, '移出文件失败。'),
       }),
     );
   }

@@ -21,13 +21,19 @@ describe('DataFileService', () => {
               calls.push({ method: 'POST', path, body });
               return of({});
             },
+            delete: (path: string) => {
+              calls.push({ method: 'DELETE', path });
+              return of({});
+            },
           },
         },
       ],
     });
     const service = TestBed.inject(DataFileService);
     service.listCollections().subscribe();
+    service.deleteCollection(4).subscribe();
     service.listFiles(4).subscribe();
+    service.removeFileFromCollection(4, 9).subscribe();
     service.listFileVersions(9).subscribe();
     service.getFileVersion(7).subscribe();
     service.getPreview(7, 25).subscribe();
@@ -41,7 +47,9 @@ describe('DataFileService', () => {
 
     expect(calls).toEqual([
       { method: 'GET', path: '/api/v1/data-collections' },
+      { method: 'DELETE', path: '/api/v1/data-collections/4' },
       { method: 'GET', path: '/api/v1/data-collections/4/files' },
+      { method: 'DELETE', path: '/api/v1/data-collections/4/files/9' },
       { method: 'GET', path: '/api/v1/data-files/9/versions' },
       { method: 'GET', path: '/api/v1/data-file-versions/7' },
       { method: 'GET', path: '/api/v1/data-file-versions/7/preview' },

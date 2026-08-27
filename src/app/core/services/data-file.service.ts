@@ -31,8 +31,20 @@ export class DataFileService {
     return this.api.post<DataCollectionSummary, typeof body>('/api/v1/data-collections', body);
   }
 
+  deleteCollection(collectionId: number): Observable<{ collection_id: number; status: string; recycle_item_id?: number }> {
+    return this.api.delete<{ collection_id: number; status: string; recycle_item_id?: number }>(
+      `/api/v1/data-collections/${collectionId}`,
+    );
+  }
+
   listFiles(collectionId: number): Observable<DataFileSummary[]> {
     return this.api.get<DataFileSummary[]>(`/api/v1/data-collections/${collectionId}/files`);
+  }
+
+  removeFileFromCollection(collectionId: number, fileId: number): Observable<{ collection_id: number; file_id: number; removed: boolean }> {
+    return this.api.delete<{ collection_id: number; file_id: number; removed: boolean }>(
+      `/api/v1/data-collections/${collectionId}/files/${fileId}`,
+    );
   }
 
   getFile(fileId: number): Observable<DataFileSummary> {
