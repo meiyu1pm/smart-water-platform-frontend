@@ -1189,14 +1189,27 @@ export class QuickTrialPage implements OnInit, AfterViewInit, OnDestroy {
 
     const histData = res.historyPoints.map((p) => [p.time, p.value]);
     const foreData = res.forecastPoints.map((p) => [p.time, p.value]);
-    const lowerData = res.lowerBand.map((p) => [p.time, p.value]);
-    const upperData = res.upperBand.map((p) => [p.time, p.value]);
+
+    // 构造堆叠面积置信带：
+    // 基底 = lowerData (透明无填充，从 0 堆叠到 lower)
+    // 面积 = diffData (upper - lower，从 lower 堆叠到 upper，半透明填充)
+    const lowerBaseData: Array<[string, number]> = [];
+    const bandDiffData: Array<[string, number]> = [];
+
+    for (let i = 0; i < res.forecastPoints.length; i++) {
+      const time = res.forecastPoints[i].time;
+      const lower = res.lowerBand[i]?.value ?? 0;
+      const upper = res.upperBand[i]?.value ?? 0;
+      const diff = Number(Math.max(0, upper - lower).toFixed(3));
+      lowerBaseData.push([time, lower]);
+      bandDiffData.push([time, diff]);
+    }
 
     if (res.historyPoints.length > 0) {
       const last = res.historyPoints[res.historyPoints.length - 1];
       foreData.unshift([last.time, last.value]);
-      lowerData.unshift([last.time, last.value]);
-      upperData.unshift([last.time, last.value]);
+      lowerBaseData.unshift([last.time, last.value]);
+      bandDiffData.unshift([last.time, 0]);
     }
 
     const option: echarts.EChartsOption = {
@@ -1210,7 +1223,7 @@ export class QuickTrialPage implements OnInit, AfterViewInit, OnDestroy {
       legend: {
         top: 28,
         textStyle: { fontSize: 11, color: '#64748b' },
-        data: ['历史观测真实值', '未来预测趋势值', '95% 置信区间上界', '95% 置信区间下界'],
+        data: ['历史观测真实值', '未来预测趋势值', '95% 置信区间'],
       },
       grid: {
         top: 60,
@@ -1221,6 +1234,33 @@ export class QuickTrialPage implements OnInit, AfterViewInit, OnDestroy {
       tooltip: {
         trigger: 'axis',
         textStyle: { fontSize: 12 },
+        formatter: (params: any) => {
+          if (!Array.isArray(params) || params.length === 0) return '';
+          const timeStr = params[0].axisValueLabel || params[0].name || '';
+          let html = `<div style="font-weight: bold; margin-bottom: 4px;">${timeStr}</div>`;
+          for (const item of params) {
+            if (item.seriesName === '置信区间基底') continue;
+            if (item.seriesName === '95% 置信区间') {
+              const pointTime = item.value?.[0];
+              const idx = res.forecastPoints.findIndex((p) => p.time === pointTime);
+              if (idx >= 0) {
+                const lower = res.lowerBand[idx]?.value;
+                const upper = res.upperBand[idx]?.value;
+                html += `<div style="display:flex; align-items:center; gap:6px; margin:2px 0;">
+                  <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:rgba(139, 92, 246, 0.6);"></span>
+                  <span>95% 置信区间: <b>[${lower} ~ ${upper}]</b></span>
+                </div>`;
+              }
+            } else {
+              const val = Array.isArray(item.value) ? item.value[1] : item.value;
+              html += `<div style="display:flex; align-items:center; gap:6px; margin:2px 0;">
+                <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:${item.color || '#0284c7'};"></span>
+                <span>${item.seriesName}: <b>${val}</b></span>
+              </div>`;
+            }
+          }
+          return html;
+        },
       },
       xAxis: {
         type: 'time',
@@ -1249,17 +1289,26 @@ export class QuickTrialPage implements OnInit, AfterViewInit, OnDestroy {
       ],
       series: [
         {
-          name: '历史观测真实值',
+          name: '置信区间基底',
           type: 'line',
-          data: histData,
+          data: lowerBaseData,
           smooth: true,
           showSymbol: false,
-          lineStyle: { color: '#0284c7', width: 2.5 },
+          lineStyle: { opacity: 0 },
+          stack: 'confidence-band',
+          symbol: 'none',
+        },
+        {
+          name: '95% 置信区间',
+          type: 'line',
+          data: bandDiffData,
+          smooth: true,
+          showSymbol: false,
+          lineStyle: { opacity: 0 },
+          stack: 'confidence-band',
+          symbol: 'none',
           areaStyle: {
-            color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-              { offset: 0, color: 'rgba(2, 132, 199, 0.25)' },
-              { offset: 1, color: 'rgba(2, 132, 199, 0.02)' },
-            ]),
+            color: 'rgba(139, 92, 246, 0.18)',
           },
         },
         {
@@ -1271,26 +1320,17 @@ export class QuickTrialPage implements OnInit, AfterViewInit, OnDestroy {
           lineStyle: { color: '#8b5cf6', width: 2.5, type: 'dashed' },
         },
         {
-          name: '95% 置信区间上界',
+          name: '历史观测真实值',
           type: 'line',
-          data: upperData,
+          data: histData,
           smooth: true,
           showSymbol: false,
-          lineStyle: { opacity: 0 },
-          stack: 'confidence-band',
-          symbol: 'none',
-        },
-        {
-          name: '95% 置信区间下界',
-          type: 'line',
-          data: lowerData,
-          smooth: true,
-          showSymbol: false,
-          lineStyle: { opacity: 0 },
-          stack: 'confidence-band',
-          symbol: 'none',
+          lineStyle: { color: '#0284c7', width: 2.5 },
           areaStyle: {
-            color: 'rgba(139, 92, 246, 0.12)',
+            color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+              { offset: 0, color: 'rgba(2, 132, 199, 0.25)' },
+              { offset: 1, color: 'rgba(2, 132, 199, 0.02)' },
+            ]),
           },
         },
       ],
