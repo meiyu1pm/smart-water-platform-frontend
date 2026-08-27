@@ -72,6 +72,59 @@ export function formatDateStr(timestampMs: number, templateStr: string): string 
   return d.toISOString();
 }
 
+/**
+ * 完整解析 CSV 文本为全量数据行，保证时序调窗使用全量历史数据
+ */
+export function parseCsvTextToRows(
+  csvText: string,
+  maxRows = 30000,
+): Array<Record<string, unknown>> {
+  if (!csvText || !csvText.trim()) return [];
+  const lines = csvText
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n')
+    .split('\n')
+    .filter((l) => l.trim().length > 0);
+  if (lines.length < 2) return [];
+
+  const parseLine = (line: string): string[] => {
+    const values: string[] = [];
+    let current = '';
+    let inQuotes = false;
+    for (let i = 0; i < line.length; i++) {
+      const char = line[i];
+      if (char === '"') {
+        inQuotes = !inQuotes;
+      } else if (char === ',' && !inQuotes) {
+        values.push(current.trim().replace(/^"(.*)"$/, '$1'));
+        current = '';
+      } else {
+        current += char;
+      }
+    }
+    values.push(current.trim().replace(/^"(.*)"$/, '$1'));
+    return values;
+  };
+
+  const headers = parseLine(lines[0]);
+  const rows: Array<Record<string, unknown>> = [];
+  const limit = Math.min(lines.length, maxRows + 1);
+
+  for (let i = 1; i < limit; i++) {
+    const vals = parseLine(lines[i]);
+    if (vals.length < headers.length) continue;
+    const row: Record<string, unknown> = {};
+    for (let h = 0; h < headers.length; h++) {
+      const col = headers[h];
+      const v = vals[h];
+      const num = Number(v);
+      row[col] = v !== '' && !isNaN(num) && isFinite(num) ? num : v;
+    }
+    rows.push(row);
+  }
+  return rows;
+}
+
 @Injectable({ providedIn: 'root' })
 export class QuickTrialService {
   private readonly api = inject(ApiClient);

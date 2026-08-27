@@ -18,6 +18,8 @@ import {
   ForecastResult,
   QuickTrialService,
   TimeSeriesPoint,
+  formatDateStr,
+  parseCsvTextToRows,
   parseDateMs,
 } from './quick-trial.service';
 import { DataFileService } from '../../core/services/data-file.service';
@@ -217,18 +219,18 @@ import { NotificationService } from '../../core/services/notification.service';
             </div>
           }
 
-          <!-- 即时时序数据预览与预测窗口交互调优卡片 -->
+          <!-- 即时时序数据预览与预测窗口交互调优卡片 (基于原文件完整数据) -->
           @if (parsedTimeSeries().length > 0) {
             <div class="timeseries-tuner-card">
               <div class="tuner-header">
                 <div class="tuner-title">
                   <span class="wave-icon">📈</span>
-                  <strong>已选时序波形即时预览与预测窗口调优</strong>
+                  <strong>已选时序波形完整预览与输入区间调优 (原文件全量 {{ parsedTimeSeries().length }} 点)</strong>
                 </div>
                 <div class="tuner-chips">
-                  <span class="tuner-chip">总点数: {{ parsedTimeSeries().length }} 点</span>
+                  <span class="tuner-chip">原文件总点数: {{ parsedTimeSeries().length }} 点 (约 {{ totalDurationHours() }} 小时)</span>
                   <span class="tuner-chip highlight">
-                    输入历史: {{ contextPointsCount() }} 点 (约 {{ contextDurationHours() }} 小时)
+                    选定输入历史: {{ contextPointsCount() }} 点 (约 {{ contextDurationHours() }} 小时)
                   </span>
                   <span class="tuner-chip">采样间隔: {{ detectedIntervalMinutes() }} 分钟</span>
                 </div>
@@ -239,7 +241,7 @@ import { NotificationService } from '../../core/services/notification.service';
                 <div #drawerChartHost class="drawer-chart-canvas"></div>
               </div>
               <p class="slider-hint">
-                💡 <strong>滑动上方图表底部的区间滑块</strong>，可自由调整送入算法的历史输入序列（起始位置与时长）。
+                💡 <strong>滑动上方图表底部的区间滑块</strong>，可自由在大文件全量时序中框选送入算法的历史输入序列（起始位置与时长）。
               </p>
 
               <!-- 预测时长 / 步长调节栏 -->
@@ -1176,6 +1178,7 @@ export class QuickTrialPage implements OnInit, AfterViewInit, OnDestroy {
   readonly selectedValueCol = signal('inlet_flow');
   readonly selectedPointCol = signal<string | undefined>(undefined);
   readonly sampleRows = signal<Array<Record<string, unknown>>>([]);
+  readonly fullFileRows = signal<Array<Record<string, unknown>>>([]);
   readonly uploading = signal(false);
 
   // 时序窗口与预测步长调控状态
@@ -1226,9 +1229,11 @@ export class QuickTrialPage implements OnInit, AfterViewInit, OnDestroy {
     point_column: this.selectedPointCol(),
   }));
 
-  // 解析出的完整时序点
+  // 解析出的完整时序点（优先使用原文件全量数据，若正在加载则使用前50行样本）
   readonly parsedTimeSeries = computed<TimeSeriesPoint[]>(() => {
-    const rows = this.sampleRows();
+    const full = this.fullFileRows();
+    const sample = this.sampleRows();
+    const rows = full.length > 0 ? full : sample;
     const timeCol = this.selectedTimeCol();
     const valCol = this.selectedValueCol();
     if (!rows.length || !timeCol || !valCol) return [];
@@ -1243,6 +1248,13 @@ export class QuickTrialPage implements OnInit, AfterViewInit, OnDestroy {
     const t2 = parseDateMs(pts[1].time);
     const diff = Math.abs(t2 - t1) / (60 * 1000);
     return diff > 0 && diff <= 1440 ? Math.round(diff) : 15;
+  });
+
+  // 原文件总时长小时数
+  readonly totalDurationHours = computed<string>(() => {
+    const count = this.parsedTimeSeries().length;
+    const interval = this.detectedIntervalMinutes();
+    return ((count * interval) / 60).toFixed(1);
   });
 
   // 选中的输入历史序列切片
@@ -1290,7 +1302,7 @@ export class QuickTrialPage implements OnInit, AfterViewInit, OnDestroy {
   });
 
   ngOnInit(): void {
-    // 动态探测 Demo 文件版本并预读样本行
+    // 动态探测 Demo 文件版本并预读样本行与全量数据
     this.dataFiles.listCollections().subscribe({
       next: (collections) => {
         if (!collections.length) return;
@@ -1305,6 +1317,7 @@ export class QuickTrialPage implements OnInit, AfterViewInit, OnDestroy {
                   this.sampleRows.set(preview.rows || []);
                 },
               });
+              this.loadFullFileVersion(demo.current_version_id);
             }
           },
         });
@@ -1327,6 +1340,26 @@ export class QuickTrialPage implements OnInit, AfterViewInit, OnDestroy {
     this.drawerChart = null;
   }
 
+  /**
+   * 下载并完整解析原文件全量数据
+   */
+  private loadFullFileVersion(versionId: number): void {
+    this.dataFiles.downloadFileVersion(versionId).subscribe({
+      next: (blob) => {
+        void blob.text().then((text) => {
+          const full = parseCsvTextToRows(text);
+          if (full.length > 0) {
+            this.fullFileRows.set(full);
+            setTimeout(() => this.initDrawerChart(), 40);
+          }
+        });
+      },
+      error: () => {
+        // Fallback gracefully
+      },
+    });
+  }
+
   toggleDataDrawer(): void {
     const next = !this.drawerOpen();
     this.drawerOpen.set(next);
@@ -1344,6 +1377,10 @@ export class QuickTrialPage implements OnInit, AfterViewInit, OnDestroy {
     this.dataMode.set('demo');
     this.selectedTimeCol.set('record_time');
     this.selectedValueCol.set('inlet_flow');
+    const demoVer = this.demoVersionId();
+    if (demoVer) {
+      this.loadFullFileVersion(demoVer);
+    }
     setTimeout(() => this.initDrawerChart(), 40);
   }
 
@@ -1365,6 +1402,14 @@ export class QuickTrialPage implements OnInit, AfterViewInit, OnDestroy {
     const input = event.target as HTMLInputElement;
     const file = input.files?.[0];
     if (!file) return;
+
+    // 直接从本地 File 对象异步解析全量时序行
+    void file.text().then((text) => {
+      const full = parseCsvTextToRows(text);
+      if (full.length > 0) {
+        this.fullFileRows.set(full);
+      }
+    });
 
     this.uploading.set(true);
     this.quickTrial.uploadTemporaryFile(file).subscribe({
@@ -1406,6 +1451,7 @@ export class QuickTrialPage implements OnInit, AfterViewInit, OnDestroy {
     this.customUploadedFile.set(null);
     this.customCollectionId.set(null);
     this.customVersionId.set(null);
+    this.fullFileRows.set([]);
     this.switchToDemoMode();
   }
 
@@ -1423,6 +1469,9 @@ export class QuickTrialPage implements OnInit, AfterViewInit, OnDestroy {
 
   onPreviewLoaded(event: { preview: DataFilePreview; sampleRows: Array<Record<string, unknown>> }): void {
     this.sampleRows.set(event.sampleRows || []);
+    if (event.preview.file_version_id && this.fullFileRows().length === 0) {
+      this.loadFullFileVersion(event.preview.file_version_id);
+    }
     setTimeout(() => this.initDrawerChart(), 40);
   }
 
@@ -1541,12 +1590,14 @@ export class QuickTrialPage implements OnInit, AfterViewInit, OnDestroy {
       : 's01_leak_demo.csv';
     const timeCol = this.selectedTimeCol();
     const valCol = this.selectedValueCol();
-    const currentRows = this.sampleRows();
+    const fullRows = this.fullFileRows();
+    const sampleRows = this.sampleRows();
+    const currentRows = fullRows.length > 0 ? fullRows : sampleRows;
     const verId = this.activeVersionId();
     const { startIdx, endIdx } = this.selectedContextSlice();
     const horizon = this.horizonSteps();
 
-    const execute = (sampleRows: Array<Record<string, unknown>>) => {
+    const execute = (effectiveRows: Array<Record<string, unknown>>) => {
       setTimeout(() => {
         this.quickTrial
           .executeQuickForecast({
@@ -1557,7 +1608,7 @@ export class QuickTrialPage implements OnInit, AfterViewInit, OnDestroy {
             fileName,
             timeColumn: timeCol,
             valueColumn: valCol,
-            sampleRows,
+            sampleRows: effectiveRows,
             inputStartIndex: startIdx,
             inputEndIndex: endIdx,
             horizonSteps: horizon,

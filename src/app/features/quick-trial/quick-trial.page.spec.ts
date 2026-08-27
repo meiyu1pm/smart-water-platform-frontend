@@ -73,6 +73,9 @@ describe('QuickTrialPage', () => {
           preview_limit: 50,
         }),
       ),
+      downloadFileVersion: vi.fn().mockReturnValue(
+        of(new Blob(['record_time,inlet_flow\n2026-01-01 00:00:00,21.2\n2026-01-01 00:15:00,21.8\n'])),
+      ),
     };
 
     await TestBed.configureTestingModule({

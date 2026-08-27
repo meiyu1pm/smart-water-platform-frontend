@@ -74,6 +74,10 @@ export class DataFileService {
     );
   }
 
+  downloadFileVersion(versionId: number): Observable<Blob> {
+    return this.api.download(`/api/v1/data-file-versions/${encodeURIComponent(versionId)}/download`);
+  }
+
   createView(versionId: number, view: DataFileViewCreate): Observable<DataFileView> {
     return this.api.post<DataFileView, DataFileViewCreate>(
       `/api/v1/data-file-versions/${versionId}/views`,
