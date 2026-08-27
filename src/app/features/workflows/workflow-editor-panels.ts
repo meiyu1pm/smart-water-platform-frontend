@@ -14,7 +14,16 @@ import { MatButtonModule } from '@angular/material/button';
 import { RouterLink } from '@angular/router';
 import { Subscription } from 'rxjs';
 
-import { DataAssetSelection, DataCollectionSummary, DataFileSummary, DataFileVersionSummary, DataFileViewCreate, DataFileViewSelection, ModelVersionSummary } from '../../core/models/api.models';
+import {
+  DataAssetSelection,
+  DataCollectionSummary,
+  DataFilePreview,
+  DataFileSummary,
+  DataFileVersionSummary,
+  DataFileViewCreate,
+  DataFileViewSelection,
+  ModelVersionSummary,
+} from '../../core/models/api.models';
 import { ApiClient } from '../../core/services/api-client.service';
 import { DataFileService } from '../../core/services/data-file.service';
 import { DataAssetPickerComponent } from '../../shared/components/data-asset-picker.component';
@@ -339,18 +348,57 @@ export class WorkflowCanvasPanelComponent implements AfterViewInit, OnDestroy {
   readonly adapter = inject(ReteWorkflowAdapter);
   @ViewChild('editorHost', { static: true }) private editorHost!: ElementRef<HTMLDivElement>;
   private resizeObserver?: ResizeObserver;
+  private viewMounted = false;
+
+  constructor() {
+    effect(() => {
+      const nodes = this.store.nodes();
+      const edges = this.store.edges();
+      if (this.viewMounted) {
+        void this.adapter.sync({ nodes, edges });
+      }
+    });
+  }
+
   ngAfterViewInit(): void {
     const host = this.editorHost.nativeElement;
-    void this.adapter.mount(host, { nodes: this.store.nodes(), edges: this.store.edges() }, { editable: true });
-    if (typeof ResizeObserver !== 'undefined') { this.resizeObserver = new ResizeObserver(() => this.adapter.refresh()); this.resizeObserver.observe(host); }
+    this.viewMounted = true;
+    void this.adapter
+      .mount(
+        host,
+        { nodes: this.store.nodes(), edges: this.store.edges() },
+        {
+          editable: true,
+          onNodePicked: (id) => this.facade.notifyNodePicked(id),
+        },
+      )
+      .then(() => {
+        if (this.store.nodes().length > 0) {
+          void this.adapter.fitView();
+        }
+      });
+    if (typeof ResizeObserver !== 'undefined') {
+      this.resizeObserver = new ResizeObserver(() => this.adapter.refresh());
+      this.resizeObserver.observe(host);
+    }
   }
+
   ngOnDestroy(): void {
+    this.viewMounted = false;
     this.resizeObserver?.disconnect();
     this.adapter.unmount(this.editorHost.nativeElement);
   }
+
   allowDrop(event: DragEvent): void { event.preventDefault(); }
-  onCanvasDrop(event: DragEvent): void { event.preventDefault(); const definition = this.store.definitionByCode().get(event.dataTransfer?.getData('application/x-node-code') || ''); if (definition) void this.addNode(definition); }
-  addNode(definition: Definition): void { const node = this.facade.addNode(definition); void this.adapter.addNode(node); }
+  onCanvasDrop(event: DragEvent): void {
+    event.preventDefault();
+    const definition = this.store.definitionByCode().get(event.dataTransfer?.getData('application/x-node-code') || '');
+    if (definition) void this.addNode(definition);
+  }
+  addNode(definition: Definition): void {
+    const node = this.facade.addNode(definition);
+    void this.adapter.addNode(node);
+  }
 }
 
 @Component({
@@ -464,51 +512,97 @@ export class WorkflowCanvasPanelComponent implements AfterViewInit, OnDestroy {
           </section>
         }
 
-        <h3>参数</h3>
-        <app-operator-parameter-form
-          [schema]="node.definition?.parameter_schema || {}"
-          [uiSchema]="node.definition?.ui_schema || {}"
-          [model]="node.parameters"
-          (parametersChange)="facade.setParameters(node.id, $event)"
-          (validityChange)="facade.setParameterValidity(node.id, $event)"
-        />
+        @if (node.node_code !== 'data_file_input_v1') {
+          <h3>参数</h3>
+          <app-operator-parameter-form
+            [schema]="node.definition?.parameter_schema || {}"
+            [uiSchema]="node.definition?.ui_schema || {}"
+            [model]="node.parameters"
+            (parametersChange)="facade.setParameters(node.id, $event)"
+            (validityChange)="facade.setParameterValidity(node.id, $event)"
+          />
+        }
         @if (dataFileNode(); as dataNode) {
           <section class="runtime-binding data-file-binding">
-            <h3>数据文件输入</h3>
-            <p>选择文件版本，并通过预览表头创建固定的表格或时序输出视图。</p>
-            <label>数据集合
-              <select [ngModel]="selectedCollectionId()" (ngModelChange)="onCollectionChange($event)">
-                <option [ngValue]="null">请选择集合</option>
-                @for (collection of dataCollections(); track collection.id) {
-                  <option [ngValue]="collection.id">{{ collection.name }}</option>
-                }
-              </select>
-            </label>
-            <label>数据文件
-              <select [ngModel]="selectedFileId()" (ngModelChange)="onFileChange($event)" [disabled]="!dataFiles().length">
-                <option [ngValue]="null">请选择文件</option>
-                @for (file of dataFiles(); track file.id) {
-                  <option [ngValue]="file.id">{{ file.name }}</option>
-                }
-              </select>
-            </label>
-            <label>文件版本
-              <select [ngModel]="selectedFileVersionId()" (ngModelChange)="onVersionChange($event)" [disabled]="!dataFileVersions().length">
-                <option [ngValue]="null">请选择版本</option>
-                @for (version of dataFileVersions(); track version.id) {
-                  <option [ngValue]="version.id">{{ version.version_code || ('v' + version.version_no) }} · {{ version.profile_status || version.status }}</option>
-                }
-              </select>
-            </label>
+            <header class="section-subhead">
+              <h3>📁 绑定数据文件版本</h3>
+              <small class="subhead-tip">指定该节点读取的数据集文件版本及输出列视图</small>
+            </header>
+
+            <div class="data-file-form-grid">
+              <div class="form-group">
+                <label class="form-label">
+                  <span class="label-text">1. 所属数据集</span>
+                  <select
+                    class="form-select"
+                    [ngModel]="selectedCollectionId()"
+                    (ngModelChange)="onCollectionChange($event)"
+                  >
+                    <option [ngValue]="null">-- 请选择数据集 --</option>
+                    @for (collection of dataCollections(); track collection.id) {
+                      <option [ngValue]="collection.id">{{ collection.name }}</option>
+                    }
+                  </select>
+                </label>
+              </div>
+
+              <div class="form-group">
+                <label class="form-label">
+                  <span class="label-text">2. 数据文件</span>
+                  <select
+                    class="form-select"
+                    [ngModel]="selectedFileId()"
+                    (ngModelChange)="onFileChange($event)"
+                    [disabled]="!dataFiles().length"
+                  >
+                    <option [ngValue]="null">-- 请选择文件 --</option>
+                    @for (file of dataFiles(); track file.id) {
+                      <option [ngValue]="file.id">{{ file.name }}</option>
+                    }
+                  </select>
+                </label>
+              </div>
+
+              <div class="form-group">
+                <label class="form-label">
+                  <span class="label-text">3. 文件版本</span>
+                  <select
+                    class="form-select"
+                    [ngModel]="selectedFileVersionId()"
+                    (ngModelChange)="onVersionChange($event)"
+                    [disabled]="!dataFileVersions().length"
+                  >
+                    <option [ngValue]="null">-- 请选择版本 --</option>
+                    @for (version of dataFileVersions(); track version.id) {
+                      <option [ngValue]="version.id">
+                        {{ version.version_code || ('v' + version.version_no) }} · {{ version.profile_status || version.status }}
+                      </option>
+                    }
+                  </select>
+                </label>
+              </div>
+            </div>
+
             @if (selectedFileVersionId()) {
               <app-data-file-preview-panel
                 [fileVersionId]="selectedFileVersionId()"
                 [profileStatus]="selectedDataFileVersion()?.profile_status || null"
+                [initialBinding]="currentDataFileBinding()"
                 (viewChange)="onDataFileViewChange($event)"
+                (previewLoaded)="onDataFilePreviewLoaded($event)"
               />
             }
             @if (dataFileBindingSummary(); as bindingSummary) {
-              <p class="frozen-binding" aria-live="polite">当前绑定：{{ bindingSummary.fileName || '数据文件' }} · {{ bindingSummary.version || ('版本 #' + bindingSummary.fileVersionId) }} · {{ bindingSummary.outputMode }}<br />{{ bindingSummary.viewSummary || '已保存视图' }}</p>
+              <div class="frozen-binding-card" aria-live="polite">
+                <div class="card-title">
+                  <b>当前生效视图</b>
+                  <span class="mode-tag">{{ bindingSummary.outputMode }}</span>
+                </div>
+                <div class="card-detail">
+                  <span>📄 {{ bindingSummary.fileName || '数据文件' }} ({{ bindingSummary.version || ('版本 #' + bindingSummary.fileVersionId) }})</span>
+                  <small class="view-detail">{{ bindingSummary.viewSummary || '已保存视图' }}</small>
+                </div>
+              </div>
             }
           </section>
         }
@@ -679,12 +773,86 @@ export class WorkflowCanvasPanelComponent implements AfterViewInit, OnDestroy {
       margin: -2px 0 12px;
       font-size: 12px;
     }
-    .frozen-binding {
-      padding: 8px;
-      border-radius: var(--sw-radius-sm, 6px);
-      background: var(--sw-color-info-soft, #eff6ff);
-      color: var(--sw-text-muted, #475569);
-      line-height: 1.5;
+    .data-file-binding {
+      margin-top: 14px;
+      display: grid;
+      gap: 12px;
+    }
+    .section-subhead h3 {
+      margin: 0 0 2px;
+      font-size: 14px;
+      color: var(--sw-text-primary, #0f172a);
+    }
+    .subhead-tip {
+      font-size: 11px;
+      color: #64748b;
+      display: block;
+      margin-bottom: 6px;
+    }
+    .data-file-form-grid {
+      display: grid;
+      gap: 8px;
+    }
+    .form-group {
+      display: flex;
+      flex-direction: column;
+    }
+    .form-label {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      font-size: 12px;
+      color: #475569;
+      font-weight: 500;
+    }
+    .form-select {
+      width: 100%;
+      padding: 7px 9px;
+      border: 1.5px solid #cbd5e1;
+      border-radius: 6px;
+      background: #ffffff;
+      color: #0f172a;
+      font-size: 12px;
+      outline: none;
+      transition: border-color 0.15s ease;
+    }
+    .form-select:focus {
+      border-color: #0284c7;
+      box-shadow: 0 0 0 2px rgba(2, 132, 199, 0.15);
+    }
+    .form-select:disabled {
+      background: #f1f5f9;
+      color: #94a3b8;
+      cursor: not-allowed;
+    }
+    .frozen-binding-card {
+      padding: 10px 12px;
+      border-radius: 8px;
+      background: #f0fdf4;
+      border: 1px solid #bbf7d0;
+      color: #166534;
+      font-size: 12px;
+      display: grid;
+      gap: 4px;
+    }
+    .frozen-binding-card .card-title {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .frozen-binding-card .mode-tag {
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      background: #dcfce7;
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+    .frozen-binding-card .view-detail {
+      color: #15803d;
+      font-size: 11px;
+      display: block;
+      margin-top: 2px;
     }
     .empty {
       display: grid;
@@ -713,19 +881,60 @@ export class NodeInspectorPanelComponent implements OnDestroy {
   readonly selectedFileId = signal<number | null>(null);
   readonly selectedFileVersionId = signal<number | null>(null);
   private dataCollectionsLoaded = false;
-  readonly dataFileNode = computed(() => { const node = this.store.selectedNode(); return node?.node_code === 'data_file_input_v1' ? node : null; });
+  private lastBackfilledVersionId: number | null = null;
+
+  readonly dataFileNode = computed(() => {
+    const node = this.store.selectedNode();
+    return node?.node_code === 'data_file_input_v1' ? node : null;
+  });
+
   readonly selectedDataFileVersion = computed(() => {
     const id = this.selectedFileVersionId();
-    return id ? this.dataFileVersions().find((version) => version.id === id) || null : null;
+    return id
+      ? this.dataFileVersions().find((version) => version.id === id) || null
+      : null;
   });
+
+  readonly currentDataFileBinding = computed(() => {
+    const node = this.dataFileNode();
+    if (!node) return null;
+    const binding = this.store.bindings().get(node.id);
+    if (!binding || binding.kind !== 'data_file') return null;
+    return {
+      output_mode: binding.output_mode,
+      view_summary: binding.view_summary,
+    };
+  });
+
   readonly dataFileBindingSummary = computed(() => {
     const node = this.dataFileNode();
     const binding = node ? this.store.bindings().get(node.id) : null;
     if (!binding || binding.kind !== 'data_file') return null;
-    return { fileName: binding.file_name || '', version: binding.version || '', fileVersionId: binding.file_version_id, outputMode: binding.output_mode, viewSummary: binding.view_summary || '' };
+    return {
+      fileName: binding.file_name || '',
+      version: binding.version || '',
+      fileVersionId: binding.file_version_id,
+      outputMode: binding.output_mode,
+      viewSummary: binding.view_summary || '',
+    };
   });
   private lastFetchedCode: string | null = null;
-  readonly selectedDataBinding = computed(() => { this.store.bindingRevision(); const node = this.store.selectedNode(); if (!node || !['dataset_channel_v1', 'dataset_asset_v1'].includes(node.node_code)) return null; return { id: node.id, selection: this.store.bindingSelections().get(node.id) as DataAssetSelection | null, wholeAsset: node.node_code === 'dataset_asset_v1' }; });
+  readonly selectedDataBinding = computed(() => {
+    this.store.bindingRevision();
+    const node = this.store.selectedNode();
+    if (
+      !node ||
+      !['dataset_channel_v1', 'dataset_asset_v1'].includes(node.node_code)
+    )
+      return null;
+    return {
+      id: node.id,
+      selection: this.store.bindingSelections().get(node.id) as
+        | DataAssetSelection
+        | null,
+      wholeAsset: node.node_code === 'dataset_asset_v1',
+    };
+  });
 
   constructor() {
     effect(() => {
@@ -750,57 +959,232 @@ export class NodeInspectorPanelComponent implements OnDestroy {
       if (node) {
         const binding = this.store.bindings().get(node.id);
         if (binding?.kind === 'data_file') {
-          this.selectedFileVersionId.set(binding.file_version_id);
-          this.selectedFileId.set(null);
-          if (!this.dataFileVersions().some((version) => version.id === binding.file_version_id)) {
-            this.subscriptions.push(this.files.getFileVersion(binding.file_version_id).subscribe({
-              next: (version) => {
-                if (this.selectedFileVersionId() === version.id) this.dataFileVersions.set([version]);
-              },
-              error: () => undefined,
-            }));
+          if (this.lastBackfilledVersionId !== binding.file_version_id) {
+            this.lastBackfilledVersionId = binding.file_version_id;
+            this.backfillBindingSelection(binding.file_version_id);
           }
+        } else if (!this.dataCollectionsLoaded) {
+          this.loadCollections();
         }
-        if (!this.dataCollectionsLoaded) this.loadCollections();
+      } else {
+        this.lastBackfilledVersionId = null;
       }
     });
   }
 
-  ngOnDestroy(): void { this.subscriptions.forEach((subscription) => subscription.unsubscribe()); }
-
-  onCollectionChange(value: string): void {
-    const id = Number(value); this.selectedCollectionId.set(Number.isInteger(id) ? id : null); this.dataFiles.set([]); this.dataFileVersions.set([]); this.selectedFileId.set(null); this.selectedFileVersionId.set(null);
-    if (Number.isInteger(id)) this.subscriptions.push(this.files.listFiles(id).subscribe({ next: (items) => this.dataFiles.set(items), error: () => this.dataFiles.set([]) }));
+  ngOnDestroy(): void {
+    this.subscriptions.forEach((subscription) => subscription.unsubscribe());
   }
 
-  onFileChange(value: string): void {
-    const id = Number(value); this.selectedFileId.set(Number.isInteger(id) ? id : null); this.dataFileVersions.set([]); this.selectedFileVersionId.set(null);
-    if (Number.isInteger(id)) this.subscriptions.push(this.files.listFileVersions(id).subscribe({ next: (items) => this.dataFileVersions.set(items), error: () => this.dataFileVersions.set([]) }));
+  onCollectionChange(value: string | number | null): void {
+    const id = Number(value);
+    this.selectedCollectionId.set(Number.isInteger(id) ? id : null);
+    this.dataFiles.set([]);
+    this.dataFileVersions.set([]);
+    this.selectedFileId.set(null);
+    this.selectedFileVersionId.set(null);
+    if (Number.isInteger(id)) {
+      this.subscriptions.push(
+        this.files.listFiles(id).subscribe({
+          next: (items) => this.dataFiles.set(items),
+          error: () => this.dataFiles.set([]),
+        }),
+      );
+    }
   }
 
-  onVersionChange(value: string): void { const id = Number(value); this.selectedFileVersionId.set(Number.isInteger(id) ? id : null); }
+  onFileChange(value: string | number | null): void {
+    const id = Number(value);
+    this.selectedFileId.set(Number.isInteger(id) ? id : null);
+    this.dataFileVersions.set([]);
+    this.selectedFileVersionId.set(null);
+    if (Number.isInteger(id)) {
+      this.subscriptions.push(
+        this.files.listFileVersions(id).subscribe({
+          next: (items) => this.dataFileVersions.set(items),
+          error: () => this.dataFileVersions.set([]),
+        }),
+      );
+    }
+  }
+
+  onVersionChange(value: string | number | null): void {
+    const id = Number(value);
+    this.selectedFileVersionId.set(Number.isInteger(id) ? id : null);
+  }
+
+  onDataFilePreviewLoaded(event: {
+    preview: DataFilePreview;
+    sampleRows: Array<Record<string, unknown>>;
+  }): void {
+    const node = this.dataFileNode();
+    if (!node) return;
+    const binding = this.store.bindings().get(node.id);
+    const file = this.dataFiles().find(
+      (item) => item.id === this.selectedFileId(),
+    );
+    const version = this.dataFileVersions().find(
+      (item) => item.id === this.selectedFileVersionId(),
+    );
+    const prev = this.rete.getNodeData(node.id) || {};
+    this.rete.setNodeData(node.id, {
+      ...prev,
+      fileName:
+        file?.name ||
+        (prev['fileName'] as string) ||
+        (binding?.kind === 'data_file' ? binding.file_name : '') ||
+        '',
+      version:
+        version?.version_code ||
+        (prev['version'] as string) ||
+        (binding?.kind === 'data_file' ? binding.version : '') ||
+        '',
+      outputMode:
+        binding?.kind === 'data_file'
+          ? binding.output_mode
+          : (node.parameters?.['output_mode'] as string) || 'table',
+      columnSummary: binding?.kind === 'data_file' ? binding.view_summary : '',
+      sampleRows: event.sampleRows,
+      columns: event.preview.columns.map((c) => c.name),
+    });
+  }
 
   onDataFileViewChange(view: DataFileViewSelection): void {
-    const node = this.dataFileNode(); const versionId = this.selectedFileVersionId();
+    const node = this.dataFileNode();
+    const versionId = this.selectedFileVersionId();
     if (!node || !versionId) return;
     const outputMode = view.output_mode;
-    const mapping = outputMode === 'table' ? { selected_columns: view.selected_columns || [] } : { time_column: view.time_column || '', value_column: view.value_column || '', ...(view.point_column ? { point_column: view.point_column } : {}) };
+    const mapping =
+      outputMode === 'table'
+        ? { selected_columns: view.selected_columns || [] }
+        : {
+            time_column: view.time_column || '',
+            value_column: view.value_column || '',
+            ...(view.point_column ? { point_column: view.point_column } : {}),
+          };
     const payload: DataFileViewCreate = { view_kind: outputMode, mapping };
-    this.subscriptions.push(this.files.createView(versionId, payload).subscribe({
-      next: (created) => {
-        const file = this.dataFiles().find((item) => item.id === this.selectedFileId()) || undefined;
-        const version = this.dataFileVersions().find((item) => item.id === versionId) || undefined;
-        const binding = { kind: 'data_file' as const, file_version_id: versionId, data_view_id: Number(created.id), output_mode: outputMode, ...(file?.name ? { file_name: file.name } : {}), ...(version ? { version: version.version_code || `v${version.version_no}` } : {}), view_summary: this.viewSummary(view) };
-        this.facade.setDataFileBinding(node.id, binding, outputMode);
-        this.facade.setParameter(node.id, 'output_mode', outputMode);
-        this.rete.setNodeData(node.id, { fileName: file?.name || '', version: version?.version_code || '', outputMode, columnSummary: binding.view_summary });
-      },
-      error: () => this.store.setMessage('error', '数据视图创建失败，请检查列映射后重试。'),
-    }));
+    this.subscriptions.push(
+      this.files.createView(versionId, payload).subscribe({
+        next: (created) => {
+          const file =
+            this.dataFiles().find(
+              (item) => item.id === this.selectedFileId(),
+            ) || undefined;
+          const version =
+            this.dataFileVersions().find((item) => item.id === versionId) ||
+            undefined;
+          const binding = {
+            kind: 'data_file' as const,
+            file_version_id: versionId,
+            data_view_id: Number(created.id),
+            output_mode: outputMode,
+            ...(file?.name ? { file_name: file.name } : {}),
+            ...(version
+              ? { version: version.version_code || `v${version.version_no}` }
+              : {}),
+            view_summary: this.viewSummary(view),
+          };
+          this.facade.setDataFileBinding(node.id, binding, outputMode);
+          this.facade.setParameter(node.id, 'output_mode', outputMode);
+          const prev = this.rete.getNodeData(node.id) || {};
+          this.rete.setNodeData(node.id, {
+            ...prev,
+            fileName: file?.name || (prev['fileName'] as string) || '',
+            version:
+              version?.version_code || (prev['version'] as string) || '',
+            outputMode,
+            columnSummary: binding.view_summary,
+            selectedColumns: view.selected_columns,
+            timeColumn: view.time_column,
+            valueColumn: view.value_column,
+          });
+        },
+        error: () =>
+          this.store.setMessage(
+            'error',
+            '数据视图创建失败，请检查列映射后重试。',
+          ),
+      }),
+    );
   }
 
-  private loadCollections(): void { this.dataCollectionsLoaded = true; this.subscriptions.push(this.files.listCollections().subscribe({ next: (items) => this.dataCollections.set(items), error: () => { this.dataCollections.set([]); this.dataCollectionsLoaded = false; } })); }
-  private viewSummary(view: DataFileViewSelection): string { return view.output_mode === 'table' ? (view.selected_columns || []).join('、') : [view.time_column, view.value_column, view.point_column].filter(Boolean).join(' → '); }
+  private backfillBindingSelection(versionId: number): void {
+    this.selectedFileVersionId.set(versionId);
+    this.subscriptions.push(
+      this.files.getFileVersion(versionId).subscribe({
+        next: (version) => {
+          if (!version) return;
+          this.selectedFileVersionId.set(version.id);
+          const fileId = version.file_id;
+          this.selectedFileId.set(fileId);
+          this.subscriptions.push(
+            this.files.listFileVersions(fileId).subscribe({
+              next: (versions) => this.dataFileVersions.set(versions),
+              error: () => this.dataFileVersions.set([version]),
+            }),
+          );
+          this.subscriptions.push(
+            this.files.listCollections().subscribe({
+              next: (collections) => {
+                this.dataCollections.set(collections);
+                this.dataCollectionsLoaded = true;
+                for (const col of collections) {
+                  this.files.listFiles(col.id).subscribe({
+                    next: (files) => {
+                      const match = files.find((f) => f.id === fileId);
+                      if (match) {
+                        this.selectedCollectionId.set(col.id);
+                        this.dataFiles.set(files);
+                        const node = this.dataFileNode();
+                        if (node) {
+                          const b = this.store.bindings().get(node.id);
+                          const prev = this.rete.getNodeData(node.id) || {};
+                          this.rete.setNodeData(node.id, {
+                            ...prev,
+                            fileName: match.name,
+                            version:
+                              version.version_code || `v${version.version_no}`,
+                            outputMode:
+                              b?.kind === 'data_file'
+                                ? b.output_mode
+                                : (node.parameters?.['output_mode'] as string) ||
+                                  'table',
+                            columnSummary:
+                              b?.kind === 'data_file' ? b.view_summary : '',
+                          });
+                        }
+                      }
+                    },
+                  });
+                }
+              },
+            }),
+          );
+        },
+      }),
+    );
+  }
+
+  private loadCollections(): void {
+    this.dataCollectionsLoaded = true;
+    this.subscriptions.push(
+      this.files.listCollections().subscribe({
+        next: (items) => this.dataCollections.set(items),
+        error: () => {
+          this.dataCollections.set([]);
+          this.dataCollectionsLoaded = false;
+        },
+      }),
+    );
+  }
+
+  private viewSummary(view: DataFileViewSelection): string {
+    return view.output_mode === 'table'
+      ? (view.selected_columns || []).join('、')
+      : [view.time_column, view.value_column, view.point_column]
+          .filter(Boolean)
+          .join(' → ');
+  }
 
   requiresModel(node: EditorNode): boolean {
     if (node.node_code === 'seasonal_robust_anomaly') return true;

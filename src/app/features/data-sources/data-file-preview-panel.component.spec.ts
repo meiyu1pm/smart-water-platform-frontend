@@ -80,4 +80,24 @@ describe('DataFilePreviewPanelComponent', () => {
     fixture.detectChanges();
     expect(fixture.componentInstance.canApply()).toBe(false);
   });
+
+  it('echoes existing binding correctly and emits previewLoaded', () => {
+    const fixture = TestBed.createComponent(DataFilePreviewPanelComponent);
+    fixture.componentRef.setInput('fileVersionId', 1);
+    fixture.componentRef.setInput('initialBinding', {
+      output_mode: 'timeseries',
+      time_column: 'time',
+      value_column: 'flow',
+    });
+    let loadedEvent: any = null;
+    fixture.componentInstance.previewLoaded.subscribe((e) => (loadedEvent = e));
+    fixture.detectChanges();
+
+    const comp = fixture.componentInstance;
+    expect(comp.outputMode()).toBe('timeseries');
+    expect(comp.timeColumn()).toBe('time');
+    expect(comp.valueColumn()).toBe('flow');
+    expect(loadedEvent).not.toBeNull();
+    expect(loadedEvent.sampleRows.length).toBe(1);
+  });
 });
