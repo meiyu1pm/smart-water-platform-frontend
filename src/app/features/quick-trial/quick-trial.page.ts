@@ -17,6 +17,8 @@ import * as echarts from 'echarts';
 import {
   ForecastResult,
   QuickTrialService,
+  TimeSeriesPoint,
+  parseDateMs,
 } from './quick-trial.service';
 import { DataFileService } from '../../core/services/data-file.service';
 import {
@@ -102,16 +104,16 @@ import { NotificationService } from '../../core/services/notification.service';
         </div>
 
         <div class="input-group data-group">
-          <label>数据输入</label>
+          <label>数据输入与预测窗口</label>
           <div
             class="data-input-box"
             (click)="toggleDataDrawer()"
             [class.active]="drawerOpen()"
-            title="点击选择输出列或上传数据"
+            title="点击选择输出列、预览时序波形或调整预测窗口"
           >
             <span class="data-icon">{{ customUploadedFile() ? '📁' : '📊' }}</span>
             <span class="data-summary-text">{{ dataInputDisplay() }}</span>
-            <span class="edit-badge">{{ drawerOpen() ? '收起预览' : '选择输出列 / 更换' }}</span>
+            <span class="edit-badge">{{ drawerOpen() ? '收起配置' : '调整输入与预测窗口' }}</span>
           </div>
         </div>
 
@@ -131,7 +133,7 @@ import { NotificationService } from '../../core/services/notification.service';
         </button>
       </section>
 
-      <!-- 数据选择与上传抽屉 (内嵌标准预览与列选择面板) -->
+      <!-- 数据选择与上传抽屉 (内嵌标准预览、即时波形图与预测窗口调控) -->
       @if (drawerOpen()) {
         <section class="data-drawer-panel">
           <div class="drawer-header">
@@ -160,7 +162,7 @@ import { NotificationService } from '../../core/services/notification.service';
             </button>
           </div>
 
-          <!-- 上传本地文件拖拽区 (仅在未上传或 upload 模式下显示) -->
+          <!-- 上传本地文件拖拽区 -->
           @if (dataMode() === 'upload' && !customUploadedFile()) {
             <div class="upload-zone">
               <input
@@ -214,6 +216,95 @@ import { NotificationService } from '../../core/services/notification.service';
               />
             </div>
           }
+
+          <!-- 即时时序数据预览与预测窗口交互调优卡片 -->
+          @if (parsedTimeSeries().length > 0) {
+            <div class="timeseries-tuner-card">
+              <div class="tuner-header">
+                <div class="tuner-title">
+                  <span class="wave-icon">📈</span>
+                  <strong>已选时序波形即时预览与预测窗口调优</strong>
+                </div>
+                <div class="tuner-chips">
+                  <span class="tuner-chip">总点数: {{ parsedTimeSeries().length }} 点</span>
+                  <span class="tuner-chip highlight">
+                    输入历史: {{ contextPointsCount() }} 点 (约 {{ contextDurationHours() }} 小时)
+                  </span>
+                  <span class="tuner-chip">采样间隔: {{ detectedIntervalMinutes() }} 分钟</span>
+                </div>
+              </div>
+
+              <!-- 抽屉内 Mini ECharts 时序波形与滑动窗口选择 -->
+              <div class="drawer-chart-box">
+                <div #drawerChartHost class="drawer-chart-canvas"></div>
+              </div>
+              <p class="slider-hint">
+                💡 <strong>滑动上方图表底部的区间滑块</strong>，可自由调整送入算法的历史输入序列（起始位置与时长）。
+              </p>
+
+              <!-- 预测时长 / 步长调节栏 -->
+              <div class="horizon-control-bar">
+                <div class="horizon-input-group">
+                  <label for="horizonInput">
+                    <strong>未来预测步长 (Horizon)</strong>
+                  </label>
+                  <div class="horizon-input-wrapper">
+                    <input
+                      id="horizonInput"
+                      type="number"
+                      [min]="4"
+                      [max]="192"
+                      [step]="4"
+                      [ngModel]="horizonSteps()"
+                      (ngModelChange)="setHorizonSteps($event)"
+                      class="horizon-num-input"
+                    />
+                    <span class="unit-tag">步 ({{ (horizonSteps() * detectedIntervalMinutes()) / 60 }} 小时)</span>
+                  </div>
+                </div>
+
+                <div class="preset-buttons">
+                  <span class="preset-label">快捷预设:</span>
+                  <button
+                    type="button"
+                    class="preset-btn"
+                    [class.active]="horizonSteps() === 16"
+                    (click)="setHorizonSteps(16)"
+                  >
+                    4 小时 (16步)
+                  </button>
+                  <button
+                    type="button"
+                    class="preset-btn"
+                    [class.active]="horizonSteps() === 32"
+                    (click)="setHorizonSteps(32)"
+                  >
+                    8 小时 (32步)
+                  </button>
+                  <button
+                    type="button"
+                    class="preset-btn"
+                    [class.active]="horizonSteps() === 96"
+                    (click)="setHorizonSteps(96)"
+                  >
+                    24 小时 (96步)
+                  </button>
+                  <button
+                    type="button"
+                    class="preset-btn"
+                    [class.active]="horizonSteps() === 192"
+                    (click)="setHorizonSteps(192)"
+                  >
+                    48 小时 (192步)
+                  </button>
+                </div>
+              </div>
+
+              <div class="window-summary-alert">
+                <span>🎯 <strong>执行配置：</strong>将以 <code>{{ contextStartTime() }}</code> 至 <code>{{ contextEndTime() }}</code>（共 {{ contextPointsCount() }} 点）作为输入特征，向后外推预测未来 <strong>{{ horizonSteps() }} 步（{{ (horizonSteps() * detectedIntervalMinutes()) / 60 }} 小时）</strong>的时序趋势。</span>
+              </div>
+            </div>
+          }
         </section>
       }
 
@@ -224,10 +315,10 @@ import { NotificationService } from '../../core/services/notification.service';
             <div class="progress-bar-fill"></div>
           </div>
           <div class="step-badges">
-            <span class="step-item active">1. 提取所选时序数据特征</span>
+            <span class="step-item active">1. 截取选定 {{ contextPointsCount() }} 点历史输入序列</span>
             <span class="step-item active">2. 拟合周期与趋势特征</span>
-            <span class="step-item active">3. 外推预测未来时序</span>
-            <span class="step-item">4. 生成 95% 置信区间</span>
+            <span class="step-item active">3. 外推预测未来 {{ horizonSteps() }} 步时序</span>
+            <span class="step-item">4. 生成 95% 置信包络区间</span>
           </div>
         </section>
       }
@@ -265,8 +356,12 @@ import { NotificationService } from '../../core/services/notification.service';
           <!-- 统计指标带 -->
           <div class="metrics-strip">
             <div class="metric-card">
+              <span class="metric-lbl">输入历史序列 (Context)</span>
+              <strong class="metric-val">{{ res.historyPoints.length }} 点 (约 {{ (res.historyPoints.length * res.intervalMinutes) / 60 }} 小时)</strong>
+            </div>
+            <div class="metric-card">
               <span class="metric-lbl">预测步长 (Horizon)</span>
-              <strong class="metric-val"
+              <strong class="metric-val highlight"
                 >未来 {{ (res.horizonSteps * res.intervalMinutes) / 60 }} 小时 ({{
                   res.horizonSteps
                 }}
@@ -278,16 +373,10 @@ import { NotificationService } from '../../core/services/notification.service';
               <strong class="metric-val">{{ res.intervalMinutes }} 分钟 / 点</strong>
             </div>
             <div class="metric-card">
-              <span class="metric-lbl">检测主周期</span>
+              <span class="metric-lbl">检测主周期 / 置信度</span>
               <strong class="metric-val"
-                >{{ res.seasonalitySteps }} 步长 (约
-                {{ (res.seasonalitySteps * res.intervalMinutes) / 60 }}
-                小时)</strong
+                >{{ res.seasonalitySteps }} 步长 · 95% CI</strong
               >
-            </div>
-            <div class="metric-card">
-              <span class="metric-lbl">预测置信度</span>
-              <strong class="metric-val highlight">95% 双侧置信区间</strong>
             </div>
           </div>
 
@@ -495,6 +584,7 @@ import { NotificationService } from '../../core/services/notification.service';
       background: #e0f2fe;
       padding: 2px 8px;
       border-radius: 6px;
+      white-space: nowrap;
     }
     /* 运行按钮 */
     .run-btn {
@@ -656,6 +746,161 @@ import { NotificationService } from '../../core/services/notification.service';
       border-top: 1px solid #f1f5f9;
       padding-top: 10px;
     }
+
+    /* 时序波形即时预览与预测调控卡片 */
+    .timeseries-tuner-card {
+      margin-top: 12px;
+      padding: 16px;
+      background: #f8fafc;
+      border: 1.5px solid #e2e8f0;
+      border-radius: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .tuner-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .tuner-title {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 13px;
+      color: #0f172a;
+    }
+    .wave-icon {
+      font-size: 16px;
+    }
+    .tuner-chips {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+    .tuner-chip {
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 6px;
+      background: #ffffff;
+      border: 1px solid #cbd5e1;
+      color: #475569;
+    }
+    .tuner-chip.highlight {
+      background: #e0f2fe;
+      border-color: #0284c7;
+      color: #0369a1;
+      font-weight: 600;
+    }
+    .drawer-chart-box {
+      width: 100%;
+      height: 200px;
+      background: #ffffff;
+      border: 1px solid #cbd5e1;
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    .drawer-chart-canvas {
+      width: 100%;
+      height: 100%;
+    }
+    .slider-hint {
+      margin: 0;
+      font-size: 11px;
+      color: #64748b;
+    }
+    .horizon-control-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 10px 14px;
+      background: #ffffff;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+    .horizon-input-group {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .horizon-input-group label {
+      font-size: 12px;
+      color: #1e293b;
+    }
+    .horizon-input-wrapper {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .horizon-num-input {
+      width: 70px;
+      height: 32px;
+      padding: 0 8px;
+      border: 1.5px solid #cbd5e1;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 700;
+      color: #0284c7;
+      text-align: center;
+      outline: none;
+    }
+    .horizon-num-input:focus {
+      border-color: #0284c7;
+    }
+    .unit-tag {
+      font-size: 12px;
+      color: #64748b;
+    }
+    .preset-buttons {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+    .preset-label {
+      font-size: 11px;
+      color: #64748b;
+    }
+    .preset-btn {
+      padding: 4px 10px;
+      border: 1px solid #cbd5e1;
+      border-radius: 6px;
+      background: #ffffff;
+      color: #334155;
+      font-size: 11px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .preset-btn:hover {
+      border-color: #0284c7;
+      color: #0284c7;
+    }
+    .preset-btn.active {
+      border-color: #0284c7;
+      background: #0284c7;
+      color: #ffffff;
+      font-weight: 600;
+    }
+    .window-summary-alert {
+      padding: 8px 12px;
+      background: #f0f9ff;
+      border-left: 3px solid #0284c7;
+      border-radius: 4px;
+      font-size: 12px;
+      color: #0369a1;
+    }
+    .window-summary-alert code {
+      font-family: monospace;
+      font-weight: 600;
+      background: rgba(2, 132, 199, 0.1);
+      padding: 1px 4px;
+      border-radius: 4px;
+    }
+
     /* 运行状态卡片 */
     .running-state-card {
       padding: 24px;
@@ -933,10 +1178,16 @@ export class QuickTrialPage implements OnInit, AfterViewInit, OnDestroy {
   readonly sampleRows = signal<Array<Record<string, unknown>>>([]);
   readonly uploading = signal(false);
 
+  // 时序窗口与预测步长调控状态
+  readonly horizonSteps = signal<number>(32); // 预测步长 (默认 32 点 / 8小时)
+  readonly contextStartPercent = signal<number>(0); // 历史输入起始百分比 (0 ~ 100)
+  readonly contextEndPercent = signal<number>(100); // 历史输入结束百分比 (0 ~ 100)
+
   // 运行与结果状态
   readonly running = signal(false);
   readonly result = signal<ForecastResult | null>(null);
 
+  // 抽屉内 Mini 波形图与主结果图
   private _chartHost?: ElementRef<HTMLDivElement>;
   @ViewChild('chartHost') set chartHost(el: ElementRef<HTMLDivElement> | undefined) {
     this._chartHost = el;
@@ -948,8 +1199,18 @@ export class QuickTrialPage implements OnInit, AfterViewInit, OnDestroy {
     return this._chartHost;
   }
 
+  private _drawerChartHost?: ElementRef<HTMLDivElement>;
+  @ViewChild('drawerChartHost') set drawerChartHost(el: ElementRef<HTMLDivElement> | undefined) {
+    this._drawerChartHost = el;
+    if (el?.nativeElement && this.parsedTimeSeries().length > 0) {
+      setTimeout(() => this.initDrawerChart(), 20);
+    }
+  }
+
   private chart: echarts.ECharts | null = null;
+  private drawerChart: echarts.ECharts | null = null;
   private resizeObserver: ResizeObserver | null = null;
+  private drawerResizeObserver: ResizeObserver | null = null;
 
   readonly activeVersionId = computed(() => {
     if (this.dataMode() === 'upload') {
@@ -965,15 +1226,71 @@ export class QuickTrialPage implements OnInit, AfterViewInit, OnDestroy {
     point_column: this.selectedPointCol(),
   }));
 
+  // 解析出的完整时序点
+  readonly parsedTimeSeries = computed<TimeSeriesPoint[]>(() => {
+    const rows = this.sampleRows();
+    const timeCol = this.selectedTimeCol();
+    const valCol = this.selectedValueCol();
+    if (!rows.length || !timeCol || !valCol) return [];
+    return this.quickTrial.parseTimeSeriesPoints(rows, timeCol, valCol);
+  });
+
+  // 检测采样间隔
+  readonly detectedIntervalMinutes = computed<number>(() => {
+    const pts = this.parsedTimeSeries();
+    if (pts.length < 2) return 15;
+    const t1 = parseDateMs(pts[0].time);
+    const t2 = parseDateMs(pts[1].time);
+    const diff = Math.abs(t2 - t1) / (60 * 1000);
+    return diff > 0 && diff <= 1440 ? Math.round(diff) : 15;
+  });
+
+  // 选中的输入历史序列切片
+  readonly selectedContextSlice = computed<{ startIdx: number; endIdx: number }>(() => {
+    const pts = this.parsedTimeSeries();
+    if (!pts.length) return { startIdx: 0, endIdx: 0 };
+    const total = pts.length;
+    const startIdx = Math.max(0, Math.floor((this.contextStartPercent() / 100) * total));
+    const rawEnd = Math.ceil((this.contextEndPercent() / 100) * total) - 1;
+    const endIdx = Math.min(total - 1, Math.max(startIdx + 3, rawEnd));
+    return { startIdx, endIdx };
+  });
+
+  readonly contextPointsCount = computed<number>(() => {
+    const { startIdx, endIdx } = this.selectedContextSlice();
+    return Math.max(0, endIdx - startIdx + 1);
+  });
+
+  readonly contextDurationHours = computed<string>(() => {
+    const count = this.contextPointsCount();
+    const interval = this.detectedIntervalMinutes();
+    return ((count * interval) / 60).toFixed(1);
+  });
+
+  readonly contextStartTime = computed<string>(() => {
+    const pts = this.parsedTimeSeries();
+    const { startIdx } = this.selectedContextSlice();
+    return pts[startIdx]?.time || '起始点';
+  });
+
+  readonly contextEndTime = computed<string>(() => {
+    const pts = this.parsedTimeSeries();
+    const { endIdx } = this.selectedContextSlice();
+    return pts[endIdx]?.time || '结束点';
+  });
+
   readonly dataInputDisplay = computed(() => {
-    if (this.customUploadedFile()) {
-      return `${this.customUploadedFile()?.name} (${this.selectedTimeCol()} ➔ ${this.selectedValueCol()})`;
-    }
-    return `示例数据：DMA供水流量 (s01_leak_demo.csv · ${this.selectedTimeCol()} ➔ ${this.selectedValueCol()})`;
+    const fileLabel = this.customUploadedFile()
+      ? this.customUploadedFile()?.name
+      : 's01_leak_demo.csv (示例)';
+    const ctxCount = this.contextPointsCount() || 48;
+    const horizon = this.horizonSteps();
+    const hrs = ((horizon * this.detectedIntervalMinutes()) / 60).toFixed(0);
+    return `${fileLabel} (${this.selectedTimeCol()} ➔ ${this.selectedValueCol()} · 输入 ${ctxCount}点 ➔ 预测 ${horizon}点/${hrs}h)`;
   });
 
   ngOnInit(): void {
-    // 动态探测平台上真实可用的 Demo 文件版本 ID 并预读样本行
+    // 动态探测 Demo 文件版本并预读样本行
     this.dataFiles.listCollections().subscribe({
       next: (collections) => {
         if (!collections.length) return;
@@ -1003,18 +1320,31 @@ export class QuickTrialPage implements OnInit, AfterViewInit, OnDestroy {
 
   ngOnDestroy(): void {
     this.resizeObserver?.disconnect();
+    this.drawerResizeObserver?.disconnect();
     this.chart?.dispose();
+    this.drawerChart?.dispose();
     this.chart = null;
+    this.drawerChart = null;
   }
 
   toggleDataDrawer(): void {
-    this.drawerOpen.update((v) => !v);
+    const next = !this.drawerOpen();
+    this.drawerOpen.set(next);
+    if (next && this.parsedTimeSeries().length > 0) {
+      setTimeout(() => this.initDrawerChart(), 40);
+    }
+  }
+
+  setHorizonSteps(steps: number): void {
+    const val = Math.max(4, Math.min(Number(steps) || 32, 192));
+    this.horizonSteps.set(val);
   }
 
   switchToDemoMode(): void {
     this.dataMode.set('demo');
     this.selectedTimeCol.set('record_time');
     this.selectedValueCol.set('inlet_flow');
+    setTimeout(() => this.initDrawerChart(), 40);
   }
 
   switchToUploadMode(): void {
@@ -1028,6 +1358,7 @@ export class QuickTrialPage implements OnInit, AfterViewInit, OnDestroy {
     } else {
       this.selectedValueCol.set('inlet_flow');
     }
+    setTimeout(() => this.initDrawerChart(), 40);
   }
 
   onFileSelected(event: Event): void {
@@ -1056,7 +1387,8 @@ export class QuickTrialPage implements OnInit, AfterViewInit, OnDestroy {
         this.selectedTimeCol.set(timeCol);
         this.selectedValueCol.set(valCol);
         this.uploading.set(false);
-        this.notifications.success(`临时数据 ${file.name} 上传成功，请在下方点选输出列`);
+        this.notifications.success(`临时数据 ${file.name} 上传成功，请在下方点选输出列与调整预测窗口`);
+        setTimeout(() => this.initDrawerChart(), 40);
       },
       error: (err) => {
         this.uploading.set(false);
@@ -1085,11 +1417,117 @@ export class QuickTrialPage implements OnInit, AfterViewInit, OnDestroy {
       this.notifications.success(
         `已选定输入列：时间[${selection.time_column}] · 预测目标[${selection.value_column}]`,
       );
+      setTimeout(() => this.initDrawerChart(), 40);
     }
   }
 
   onPreviewLoaded(event: { preview: DataFilePreview; sampleRows: Array<Record<string, unknown>> }): void {
     this.sampleRows.set(event.sampleRows || []);
+    setTimeout(() => this.initDrawerChart(), 40);
+  }
+
+  /**
+   * 初始化抽屉内 Mini 时序波形与区间滑动选择器
+   */
+  private initDrawerChart(): void {
+    const host = this._drawerChartHost?.nativeElement;
+    const pts = this.parsedTimeSeries();
+    if (!host || !pts.length) return;
+
+    try {
+      if (this.drawerChart) {
+        this.drawerChart.dispose();
+        this.drawerChart = null;
+      }
+      this.drawerChart = echarts.init(host, null, { renderer: 'svg' });
+
+      if (typeof ResizeObserver !== 'undefined') {
+        this.drawerResizeObserver?.disconnect();
+        this.drawerResizeObserver = new ResizeObserver(() => {
+          this.drawerChart?.resize();
+        });
+        this.drawerResizeObserver.observe(host);
+      }
+
+      const chartData = pts.map((p) => [p.time, p.value]);
+      const option: echarts.EChartsOption = {
+        title: {
+          text: `时序波形即时预览 (${this.selectedValueCol()})`,
+          left: 10,
+          top: 4,
+          textStyle: { fontSize: 12, fontWeight: 'bold', color: '#334155' },
+        },
+        grid: {
+          top: 28,
+          left: 45,
+          right: 20,
+          bottom: 30,
+        },
+        tooltip: {
+          trigger: 'axis',
+          textStyle: { fontSize: 11 },
+        },
+        xAxis: {
+          type: 'time',
+          boundaryGap: ['0%', '0%'] as any,
+          axisLabel: { fontSize: 9, color: '#64748b' },
+          axisLine: { lineStyle: { color: '#cbd5e1' } },
+          splitLine: { show: false },
+        },
+        yAxis: {
+          type: 'value',
+          scale: true,
+          axisLabel: { fontSize: 9, color: '#64748b' },
+          splitLine: { lineStyle: { color: '#f1f5f9' } },
+        },
+        dataZoom: [
+          {
+            type: 'slider',
+            height: 14,
+            bottom: 2,
+            start: this.contextStartPercent(),
+            end: this.contextEndPercent(),
+            borderColor: '#cbd5e1',
+            fillerColor: 'rgba(2, 132, 199, 0.2)',
+          },
+        ],
+        series: [
+          {
+            name: this.selectedValueCol(),
+            type: 'line',
+            data: chartData,
+            smooth: true,
+            showSymbol: false,
+            lineStyle: { color: '#0284c7', width: 2 },
+            areaStyle: {
+              color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                { offset: 0, color: 'rgba(2, 132, 199, 0.2)' },
+                { offset: 1, color: 'rgba(2, 132, 199, 0.01)' },
+              ]),
+            },
+          },
+        ],
+      };
+
+      this.drawerChart.setOption(option, { notMerge: true });
+
+      // 监听用户拖动 DataZoom 区间滑块
+      this.drawerChart.on('datazoom', (params: any) => {
+        let start = 0;
+        let end = 100;
+        if (params.batch?.[0]) {
+          start = params.batch[0].start ?? 0;
+          end = params.batch[0].end ?? 100;
+        } else if (params.start !== undefined && params.end !== undefined) {
+          start = params.start;
+          end = params.end;
+        }
+        this.contextStartPercent.set(start);
+        this.contextEndPercent.set(end);
+      });
+    } catch {
+      // Safe fallback
+    }
   }
 
   runQuickTrial(): void {
@@ -1105,6 +1543,8 @@ export class QuickTrialPage implements OnInit, AfterViewInit, OnDestroy {
     const valCol = this.selectedValueCol();
     const currentRows = this.sampleRows();
     const verId = this.activeVersionId();
+    const { startIdx, endIdx } = this.selectedContextSlice();
+    const horizon = this.horizonSteps();
 
     const execute = (sampleRows: Array<Record<string, unknown>>) => {
       setTimeout(() => {
@@ -1118,6 +1558,9 @@ export class QuickTrialPage implements OnInit, AfterViewInit, OnDestroy {
             timeColumn: timeCol,
             valueColumn: valCol,
             sampleRows,
+            inputStartIndex: startIdx,
+            inputEndIndex: endIdx,
+            horizonSteps: horizon,
           })
           .subscribe({
             next: (res) => {

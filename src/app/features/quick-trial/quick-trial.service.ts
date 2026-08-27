@@ -46,7 +46,7 @@ export interface TempUploadResult {
   preview: DataFilePreview;
 }
 
-function parseDateMs(raw: unknown): number {
+export function parseDateMs(raw: unknown): number {
   if (!raw) return NaN;
   if (typeof raw === 'number') return raw;
   const str = String(raw).trim();
@@ -57,7 +57,7 @@ function parseDateMs(raw: unknown): number {
   return isNaN(t2) ? NaN : t2;
 }
 
-function formatDateStr(timestampMs: number, templateStr: string): string {
+export function formatDateStr(timestampMs: number, templateStr: string): string {
   const d = new Date(timestampMs);
   if (templateStr.includes(' ') && !templateStr.includes('T')) {
     const pad = (n: number) => String(n).padStart(2, '0');
@@ -82,7 +82,7 @@ export class QuickTrialService {
       id: 'timeseries-forecast',
       name: '时序预测',
       icon: '📈',
-      description: '基于水务时序历史趋势与周期性规律，精准外推预测未来 24 小时供水量或流量走势。',
+      description: '基于水务时序历史趋势与周期性规律，精准外推预测未来供水量或流量走势。',
       defaultAlgorithm: 'auto',
       demoFileName: 's01_leak_demo.csv',
       timeColumn: 'record_time',
@@ -109,6 +109,28 @@ export class QuickTrialService {
       valueColumn: 'inlet_flow',
     },
   ];
+
+  /**
+   * 从样本行中提取有效时序点
+   */
+  parseTimeSeriesPoints(
+    sampleRows: Array<Record<string, unknown>>,
+    timeColumn: string,
+    valueColumn: string,
+  ): TimeSeriesPoint[] {
+    const points: TimeSeriesPoint[] = [];
+    for (const r of sampleRows) {
+      const rawTime = r[timeColumn] ?? r['record_time'] ?? r['时间'] ?? r['time'] ?? '';
+      const tStr = String(rawTime).trim();
+      const rawV = r[valueColumn] ?? Object.values(r).find((v) => typeof v === 'number');
+      const num = typeof rawV === 'number' ? rawV : parseFloat(String(rawV));
+
+      if (tStr && !isNaN(num) && !isNaN(parseDateMs(tStr))) {
+        points.push({ time: tStr, value: Number(num.toFixed(3)) });
+      }
+    }
+    return points;
+  }
 
   /**
    * 上传临时试用文件到平台
@@ -150,7 +172,7 @@ export class QuickTrialService {
   }
 
   /**
-   * 执行快速时序预测任务
+   * 执行快速时序预测任务（支持自定义输入区间与预测步长）
    */
   executeQuickForecast(params: {
     task: string;
@@ -159,6 +181,9 @@ export class QuickTrialService {
     timeColumn: string;
     valueColumn: string;
     sampleRows: Array<Record<string, unknown>>;
+    inputStartIndex?: number;
+    inputEndIndex?: number;
+    horizonSteps?: number;
   }): Observable<ForecastResult> {
     return from(this.runForecastEngine(params));
   }
@@ -170,37 +195,44 @@ export class QuickTrialService {
     timeColumn: string;
     valueColumn: string;
     sampleRows: Array<Record<string, unknown>>;
+    inputStartIndex?: number;
+    inputEndIndex?: number;
+    horizonSteps?: number;
   }): Promise<ForecastResult> {
-    const { task, algorithm, fileName, timeColumn, valueColumn, sampleRows } = params;
+    const {
+      task,
+      algorithm,
+      fileName,
+      timeColumn,
+      valueColumn,
+      sampleRows,
+      inputStartIndex,
+      inputEndIndex,
+      horizonSteps: userHorizon,
+    } = params;
 
     // 1. 提取并清洗有效时序点
-    const historyPoints: TimeSeriesPoint[] = [];
-    let sampleTimeFormat = '';
-
-    for (const r of sampleRows) {
-      const rawTime = r[timeColumn] ?? r['record_time'] ?? r['时间'] ?? r['time'] ?? '';
-      const tStr = String(rawTime).trim();
-      const rawV = r[valueColumn] ?? Object.values(r).find((v) => typeof v === 'number');
-      const num = typeof rawV === 'number' ? rawV : parseFloat(String(rawV));
-
-      if (tStr && !isNaN(num) && !isNaN(parseDateMs(tStr))) {
-        if (!sampleTimeFormat) sampleTimeFormat = tStr;
-        historyPoints.push({ time: tStr, value: Number(num.toFixed(3)) });
-      }
-    }
+    let allPoints = this.parseTimeSeriesPoints(sampleRows, timeColumn, valueColumn);
+    let sampleTimeFormat = allPoints[0]?.time || '2024-01-01 00:00:00';
 
     // 2. 如果无匹配点位，生成平滑周期性基准数据
-    if (historyPoints.length < 8) {
+    if (allPoints.length < 8) {
       const baseTime = new Date('2024-01-01T00:00:00Z').getTime();
       sampleTimeFormat = '2024-01-01 00:00:00';
+      allPoints = [];
       for (let i = 0; i < 48; i++) {
         const t = formatDateStr(baseTime + i * 15 * 60 * 1000, sampleTimeFormat);
         const v = 5.8 + Math.sin(i * 0.4) * 1.5 + (i % 4) * 0.15;
-        historyPoints.push({ time: t, value: Number(v.toFixed(3)) });
+        allPoints.push({ time: t, value: Number(v.toFixed(3)) });
       }
     }
 
-    // 3. 计算采样时间间隔（默认为 15 分钟）
+    // 3. 根据用户指定的起始位置与长度截取输入序列 (Context Window)
+    const startIdx = Math.max(0, Math.min(inputStartIndex ?? 0, allPoints.length - 4));
+    const endIdx = Math.min(allPoints.length - 1, Math.max(startIdx + 3, inputEndIndex ?? allPoints.length - 1));
+    const historyPoints = allPoints.slice(startIdx, endIdx + 1);
+
+    // 4. 计算采样时间间隔（默认为 15 分钟）
     let intervalMinutes = 15;
     if (historyPoints.length >= 2) {
       const t1 = parseDateMs(historyPoints[0].time);
@@ -211,8 +243,8 @@ export class QuickTrialService {
       }
     }
 
-    // 4. 执行预测外推算法（时序周期回归 + 置信区间）
-    const horizonSteps = 32; // 预测未来 32 个步长
+    // 5. 执行预测外推算法（时序周期回归 + 置信区间）
+    const horizonSteps = Math.max(4, Math.min(userHorizon ?? 32, 192)); // 默认32步，限制在 4~192 步之间
     const lastTimestamp = parseDateMs(historyPoints[historyPoints.length - 1].time) || Date.now();
     const values = historyPoints.map((p) => p.value);
     const mean = values.reduce((a, b) => a + b, 0) / values.length;

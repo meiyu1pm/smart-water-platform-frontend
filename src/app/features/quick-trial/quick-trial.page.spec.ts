@@ -29,6 +29,10 @@ describe('QuickTrialPage', () => {
           valueColumn: 'inlet_flow',
         },
       ],
+      parseTimeSeriesPoints: vi.fn().mockReturnValue([
+        { time: '2026-01-01 00:00:00', value: 21.2 },
+        { time: '2026-01-01 00:15:00', value: 21.8 },
+      ]),
       uploadTemporaryFile: vi.fn(),
       cleanupTemporaryFile: vi.fn().mockReturnValue(of(true)),
       executeQuickForecast: vi.fn().mockReturnValue(
@@ -38,10 +42,10 @@ describe('QuickTrialPage', () => {
           fileName: 's01_leak_demo.csv',
           timeColumn: 'record_time',
           valueColumn: 'inlet_flow',
-          historyPoints: [{ time: '2026-01-01T00:00:00Z', value: 21.2 }],
-          forecastPoints: [{ time: '2026-01-01T00:15:00Z', value: 22.0 }],
-          lowerBand: [{ time: '2026-01-01T00:15:00Z', value: 20.5 }],
-          upperBand: [{ time: '2026-01-01T00:15:00Z', value: 23.5 }],
+          historyPoints: [{ time: '2026-01-01 00:00:00', value: 21.2 }],
+          forecastPoints: [{ time: '2026-01-01 00:15:00', value: 22.0 }],
+          lowerBand: [{ time: '2026-01-01 00:15:00', value: 20.5 }],
+          upperBand: [{ time: '2026-01-01 00:15:00', value: 23.5 }],
           horizonSteps: 32,
           intervalMinutes: 15,
           seasonalitySteps: 24,
@@ -103,7 +107,7 @@ describe('QuickTrialPage', () => {
     expect(fixture.nativeElement.querySelector('app-data-file-preview-panel')).not.toBeNull();
   });
 
-  it('updates selected columns when preview panel emits viewChange', () => {
+  it('updates selected columns and allows tuning horizon steps', () => {
     component.onViewSelectionChange({
       file_version_id: 3,
       output_mode: 'timeseries',
@@ -112,10 +116,13 @@ describe('QuickTrialPage', () => {
     });
     expect(component.selectedTimeCol()).toBe('时间');
     expect(component.selectedValueCol()).toBe('流量(m³/h)');
-    expect(component.dataInputDisplay()).toContain('时间 ➔ 流量(m³/h)');
+
+    component.setHorizonSteps(96);
+    expect(component.horizonSteps()).toBe(96);
+    expect(component.dataInputDisplay()).toContain('预测 96点');
   });
 
-  it('executes quick forecast and renders metrics strip', async () => {
+  it('executes quick forecast with configured horizon and renders metrics strip', async () => {
     vi.useFakeTimers();
     component.runQuickTrial();
     expect(component.running()).toBe(true);
