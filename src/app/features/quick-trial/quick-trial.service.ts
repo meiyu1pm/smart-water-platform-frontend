@@ -26,6 +26,7 @@ export interface ForecastResult {
   forecastPoints: TimeSeriesPoint[];
   lowerBand: TimeSeriesPoint[];
   upperBand: TimeSeriesPoint[];
+  actualFuturePoints?: TimeSeriesPoint[];
   horizonSteps: number;
   intervalMinutes: number;
   seasonalitySteps: number;
@@ -466,26 +467,24 @@ export class QuickTrialService {
       // Fallback to sample rows if artifact fetch fails
     }
 
-    // 提取历史时序点
-    let historyPoints: TimeSeriesPoint[] = [];
+    // 提取原始全量时序点
+    let fullPoints: TimeSeriesPoint[] = [];
     const historyRows = (inputPayload['rows'] ||
       (inputPayload['payload'] as any)?.rows) as Array<Record<string, unknown>> | undefined;
 
     if (Array.isArray(historyRows) && historyRows.length > 0) {
-      historyPoints = historyRows.map((r) => ({
+      fullPoints = historyRows.map((r) => ({
         time: String(r['time']),
         value: Number(r['value']),
       }));
     } else {
-      historyPoints = this.parseTimeSeriesPoints(sampleRows, timeColumn, valueColumn);
+      fullPoints = this.parseTimeSeriesPoints(sampleRows, timeColumn, valueColumn);
     }
 
     // 如果用户自定义了截取切片
-    if (inputStartIndex !== undefined || inputEndIndex !== undefined) {
-      const s = Math.max(0, inputStartIndex ?? 0);
-      const e = Math.min(historyPoints.length - 1, inputEndIndex ?? historyPoints.length - 1);
-      historyPoints = historyPoints.slice(s, e + 1);
-    }
+    const s = Math.max(0, inputStartIndex ?? 0);
+    const e = Math.min(fullPoints.length - 1, inputEndIndex ?? fullPoints.length - 1);
+    const historyPoints = fullPoints.slice(s, e + 1);
 
     // 计算采样间隔
     let intervalMinutes = 15;
@@ -568,6 +567,17 @@ export class QuickTrialService {
       }));
     }
 
+    // 提取未来真实观测值 (Ground Truth):
+    // 如果在输入结束点 e 之后，原始数据中仍有真实观测点，则提取与预测点对应的时间和真实值
+    let actualFuturePoints: TimeSeriesPoint[] = [];
+    if (e + 1 < fullPoints.length) {
+      const futureCount = forecastPoints.length || horizon;
+      actualFuturePoints = fullPoints.slice(e + 1, e + 1 + futureCount).map((p, idx) => ({
+        time: forecastPoints[idx]?.time || p.time,
+        value: Number(Number(p.value).toFixed(3)),
+      }));
+    }
+
     return {
       task,
       algorithm: algoName,
@@ -578,6 +588,7 @@ export class QuickTrialService {
       forecastPoints,
       lowerBand,
       upperBand,
+      actualFuturePoints,
       horizonSteps: forecastPoints.length || horizon,
       intervalMinutes,
       seasonalitySteps,

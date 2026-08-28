@@ -380,6 +380,12 @@ import { NotificationService } from '../../core/services/notification.service';
                 >{{ res.seasonalitySteps }} 步长 · 95% CI</strong
               >
             </div>
+            @if (res.actualFuturePoints && res.actualFuturePoints.length > 0) {
+              <div class="metric-card actual-match-card">
+                <span class="metric-lbl">未来真实值对比</span>
+                <strong class="metric-val actual-match">已对齐 {{ res.actualFuturePoints.length }} 点真实观测</strong>
+              </div>
+            }
           </div>
 
           <!-- ECharts 图表容器 -->
@@ -1028,7 +1034,7 @@ import { NotificationService } from '../../core/services/notification.service';
     /* 指标带 */
     .metrics-strip {
       display: grid;
-      grid-template-columns: repeat(4, 1fr);
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
       gap: 12px;
     }
     .metric-card {
@@ -1036,6 +1042,10 @@ import { NotificationService } from '../../core/services/notification.service';
       background: #f8fafc;
       border: 1px solid #e2e8f0;
       border-radius: 8px;
+    }
+    .actual-match-card {
+      background: #f0fdf4;
+      border-color: #bbf7d0;
     }
     .metric-lbl {
       display: block;
@@ -1050,6 +1060,10 @@ import { NotificationService } from '../../core/services/notification.service';
     }
     .metric-val.highlight {
       color: #0284c7;
+    }
+    .metric-val.actual-match {
+      color: #059669;
+      font-weight: 700;
     }
     /* 图表容器 */
     .chart-container {
@@ -1689,6 +1703,8 @@ export class QuickTrialPage implements OnInit, AfterViewInit, OnDestroy {
 
     const histData = res.historyPoints.map((p) => [p.time, p.value]);
     const foreData = res.forecastPoints.map((p) => [p.time, p.value]);
+    const hasActualFuture = !!res.actualFuturePoints && res.actualFuturePoints.length > 0;
+    const actualFutureData = (res.actualFuturePoints || []).map((p) => [p.time, p.value]);
 
     // 构造堆叠面积置信带：
     // 基底 = lowerData (透明无填充，从 0 堆叠到 lower)
@@ -1710,12 +1726,87 @@ export class QuickTrialPage implements OnInit, AfterViewInit, OnDestroy {
       foreData.unshift([last.time, last.value]);
       lowerBaseData.unshift([last.time, last.value]);
       bandDiffData.unshift([last.time, 0]);
+      if (hasActualFuture) {
+        actualFutureData.unshift([last.time, last.value]);
+      }
     }
 
     const horizonHours = Math.max(
       1,
       Math.round((res.horizonSteps * res.intervalMinutes) / 60),
     );
+
+    const legendData: Array<{ name: string; itemStyle?: { color: string } }> = [
+      { name: '历史观测真实值', itemStyle: { color: '#0284c7' } },
+      { name: '未来预测趋势值', itemStyle: { color: '#8b5cf6' } },
+      { name: '95% 置信区间', itemStyle: { color: 'rgba(139, 92, 246, 0.6)' } },
+    ];
+    if (hasActualFuture) {
+      legendData.push({
+        name: '未来真实观测值',
+        itemStyle: { color: '#10b981' },
+      });
+    }
+
+    const seriesList: echarts.SeriesOption[] = [
+      {
+        name: '置信区间基底',
+        type: 'line',
+        data: lowerBaseData,
+        smooth: true,
+        showSymbol: false,
+        lineStyle: { opacity: 0 },
+        stack: 'confidence-band',
+        symbol: 'none',
+      },
+      {
+        name: '95% 置信区间',
+        type: 'line',
+        data: bandDiffData,
+        smooth: true,
+        showSymbol: false,
+        lineStyle: { opacity: 0.6, color: '#a78bfa', width: 1, type: 'dotted' },
+        stack: 'confidence-band',
+        symbol: 'none',
+        areaStyle: {
+          color: 'rgba(139, 92, 246, 0.28)',
+        },
+      },
+      {
+        name: '未来预测趋势值',
+        type: 'line',
+        data: foreData,
+        smooth: true,
+        showSymbol: false,
+        lineStyle: { color: '#8b5cf6', width: 2.5, type: 'dashed' },
+      },
+    ];
+
+    if (hasActualFuture) {
+      seriesList.push({
+        name: '未来真实观测值',
+        type: 'line',
+        data: actualFutureData,
+        smooth: true,
+        showSymbol: false,
+        lineStyle: { color: '#10b981', width: 2.5 },
+      });
+    }
+
+    seriesList.push({
+      name: '历史观测真实值',
+      type: 'line',
+      data: histData,
+      smooth: true,
+      showSymbol: false,
+      lineStyle: { color: '#0284c7', width: 2.5 },
+      areaStyle: {
+        color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+          { offset: 0, color: 'rgba(2, 132, 199, 0.25)' },
+          { offset: 1, color: 'rgba(2, 132, 199, 0.02)' },
+        ]),
+      },
+    });
 
     const option: echarts.EChartsOption = {
       animation: true,
@@ -1728,11 +1819,7 @@ export class QuickTrialPage implements OnInit, AfterViewInit, OnDestroy {
       legend: {
         top: 28,
         textStyle: { fontSize: 11, color: '#64748b' },
-        data: [
-          { name: '历史观测真实值', itemStyle: { color: '#0284c7' } },
-          { name: '未来预测趋势值', itemStyle: { color: '#8b5cf6' } },
-          { name: '95% 置信区间', itemStyle: { color: 'rgba(139, 92, 246, 0.6)' } },
-        ],
+        data: legendData,
       },
       grid: {
         top: 60,
@@ -1796,53 +1883,7 @@ export class QuickTrialPage implements OnInit, AfterViewInit, OnDestroy {
           fillerColor: 'rgba(2, 132, 199, 0.15)',
         },
       ],
-      series: [
-        {
-          name: '置信区间基底',
-          type: 'line',
-          data: lowerBaseData,
-          smooth: true,
-          showSymbol: false,
-          lineStyle: { opacity: 0 },
-          stack: 'confidence-band',
-          symbol: 'none',
-        },
-        {
-          name: '95% 置信区间',
-          type: 'line',
-          data: bandDiffData,
-          smooth: true,
-          showSymbol: false,
-          lineStyle: { opacity: 0.6, color: '#a78bfa', width: 1, type: 'dotted' },
-          stack: 'confidence-band',
-          symbol: 'none',
-          areaStyle: {
-            color: 'rgba(139, 92, 246, 0.28)',
-          },
-        },
-        {
-          name: '未来预测趋势值',
-          type: 'line',
-          data: foreData,
-          smooth: true,
-          showSymbol: false,
-          lineStyle: { color: '#8b5cf6', width: 2.5, type: 'dashed' },
-        },
-        {
-          name: '历史观测真实值',
-          type: 'line',
-          data: histData,
-          smooth: true,
-          showSymbol: false,
-          lineStyle: { color: '#0284c7', width: 2.5 },
-          areaStyle: {
-            color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-              { offset: 0, color: 'rgba(2, 132, 199, 0.25)' },
-              { offset: 1, color: 'rgba(2, 132, 199, 0.02)' },
-            ]),
-          },
-        },
-      ],
+      series: seriesList,
     };
 
     this.chart.setOption(option, { notMerge: true });
@@ -1852,22 +1893,25 @@ export class QuickTrialPage implements OnInit, AfterViewInit, OnDestroy {
     const res = this.result();
     if (!res) return;
 
-    const rows: string[] = ['timestamp,type,value,lower_bound,upper_bound'];
+    const rows: string[] = [
+      'timestamp,type,predicted_value,actual_value,lower_bound,upper_bound',
+    ];
     for (const p of res.historyPoints) {
-      rows.push(`${p.time},history,${p.value},,`);
+      rows.push(`${p.time},history,,${p.value},,`);
     }
     for (let i = 0; i < res.forecastPoints.length; i++) {
       const p = res.forecastPoints[i];
       const lower = res.lowerBand[i]?.value ?? '';
       const upper = res.upperBand[i]?.value ?? '';
-      rows.push(`${p.time},forecast,${p.value},${lower},${upper}`);
+      const actual = res.actualFuturePoints?.[i]?.value ?? '';
+      rows.push(`${p.time},forecast,${p.value},${actual},${lower},${upper}`);
     }
 
     const blob = new Blob([rows.join('\n')], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `forecast_result_${Date.now()}.csv`;
+    link.download = `${res.fileName}_forecast_result_${Date.now()}.csv`;
     link.click();
     URL.revokeObjectURL(url);
     this.notifications.success('预测数据 CSV 已开始下载');
