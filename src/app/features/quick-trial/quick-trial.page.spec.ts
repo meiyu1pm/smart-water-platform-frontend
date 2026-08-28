@@ -50,6 +50,25 @@ describe('QuickTrialPage', () => {
           intervalMinutes: 15,
           seasonalitySteps: 24,
           confidence: 0.95,
+          workflowId: 42,
+        }),
+      ),
+      executeEphemeralWorkflow: vi.fn().mockReturnValue(
+        of({
+          task: '时序预测',
+          algorithm: 'Auto (Seasonal Naive)',
+          fileName: 's01_leak_demo.csv',
+          timeColumn: 'record_time',
+          valueColumn: 'inlet_flow',
+          historyPoints: [{ time: '2026-01-01 00:00:00', value: 21.2 }],
+          forecastPoints: [{ time: '2026-01-01 00:15:00', value: 22.0 }],
+          lowerBand: [{ time: '2026-01-01 00:15:00', value: 20.5 }],
+          upperBand: [{ time: '2026-01-01 00:15:00', value: 23.5 }],
+          horizonSteps: 32,
+          intervalMinutes: 15,
+          seasonalitySteps: 96,
+          confidence: 0.95,
+          workflowId: 42,
         }),
       ),
     };
@@ -128,13 +147,14 @@ describe('QuickTrialPage', () => {
   it('executes quick forecast with configured horizon and renders metrics strip', async () => {
     vi.useFakeTimers();
     component.runQuickTrial();
-    expect(component.running()).toBe(true);
 
-    vi.advanceTimersByTime(1300);
+    vi.advanceTimersByTime(100);
     fixture.detectChanges();
 
     expect(component.running()).toBe(false);
     expect(component.result()).not.toBeNull();
+    expect(component.result()?.algorithm).toContain('Seasonal Naive');
+    expect(component.result()?.workflowId).toBe(42);
     expect(fixture.nativeElement.querySelector('.result-dashboard')).not.toBeNull();
     expect(fixture.nativeElement.textContent).toContain('时序预测 结果');
     vi.useRealTimers();

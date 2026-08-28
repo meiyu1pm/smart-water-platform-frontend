@@ -317,10 +317,10 @@ import { NotificationService } from '../../core/services/notification.service';
             <div class="progress-bar-fill"></div>
           </div>
           <div class="step-badges">
-            <span class="step-item active">1. 截取选定 {{ contextPointsCount() }} 点历史输入序列</span>
-            <span class="step-item active">2. 拟合周期与趋势特征</span>
-            <span class="step-item active">3. 外推预测未来 {{ horizonSteps() }} 步时序</span>
-            <span class="step-item">4. 生成 95% 置信包络区间</span>
+            <span class="step-item active">1. 自动构建即席工作流拓扑</span>
+            <span class="step-item active">2. 绑定视图并发布执行版本</span>
+            <span class="step-item active">3. Celery / GPU 算法算子执行计算</span>
+            <span class="step-item">4. 提取真实时序预测结果与置信区间</span>
           </div>
         </section>
       }
@@ -1590,6 +1590,7 @@ export class QuickTrialPage implements OnInit, AfterViewInit, OnDestroy {
       : 's01_leak_demo.csv';
     const timeCol = this.selectedTimeCol();
     const valCol = this.selectedValueCol();
+    const pointCol = this.selectedPointCol();
     const fullRows = this.fullFileRows();
     const sampleRows = this.sampleRows();
     const currentRows = fullRows.length > 0 ? fullRows : sampleRows;
@@ -1598,16 +1599,18 @@ export class QuickTrialPage implements OnInit, AfterViewInit, OnDestroy {
     const horizon = this.horizonSteps();
 
     const execute = (effectiveRows: Array<Record<string, unknown>>) => {
-      setTimeout(() => {
+      if (verId) {
         this.quickTrial
-          .executeQuickForecast({
+          .executeEphemeralWorkflow({
             task:
               this.scenarios.find((s) => s.id === this.selectedTaskId())?.name ||
               '时序预测',
             algorithm: this.selectedAlgorithm(),
             fileName,
+            fileVersionId: verId,
             timeColumn: timeCol,
             valueColumn: valCol,
+            pointColumn: pointCol,
             sampleRows: effectiveRows,
             inputStartIndex: startIdx,
             inputEndIndex: endIdx,
@@ -1631,10 +1634,13 @@ export class QuickTrialPage implements OnInit, AfterViewInit, OnDestroy {
             },
             error: (err) => {
               this.running.set(false);
-              this.notifications.error(err, '快速试用运行异常');
+              this.notifications.error(err, '即席工作流执行异常');
             },
           });
-      }, 800);
+      } else {
+        this.running.set(false);
+        this.notifications.error('未能定位有效的数据文件版本');
+      }
     };
 
     if (currentRows.length === 0 && verId) {
@@ -1859,6 +1865,11 @@ export class QuickTrialPage implements OnInit, AfterViewInit, OnDestroy {
   }
 
   openInWorkflowEditor(): void {
-    void this.router.navigate(['/workflows']);
+    const res = this.result();
+    if (res?.workflowId) {
+      void this.router.navigate(['/workflows', res.workflowId, 'edit']);
+    } else {
+      void this.router.navigate(['/workflows']);
+    }
   }
 }

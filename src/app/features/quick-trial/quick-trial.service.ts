@@ -1,5 +1,5 @@
 import { Injectable, inject } from '@angular/core';
-import { Observable, from, of } from 'rxjs';
+import { Observable, firstValueFrom, from, of } from 'rxjs';
 import { catchError, map, switchMap } from 'rxjs/operators';
 
 import { ApiClient } from '../../core/services/api-client.service';
@@ -26,6 +26,7 @@ export interface ForecastResult {
   seasonalitySteps: number;
   confidence: number;
   workflowId?: number;
+  runId?: string;
 }
 
 export interface QuickTrialScenarioOption {
@@ -225,28 +226,32 @@ export class QuickTrialService {
   }
 
   /**
-   * 执行快速时序预测任务（支持自定义输入区间与预测步长）
+   * 方案 B：创建即席工作流并在后端调度 Celery/GPU 算子真实运行
    */
-  executeQuickForecast(params: {
+  executeEphemeralWorkflow(params: {
     task: string;
     algorithm: string;
     fileName: string;
+    fileVersionId: number;
     timeColumn: string;
     valueColumn: string;
+    pointColumn?: string;
     sampleRows: Array<Record<string, unknown>>;
     inputStartIndex?: number;
     inputEndIndex?: number;
     horizonSteps?: number;
   }): Observable<ForecastResult> {
-    return from(this.runForecastEngine(params));
+    return from(this.runEphemeralWorkflowPipeline(params));
   }
 
-  private async runForecastEngine(params: {
+  private async runEphemeralWorkflowPipeline(params: {
     task: string;
     algorithm: string;
     fileName: string;
+    fileVersionId: number;
     timeColumn: string;
     valueColumn: string;
+    pointColumn?: string;
     sampleRows: Array<Record<string, unknown>>;
     inputStartIndex?: number;
     inputEndIndex?: number;
@@ -256,36 +261,185 @@ export class QuickTrialService {
       task,
       algorithm,
       fileName,
+      fileVersionId,
       timeColumn,
       valueColumn,
+      pointColumn,
       sampleRows,
       inputStartIndex,
       inputEndIndex,
       horizonSteps: userHorizon,
     } = params;
 
-    // 1. 提取并清洗有效时序点
-    let allPoints = this.parseTimeSeriesPoints(sampleRows, timeColumn, valueColumn);
-    let sampleTimeFormat = allPoints[0]?.time || '2024-01-01 00:00:00';
+    const horizon = Math.max(4, Math.min(userHorizon ?? 32, 192));
+    const algoCode = algorithm === 'chronos2' ? 'chronos2_flow_forecast' : 'seasonal_naive';
+    const algoName =
+      algorithm === 'chronos2'
+        ? 'Chronos-2 (深度学习大模型)'
+        : algorithm === 'auto'
+          ? 'Auto (Seasonal Naive)'
+          : 'Seasonal Naive (季节性基准)';
 
-    // 2. 如果无匹配点位，生成平滑周期性基准数据
-    if (allPoints.length < 8) {
-      const baseTime = new Date('2024-01-01T00:00:00Z').getTime();
-      sampleTimeFormat = '2024-01-01 00:00:00';
-      allPoints = [];
-      for (let i = 0; i < 48; i++) {
-        const t = formatDateStr(baseTime + i * 15 * 60 * 1000, sampleTimeFormat);
-        const v = 5.8 + Math.sin(i * 0.4) * 1.5 + (i % 4) * 0.15;
-        allPoints.push({ time: t, value: Number(v.toFixed(3)) });
-      }
+    const algoParams: Record<string, unknown> =
+      algoCode === 'chronos2_flow_forecast'
+        ? { horizon, context_length: 288, value_source: 'processed' }
+        : { season_length: 96, horizon };
+
+    // 1. 创建即席数据视图
+    const viewRes = await firstValueFrom(
+      this.dataFiles.createView(fileVersionId, {
+        name: `即席时序视图_${Date.now()}`,
+        view_kind: 'timeseries',
+        mapping: {
+          time_column: timeColumn,
+          value_column: valueColumn,
+          ...(pointColumn ? { point_column: pointColumn } : {}),
+          semantic_type: 'measurement',
+          unit: 'm3/h',
+        },
+      }),
+    );
+    const viewId = viewRes.id;
+
+    // 2. 组装标准双节点工作流图
+    const inputNodeId = 'data_file_input_1';
+    const algoNodeId = 'algo_forecast_1';
+    const outputPort = algoCode === 'chronos2_flow_forecast' ? 'forecast' : 'result';
+
+    const graph = {
+      contract_version: '1.0',
+      nodes: [
+        {
+          id: inputNodeId,
+          node_code: 'data_file_input_v1',
+          node_version: '1.0.0',
+          parameters: {
+            output_mode: 'timeseries',
+            binding_key: inputNodeId,
+          },
+          ui: { position: { x: 120, y: 220 } },
+        },
+        {
+          id: algoNodeId,
+          node_code: algoCode,
+          node_version: '1.0.0',
+          parameters: algoParams,
+          ui: { position: { x: 480, y: 220 } },
+        },
+      ],
+      edges: [
+        {
+          source: { node_id: inputNodeId, port: 'series' },
+          target: { node_id: algoNodeId, port: 'series' },
+        },
+      ],
+      outputs: [{ node_id: algoNodeId, port: outputPort }],
+      bindings: {
+        [inputNodeId]: {
+          file_version_id: fileVersionId,
+          data_view_id: viewId,
+          output_mode: 'timeseries',
+        },
+      },
+    };
+
+    // 3. 创建即席工作流草稿
+    const wfCode = `wf_quick_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+    const createWfRes = await firstValueFrom(
+      this.api.post<{ id: number; draft_revision: number }, Record<string, unknown>>(
+        '/api/v1/workflows',
+        {
+          workflow_code: wfCode,
+          workflow_name: `快速试用_${task}_${algoCode}`,
+          description: '由快速试用中心自动创建并提交执行的即席时序预测工作流',
+          visibility: 'private',
+          graph,
+        },
+      ),
+    );
+    const workflowId = createWfRes.id;
+
+    // 4. 校验并发布工作流版本
+    const pubRes = await firstValueFrom(
+      this.api.post<{ id: number; version: number }, Record<string, never>>(
+        `/api/v1/workflows/${workflowId}/publish`,
+        {},
+      ),
+    );
+    const publishedVersionId = pubRes.id;
+
+    // 5. 提交执行工作流运行实例 (Celery / GPU Worker)
+    const runRes = await firstValueFrom(
+      this.api.post<{ run_id: string; task_id?: string }, Record<string, unknown>>(
+        `/api/v1/workflow-versions/${publishedVersionId}/runs`,
+        {
+          input_bindings: {
+            [inputNodeId]: {
+              file_version_id: fileVersionId,
+              data_view_id: viewId,
+              output_mode: 'timeseries',
+            },
+          },
+          parameter_overrides: {},
+        },
+      ),
+    );
+    const runId = runRes.run_id;
+
+    // 6. 异步轮询任务执行状态
+    let status = 'queued';
+    let runData: any = null;
+    const startTime = Date.now();
+
+    while (
+      ['queued', 'running', 'dispatched'].includes(status) &&
+      Date.now() - startTime < 45000
+    ) {
+      await new Promise((r) => setTimeout(r, 1000));
+      runData = await firstValueFrom(
+        this.api.get<any>(`/api/v1/workflow-runs/${encodeURIComponent(runId)}`),
+      );
+      status = runData?.status || 'failed';
     }
 
-    // 3. 根据用户指定的起始位置与长度截取输入序列 (Context Window)
-    const startIdx = Math.max(0, Math.min(inputStartIndex ?? 0, allPoints.length - 4));
-    const endIdx = Math.min(allPoints.length - 1, Math.max(startIdx + 3, inputEndIndex ?? allPoints.length - 1));
-    const historyPoints = allPoints.slice(startIdx, endIdx + 1);
+    if (status !== 'success') {
+      throw new Error(
+        runData?.error_message ||
+          runData?.message ||
+          `工作流算法执行未能完成 (当前状态: ${status})`,
+      );
+    }
 
-    // 4. 计算采样时间间隔（默认为 15 分钟）
+    // 7. 提取算法真实输出
+    const nodes = await firstValueFrom(
+      this.api.get<Array<any>>(`/api/v1/workflow-runs/${encodeURIComponent(runId)}/nodes`),
+    );
+    const inputNode = nodes.find(
+      (n) => n.node_instance_id === inputNodeId || n.node_code === 'data_file_input_v1',
+    );
+    const algoNode = nodes.find(
+      (n) => n.node_instance_id === algoNodeId || n.node_code === algoCode,
+    );
+
+    // 提取历史时序点
+    let historyPoints: TimeSeriesPoint[] = [];
+    if (inputNode?.output_snapshot?.series?.rows) {
+      historyPoints = inputNode.output_snapshot.series.rows.map((r: any) => ({
+        time: String(r.time),
+        value: Number(r.value),
+      }));
+    } else {
+      historyPoints = this.parseTimeSeriesPoints(sampleRows, timeColumn, valueColumn);
+    }
+
+    // 如果用户自定义了截取切片
+    if (inputStartIndex !== undefined || inputEndIndex !== undefined) {
+      const s = Math.max(0, inputStartIndex ?? 0);
+      const e = Math.min(historyPoints.length - 1, inputEndIndex ?? historyPoints.length - 1);
+      historyPoints = historyPoints.slice(s, e + 1);
+    }
+
+    // 计算采样间隔
     let intervalMinutes = 15;
     if (historyPoints.length >= 2) {
       const t1 = parseDateMs(historyPoints[0].time);
@@ -296,43 +450,64 @@ export class QuickTrialService {
       }
     }
 
-    // 5. 执行预测外推算法（时序周期回归 + 置信区间）
-    const horizonSteps = Math.max(4, Math.min(userHorizon ?? 32, 192)); // 默认32步，限制在 4~192 步之间
-    const lastTimestamp = parseDateMs(historyPoints[historyPoints.length - 1].time) || Date.now();
-    const values = historyPoints.map((p) => p.value);
-    const mean = values.reduce((a, b) => a + b, 0) / values.length;
-    const std =
-      Math.sqrt(
-        values.map((x) => Math.pow(x - mean, 2)).reduce((a, b) => a + b, 0) / values.length,
-      ) || 0.8;
+    const lastTimestamp =
+      historyPoints.length > 0
+        ? parseDateMs(historyPoints[historyPoints.length - 1].time)
+        : Date.now();
+    const sampleTimeFormat = historyPoints[0]?.time || '2024-01-01 00:00:00';
 
-    const forecastPoints: TimeSeriesPoint[] = [];
-    const lowerBand: TimeSeriesPoint[] = [];
-    const upperBand: TimeSeriesPoint[] = [];
+    let forecastPoints: TimeSeriesPoint[] = [];
+    let lowerBand: TimeSeriesPoint[] = [];
+    let upperBand: TimeSeriesPoint[] = [];
+    let seasonalitySteps = 96;
 
-    const seasonLength = Math.min(24, Math.max(8, Math.floor(historyPoints.length / 2)));
+    if (algoCode === 'chronos2_flow_forecast') {
+      const forecastRows = algoNode?.output_snapshot?.forecast?.rows || [];
+      forecastPoints = forecastRows.map((r: any) => ({
+        time: String(r.time),
+        value: Number(Number(r.value).toFixed(3)),
+      }));
+      lowerBand = forecastRows.map((r: any) => ({
+        time: String(r.time),
+        value: Number(Number(r.p10 ?? r.value).toFixed(3)),
+      }));
+      upperBand = forecastRows.map((r: any) => ({
+        time: String(r.time),
+        value: Number(Number(r.p90 ?? r.value).toFixed(3)),
+      }));
+    } else {
+      const payload = algoNode?.output_snapshot?.result?.payload || {};
+      const values: number[] = payload.values || [];
+      const lowers: number[] = payload.lower || [];
+      const uppers: number[] = payload.upper || [];
+      seasonalitySteps = Number(payload.metadata?.season_length || 96);
 
-    for (let step = 1; step <= horizonSteps; step++) {
-      const nextTimeMs = lastTimestamp + step * intervalMinutes * 60 * 1000;
-      const nextTime = formatDateStr(nextTimeMs, sampleTimeFormat);
-
-      const seasonalIndex = (historyPoints.length + step) % seasonLength;
-      const seasonalBase = values[values.length - 1 - (seasonalIndex % values.length)] ?? mean;
-      const noise = Math.sin(step * 0.3) * 0.25;
-      const predictedVal = Number(Math.max(0, seasonalBase * 0.95 + mean * 0.05 + noise).toFixed(3));
-
-      const uncertainty = std * 0.5 * Math.sqrt(step / 4 + 1);
-      const lower = Number(Math.max(0, predictedVal - uncertainty).toFixed(3));
-      const upper = Number((predictedVal + uncertainty).toFixed(3));
-
-      forecastPoints.push({ time: nextTime, value: predictedVal });
-      lowerBand.push({ time: nextTime, value: lower });
-      upperBand.push({ time: nextTime, value: upper });
+      forecastPoints = values.map((val, idx) => ({
+        time: formatDateStr(
+          lastTimestamp + (idx + 1) * intervalMinutes * 60 * 1000,
+          sampleTimeFormat,
+        ),
+        value: Number(Number(val).toFixed(3)),
+      }));
+      lowerBand = lowers.map((val, idx) => ({
+        time: formatDateStr(
+          lastTimestamp + (idx + 1) * intervalMinutes * 60 * 1000,
+          sampleTimeFormat,
+        ),
+        value: Number(Number(val).toFixed(3)),
+      }));
+      upperBand = uppers.map((val, idx) => ({
+        time: formatDateStr(
+          lastTimestamp + (idx + 1) * intervalMinutes * 60 * 1000,
+          sampleTimeFormat,
+        ),
+        value: Number(Number(val).toFixed(3)),
+      }));
     }
 
     return {
       task,
-      algorithm: algorithm === 'auto' ? 'Auto (Seasonal Robust Forecaster)' : algorithm,
+      algorithm: algoName,
       fileName,
       timeColumn,
       valueColumn,
@@ -340,10 +515,12 @@ export class QuickTrialService {
       forecastPoints,
       lowerBand,
       upperBand,
-      horizonSteps,
+      horizonSteps: forecastPoints.length || horizon,
       intervalMinutes,
-      seasonalitySteps: seasonLength,
+      seasonalitySteps,
       confidence: 0.95,
+      workflowId,
+      runId,
     };
   }
 }
