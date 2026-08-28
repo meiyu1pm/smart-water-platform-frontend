@@ -513,16 +513,25 @@ export class QuickTrialService {
       const forecastRows = (algoPayload['rows'] ||
         (algoPayload['payload'] as any)?.rows ||
         []) as Array<Record<string, unknown>>;
-      forecastPoints = forecastRows.map((r) => ({
-        time: String(r['time']),
+      forecastPoints = forecastRows.map((r, idx) => ({
+        time: formatDateStr(
+          lastTimestamp + (idx + 1) * intervalMinutes * 60 * 1000,
+          sampleTimeFormat,
+        ),
         value: Number(Number(r['value']).toFixed(3)),
       }));
-      lowerBand = forecastRows.map((r) => ({
-        time: String(r['time']),
+      lowerBand = forecastRows.map((r, idx) => ({
+        time: formatDateStr(
+          lastTimestamp + (idx + 1) * intervalMinutes * 60 * 1000,
+          sampleTimeFormat,
+        ),
         value: Number(Number(r['p10'] ?? r['value']).toFixed(3)),
       }));
-      upperBand = forecastRows.map((r) => ({
-        time: String(r['time']),
+      upperBand = forecastRows.map((r, idx) => ({
+        time: formatDateStr(
+          lastTimestamp + (idx + 1) * intervalMinutes * 60 * 1000,
+          sampleTimeFormat,
+        ),
         value: Number(Number(r['p90'] ?? r['value']).toFixed(3)),
       }));
     } else {
