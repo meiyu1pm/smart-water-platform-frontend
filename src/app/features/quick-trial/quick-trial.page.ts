@@ -1712,10 +1712,15 @@ export class QuickTrialPage implements OnInit, AfterViewInit, OnDestroy {
       bandDiffData.unshift([last.time, 0]);
     }
 
+    const horizonHours = Math.max(
+      1,
+      Math.round((res.horizonSteps * res.intervalMinutes) / 60),
+    );
+
     const option: echarts.EChartsOption = {
       animation: true,
       title: {
-        text: `${res.fileName} · 24小时外推时序预测`,
+        text: `${res.fileName} · ${horizonHours}小时外推时序预测`,
         left: 'center',
         top: 4,
         textStyle: { fontSize: 14, fontWeight: 'bold', color: '#1e293b' },
@@ -1723,7 +1728,11 @@ export class QuickTrialPage implements OnInit, AfterViewInit, OnDestroy {
       legend: {
         top: 28,
         textStyle: { fontSize: 11, color: '#64748b' },
-        data: ['历史观测真实值', '未来预测趋势值', '95% 置信区间'],
+        data: [
+          { name: '历史观测真实值', itemStyle: { color: '#0284c7' } },
+          { name: '未来预测趋势值', itemStyle: { color: '#8b5cf6' } },
+          { name: '95% 置信区间', itemStyle: { color: 'rgba(139, 92, 246, 0.6)' } },
+        ],
       },
       grid: {
         top: 60,
@@ -1804,11 +1813,11 @@ export class QuickTrialPage implements OnInit, AfterViewInit, OnDestroy {
           data: bandDiffData,
           smooth: true,
           showSymbol: false,
-          lineStyle: { opacity: 0 },
+          lineStyle: { opacity: 0.6, color: '#a78bfa', width: 1, type: 'dotted' },
           stack: 'confidence-band',
           symbol: 'none',
           areaStyle: {
-            color: 'rgba(139, 92, 246, 0.18)',
+            color: 'rgba(139, 92, 246, 0.28)',
           },
         },
         {

@@ -4,7 +4,12 @@ import { catchError, map, switchMap } from 'rxjs/operators';
 
 import { ApiClient } from '../../core/services/api-client.service';
 import { DataFileService } from '../../core/services/data-file.service';
-import { DataFilePreview, DataFileSummary, DataFileUploadResult } from '../../core/models/api.models';
+import {
+  DataFilePreview,
+  DataFileSummary,
+  DataFileUploadResult,
+  WorkflowArtifact,
+} from '../../core/models/api.models';
 
 export interface TimeSeriesPoint {
   time: string;
@@ -410,23 +415,66 @@ export class QuickTrialService {
       );
     }
 
-    // 7. 提取算法真实输出
-    const nodes = await firstValueFrom(
-      this.api.get<Array<any>>(`/api/v1/workflow-runs/${encodeURIComponent(runId)}/nodes`),
-    );
-    const inputNode = nodes.find(
-      (n) => n.node_instance_id === inputNodeId || n.node_code === 'data_file_input_v1',
-    );
-    const algoNode = nodes.find(
-      (n) => n.node_instance_id === algoNodeId || n.node_code === algoCode,
-    );
+    // 7. 拉取工作流产物 (Workflow Artifacts) 并读取完整 Payload
+    let inputPayload: Record<string, unknown> = {};
+    let algoPayload: Record<string, unknown> = {};
+
+    try {
+      const artifacts = await firstValueFrom(
+        this.api.get<Array<WorkflowArtifact>>(
+          `/api/v1/workflow-runs/${encodeURIComponent(runId)}/artifacts`,
+        ),
+      );
+
+      const inputArtifactMeta = artifacts.find(
+        (a) =>
+          a.node_instance_id === inputNodeId ||
+          a.port_key === 'series' ||
+          a.node_code === 'data_file_input_v1',
+      );
+      const algoArtifactMeta = artifacts.find(
+        (a) =>
+          a.node_instance_id === algoNodeId ||
+          a.node_code === algoCode ||
+          a.port_key === outputPort,
+      );
+
+      if (inputArtifactMeta?.id) {
+        const fullInput = await firstValueFrom(
+          this.api.get<Record<string, unknown>>(
+            `/api/v1/workflow-artifacts/${inputArtifactMeta.id}?full=true`,
+          ),
+        );
+        inputPayload = (fullInput['payload'] || fullInput['preview'] || fullInput) as Record<
+          string,
+          unknown
+        >;
+      }
+
+      if (algoArtifactMeta?.id) {
+        const fullAlgo = await firstValueFrom(
+          this.api.get<Record<string, unknown>>(
+            `/api/v1/workflow-artifacts/${algoArtifactMeta.id}?full=true`,
+          ),
+        );
+        algoPayload = (fullAlgo['payload'] || fullAlgo['preview'] || fullAlgo) as Record<
+          string,
+          unknown
+        >;
+      }
+    } catch {
+      // Fallback to sample rows if artifact fetch fails
+    }
 
     // 提取历史时序点
     let historyPoints: TimeSeriesPoint[] = [];
-    if (inputNode?.output_snapshot?.series?.rows) {
-      historyPoints = inputNode.output_snapshot.series.rows.map((r: any) => ({
-        time: String(r.time),
-        value: Number(r.value),
+    const historyRows = (inputPayload['rows'] ||
+      (inputPayload['payload'] as any)?.rows) as Array<Record<string, unknown>> | undefined;
+
+    if (Array.isArray(historyRows) && historyRows.length > 0) {
+      historyPoints = historyRows.map((r) => ({
+        time: String(r['time']),
+        value: Number(r['value']),
       }));
     } else {
       historyPoints = this.parseTimeSeriesPoints(sampleRows, timeColumn, valueColumn);
@@ -462,25 +510,31 @@ export class QuickTrialService {
     let seasonalitySteps = 96;
 
     if (algoCode === 'chronos2_flow_forecast') {
-      const forecastRows = algoNode?.output_snapshot?.forecast?.rows || [];
-      forecastPoints = forecastRows.map((r: any) => ({
-        time: String(r.time),
-        value: Number(Number(r.value).toFixed(3)),
+      const forecastRows = (algoPayload['rows'] ||
+        (algoPayload['payload'] as any)?.rows ||
+        []) as Array<Record<string, unknown>>;
+      forecastPoints = forecastRows.map((r) => ({
+        time: String(r['time']),
+        value: Number(Number(r['value']).toFixed(3)),
       }));
-      lowerBand = forecastRows.map((r: any) => ({
-        time: String(r.time),
-        value: Number(Number(r.p10 ?? r.value).toFixed(3)),
+      lowerBand = forecastRows.map((r) => ({
+        time: String(r['time']),
+        value: Number(Number(r['p10'] ?? r['value']).toFixed(3)),
       }));
-      upperBand = forecastRows.map((r: any) => ({
-        time: String(r.time),
-        value: Number(Number(r.p90 ?? r.value).toFixed(3)),
+      upperBand = forecastRows.map((r) => ({
+        time: String(r['time']),
+        value: Number(Number(r['p90'] ?? r['value']).toFixed(3)),
       }));
     } else {
-      const payload = algoNode?.output_snapshot?.result?.payload || {};
-      const values: number[] = payload.values || [];
-      const lowers: number[] = payload.lower || [];
-      const uppers: number[] = payload.upper || [];
-      seasonalitySteps = Number(payload.metadata?.season_length || 96);
+      const payloadData =
+        ((algoPayload['payload'] as Record<string, unknown>) || algoPayload) as Record<
+          string,
+          unknown
+        >;
+      const values = (payloadData['values'] as number[]) || [];
+      const lowers = (payloadData['lower'] as number[]) || [];
+      const uppers = (payloadData['upper'] as number[]) || [];
+      seasonalitySteps = Number((payloadData['metadata'] as any)?.season_length || 96);
 
       forecastPoints = values.map((val, idx) => ({
         time: formatDateStr(
