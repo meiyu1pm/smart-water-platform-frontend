@@ -1,6 +1,6 @@
 import { Injectable, inject } from '@angular/core';
 import { Observable, firstValueFrom, from, of, throwError, timer } from 'rxjs';
-import { catchError, filter, map, switchMap, take, timeout } from 'rxjs/operators';
+import { catchError, exhaustMap, filter, map, switchMap, take, timeout } from 'rxjs/operators';
 
 import { ApiClient } from '../../core/services/api-client.service';
 import { DataFileService } from '../../core/services/data-file.service';
@@ -258,25 +258,33 @@ export class QuickTrialService {
   /** Wait for the asynchronous profile task before requesting a preview. */
   private waitForPreview(versionId: number): Observable<DataFilePreview> {
     return timer(0, 1000).pipe(
-      switchMap(() => this.dataFiles.getFileVersion(versionId).pipe(catchError(() => of(null)))),
-      switchMap((version) => {
-        if (!version) return of(null);
-        const status = String(version.profile_status || version.status || '').toLowerCase();
-        if (status === 'failed') {
-          return throwError(() => new Error('文件结构解析失败，无法预览该文件。'));
-        }
-        if (status === 'unsupported') {
-          return throwError(() => new Error('该文件格式暂不支持结构化预览。'));
-        }
-        if (status !== 'ready') return of(null);
-        return this.dataFiles.getPreview(versionId).pipe(
-          // A profile can become ready just before the preview endpoint sees
-          // it; keep polling for that short transition instead of failing.
-          catchError((error: { status?: number }) =>
-            Number(error?.status) === 409 ? of(null) : throwError(() => error),
+      // Do not cancel a slow status request every second. This matters for
+      // large files whose profile worker can take longer than one poll tick.
+      exhaustMap(() =>
+        this.dataFiles.getFileVersion(versionId).pipe(
+          catchError((error: unknown) =>
+            this.isTransientPreviewError(error) ? of(null) : throwError(() => error),
           ),
-        );
-      }),
+          switchMap((version) => {
+            if (!version) return of(null);
+            const status = String(version.profile_status || version.status || '').toLowerCase();
+            if (status === 'failed') {
+              return throwError(() => new Error('文件结构解析失败，无法预览该文件。'));
+            }
+            if (status === 'unsupported') {
+              return throwError(() => new Error('该文件格式暂不支持结构化预览。'));
+            }
+            if (status !== 'ready') return of(null);
+            return this.dataFiles.getPreview(versionId).pipe(
+              // A profile can become ready just before the preview endpoint sees
+              // it; keep polling for that short transition instead of failing.
+              catchError((error: unknown) =>
+                this.isTransientPreviewError(error) ? of(null) : throwError(() => error),
+              ),
+            );
+          }),
+        ),
+      ),
       filter((preview): preview is DataFilePreview => preview !== null),
       take(1),
       timeout({ first: 60_000 }),
@@ -633,6 +641,11 @@ export class QuickTrialService {
       throw new Error(`${label}产物缺少完整 payload。`);
     }
     return payload as Record<string, unknown>;
+  }
+
+  private isTransientPreviewError(error: unknown): boolean {
+    const status = Number((error as { status?: unknown } | null)?.status);
+    return status === 0 || status === 404 || status === 409 || status === 429 || status >= 500;
   }
 
   private requireRows(value: unknown, label: string): Array<Record<string, unknown>> {
