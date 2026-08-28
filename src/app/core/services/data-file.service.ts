@@ -31,7 +31,9 @@ export class DataFileService {
     return this.api.post<DataCollectionSummary, typeof body>('/api/v1/data-collections', body);
   }
 
-  deleteCollection(collectionId: number): Observable<{ collection_id: number; status: string; recycle_item_id?: number }> {
+  deleteCollection(
+    collectionId: number,
+  ): Observable<{ collection_id: number; status: string; recycle_item_id?: number }> {
     return this.api.delete<{ collection_id: number; status: string; recycle_item_id?: number }>(
       `/api/v1/data-collections/${collectionId}`,
     );
@@ -41,9 +43,26 @@ export class DataFileService {
     return this.api.get<DataFileSummary[]>(`/api/v1/data-collections/${collectionId}/files`);
   }
 
-  removeFileFromCollection(collectionId: number, fileId: number): Observable<{ collection_id: number; file_id: number; removed: boolean }> {
+  /** Files that are not currently attached to an active data collection. */
+  listUnassignedFiles(): Observable<DataFileSummary[]> {
+    return this.api.get<DataFileSummary[]>('/api/v1/data-files', { unassigned: true });
+  }
+
+  removeFileFromCollection(
+    collectionId: number,
+    fileId: number,
+  ): Observable<{ collection_id: number; file_id: number; removed: boolean }> {
     return this.api.delete<{ collection_id: number; file_id: number; removed: boolean }>(
       `/api/v1/data-collections/${collectionId}/files/${fileId}`,
+    );
+  }
+
+  /** Archive a logical file and its versions through the existing recycle-bin flow. */
+  deleteFile(
+    fileId: number,
+  ): Observable<{ file_id: number; status: string; recycle_item_id?: number }> {
+    return this.api.delete<{ file_id: number; status: string; recycle_item_id?: number }>(
+      `/api/v1/data-files/${fileId}`,
     );
   }
 
@@ -59,9 +78,15 @@ export class DataFileService {
     return this.api.get<DataFileVersionSummary>(`/api/v1/data-file-versions/${versionId}`);
   }
 
-  uploadFile(collectionId: number, file: File, name?: string): Observable<DataFileUploadResult> {
+  uploadFile(
+    collectionId: number | null,
+    file: File,
+    name?: string,
+  ): Observable<DataFileUploadResult> {
     const form = new FormData();
-    form.append('collection_id', String(collectionId));
+    if (collectionId !== null) {
+      form.append('collection_id', String(collectionId));
+    }
     form.append('file', file, file.name);
     form.append('file_name', name?.trim() || file.name);
     return this.api.post<DataFileUploadResult, FormData>('/api/v1/data-files/uploads', form);

@@ -70,6 +70,72 @@ import { DataFilePreviewPanelComponent } from './data-file-preview-panel.compone
       >
     </section>
 
+    <mat-card class="unassigned-card">
+      <div class="unassigned-head">
+        <button
+          class="unassigned-toggle"
+          type="button"
+          aria-controls="unassigned-files-panel"
+          [attr.aria-expanded]="showUnassigned()"
+          (click)="toggleUnassigned()"
+        >
+          <span class="expand-icon" aria-hidden="true">{{ showUnassigned() ? '⌄' : '›' }}</span>
+          <span class="unassigned-copy">
+            <strong>无归属文件</strong>
+            <small>尚未加入任何活动数据集的文件，可稍后添加或删除。</small>
+          </span>
+          <span class="unassigned-count">{{ unassignedFiles().length }} 个文件</span>
+        </button>
+        @if (canUploadFile()) {
+          <label class="upload-button"
+            >上传无归属文件<input type="file" (change)="uploadFile(null, $event)"
+          /></label>
+        }
+      </div>
+      @if (showUnassigned()) {
+        <div class="unassigned-body" id="unassigned-files-panel">
+          @if (unassignedLoading()) {
+            <p class="inline-state">正在读取无归属文件…</p>
+          } @else if (unassignedError()) {
+            <p class="inline-state error">{{ unassignedError() }}</p>
+          } @else if (!unassignedFiles().length) {
+            <p class="inline-state">暂无无归属文件。上传时可以先不选择数据集。</p>
+          } @else {
+            @for (file of unassignedFiles(); track file.id) {
+              <div class="file-row">
+                <div class="file-icon" aria-hidden="true">
+                  {{ file.file_kind === 'topology' ? '拓' : '文' }}
+                </div>
+                <div class="file-info">
+                  <strong>{{ file.name }}</strong
+                  ><small
+                    >{{ (file.format || '未知').toUpperCase() }} ·
+                    {{ formatBytes(file.size_bytes) }} · {{ file.version_count }} 个版本</small
+                  >
+                </div>
+                <span class="file-status" [class.ready]="file.status === 'ready'">{{
+                  fileStatus(file)
+                }}</span>
+                <button mat-stroked-button type="button" (click)="openPreview(file)">
+                  查看预览
+                </button>
+                @if (canDeleteFile()) {
+                  <button
+                    mat-stroked-button
+                    class="remove-button"
+                    type="button"
+                    (click)="deleteUnassignedFile(file, $event)"
+                  >
+                    删除文件
+                  </button>
+                }
+              </div>
+            }
+          }
+        </div>
+      }
+    </mat-card>
+
     @if (showCreate() && canCreateCollection()) {
       <mat-card class="create-card">
         <h2>新建数据集</h2>
@@ -226,7 +292,9 @@ import { DataFilePreviewPanelComponent } from './data-file-preview-panel.compone
     .collection-summary,
     .file-toolbar,
     .file-row,
-    .create-row {
+    .create-row,
+    .unassigned-head,
+    .unassigned-toggle {
       display: flex;
       align-items: center;
       gap: 12px;
@@ -286,9 +354,56 @@ import { DataFilePreviewPanelComponent } from './data-file-preview-panel.compone
       color: #b45309 !important;
     }
     .create-card,
-    .list-card {
+    .list-card,
+    .unassigned-card {
       padding: 18px;
       margin-bottom: 18px;
+    }
+    .unassigned-card {
+      padding: 0;
+      overflow: hidden;
+    }
+    .unassigned-head {
+      justify-content: space-between;
+      padding: 14px 18px;
+      background: #fff;
+    }
+    .unassigned-toggle {
+      flex: 1;
+      min-width: 0;
+      border: 0;
+      padding: 0;
+      background: transparent;
+      text-align: left;
+      cursor: pointer;
+    }
+    .unassigned-toggle:hover,
+    .unassigned-toggle:focus-visible {
+      outline: 2px solid #93c5fd;
+      outline-offset: 3px;
+    }
+    .unassigned-copy {
+      display: grid;
+      gap: 4px;
+      min-width: 0;
+    }
+    .unassigned-copy small {
+      overflow: hidden;
+      color: #64748b;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .unassigned-count {
+      flex: 0 0 auto;
+      color: #0f5f92;
+      font-size: 13px;
+    }
+    .unassigned-body {
+      display: grid;
+      gap: 8px;
+      padding: 12px 18px 15px 48px;
+      border-top: 1px solid #e2e8f0;
+      background: #f8fafc;
     }
     .create-row {
       align-items: flex-start;
@@ -449,7 +564,8 @@ import { DataFilePreviewPanelComponent } from './data-file-preview-panel.compone
     @media (max-width: 640px) {
       .page-head,
       .list-head,
-      .create-row {
+      .create-row,
+      .unassigned-head {
         align-items: stretch;
         flex-direction: column;
       }
@@ -464,6 +580,19 @@ import { DataFilePreviewPanelComponent } from './data-file-preview-panel.compone
       }
       .collection-summary {
         align-items: flex-start;
+      }
+      .unassigned-toggle {
+        align-items: flex-start;
+      }
+      .unassigned-count {
+        align-self: flex-start;
+        margin-left: 30px;
+      }
+      .unassigned-head {
+        padding: 12px;
+      }
+      .unassigned-body {
+        padding-left: 12px;
       }
       .collection-header {
         align-items: stretch;
@@ -501,6 +630,11 @@ export class DataCollectionsPage {
   readonly filesLoading = signal(new Set<number>());
   readonly filesError = signal(new Set<number>());
   readonly expanded = signal(new Set<number>());
+  readonly unassignedFiles = signal<DataFileSummary[]>([]);
+  readonly unassignedLoading = signal(false);
+  readonly unassignedError = signal('');
+  readonly unassignedLoaded = signal(false);
+  readonly showUnassigned = signal(false);
   readonly selectedFile = signal<DataFileSummary | null>(null);
   readonly loading = signal(false);
   readonly creating = signal(false);
@@ -516,14 +650,26 @@ export class DataCollectionsPage {
       (item) => !term || `${item.name} ${item.description || ''}`.toLowerCase().includes(term),
     );
   });
-  readonly totalFiles = computed(() =>
-    this.collections().reduce((sum, item) => sum + item.file_count, 0),
+  readonly totalFiles = computed(
+    () =>
+      this.collections().reduce((sum, item) => sum + item.file_count, 0) +
+      this.unassignedFiles().length,
   );
-  readonly totalBytes = computed(() =>
-    this.collections().reduce((sum, item) => sum + item.storage_bytes, 0),
+  readonly totalBytes = computed(
+    () =>
+      this.collections().reduce((sum, item) => sum + item.storage_bytes, 0) +
+      this.unassignedFiles().reduce((sum, item) => sum + item.size_bytes, 0),
   );
-  readonly totalIssues = computed(() =>
-    this.collections().reduce((sum, item) => sum + item.parse_issue_count, 0),
+  readonly totalIssues = computed(
+    () =>
+      this.collections().reduce((sum, item) => sum + item.parse_issue_count, 0) +
+      this.unassignedFiles().reduce(
+        (sum, item) =>
+          sum +
+          (item.parse_issue_count ||
+            (item.profile_status === 'failed' || item.profile_status === 'unsupported' ? 1 : 0)),
+        0,
+      ),
   );
 
   constructor() {
@@ -538,11 +684,24 @@ export class DataCollectionsPage {
   ngOnDestroy(): void {
     this.subscriptions.unsubscribe();
   }
-  canCreateCollection(): boolean { return this.auth.hasPermission('data_collection:write'); }
-  canDeleteCollection(): boolean { return this.auth.hasPermission('data_collection:delete'); }
-  canManageCollection(): boolean { return this.auth.hasPermission('data_collection:write'); }
-  canUploadFile(): boolean { return this.auth.hasPermission('data_file:write'); }
-  canCreateView(): boolean { return this.auth.hasPermission('data_view:write'); }
+  canCreateCollection(): boolean {
+    return this.auth.hasPermission('data_collection:write');
+  }
+  canDeleteCollection(): boolean {
+    return this.auth.hasPermission('data_collection:delete');
+  }
+  canManageCollection(): boolean {
+    return this.auth.hasPermission('data_collection:write');
+  }
+  canUploadFile(): boolean {
+    return this.auth.hasPermission('data_file:write');
+  }
+  canDeleteFile(): boolean {
+    return this.auth.hasPermission('data_file:delete');
+  }
+  canCreateView(): boolean {
+    return this.auth.hasPermission('data_view:write');
+  }
 
   load(): void {
     this.loading.set(true);
@@ -559,6 +718,7 @@ export class DataCollectionsPage {
         },
       }),
     );
+    this.loadUnassignedFiles();
   }
 
   toggleCollection(collection: DataCollectionSummary): void {
@@ -569,6 +729,13 @@ export class DataCollectionsPage {
       if (!this.filesByCollection().has(collection.id)) this.loadFiles(collection.id);
     }
     this.expanded.set(next);
+  }
+  toggleUnassigned(): void {
+    const opening = !this.showUnassigned();
+    this.showUnassigned.set(opening);
+    if (opening && !this.unassignedLoaded() && !this.unassignedLoading()) {
+      this.loadUnassignedFiles();
+    }
   }
   isExpanded(id: number): boolean {
     return this.expanded().has(id);
@@ -603,14 +770,16 @@ export class DataCollectionsPage {
     );
   }
 
-  uploadFile(collection: DataCollectionSummary, event: Event): void {
+  uploadFile(collection: DataCollectionSummary | null, event: Event): void {
     const file = (event.target as HTMLInputElement).files?.[0];
     if (!file || !this.canUploadFile()) return;
     this.subscriptions.add(
-      this.service.uploadFile(collection.id, file).subscribe({
+      this.service.uploadFile(collection?.id ?? null, file).subscribe({
         next: (result) => {
-          this.notifications.success(result.task_id ? '文件已上传，正在解析。' : '文件上传已完成。');
-          this.loadFiles(collection.id);
+          this.notifications.success(
+            result.task_id ? '文件已上传，正在解析。' : '文件上传已完成。',
+          );
+          if (collection) this.loadFiles(collection.id);
           this.load();
         },
         error: (error) => this.notifications.error(error, '文件上传失败。'),
@@ -625,7 +794,12 @@ export class DataCollectionsPage {
     this.subscriptions.add(
       this.service.deleteCollection(collection.id).subscribe({
         next: () => {
-          if (this.selectedFile() && this.filesByCollection().get(collection.id)?.some((file) => file.id === this.selectedFile()?.id)) {
+          if (
+            this.selectedFile() &&
+            this.filesByCollection()
+              .get(collection.id)
+              ?.some((file) => file.id === this.selectedFile()?.id)
+          ) {
             this.selectedFile.set(null);
           }
           const expanded = new Set(this.expanded());
@@ -645,7 +819,8 @@ export class DataCollectionsPage {
   removeFile(collection: DataCollectionSummary, file: DataFileSummary, event?: Event): void {
     event?.stopPropagation();
     if (!this.canManageCollection()) return;
-    if (!window.confirm(`确定将“${file.name}”移出数据集“${collection.name}”？原文件不会被删除。`)) return;
+    if (!window.confirm(`确定将“${file.name}”移出数据集“${collection.name}”？原文件不会被删除。`))
+      return;
     this.subscriptions.add(
       this.service.removeFileFromCollection(collection.id, file.id).subscribe({
         next: () => {
@@ -659,24 +834,42 @@ export class DataCollectionsPage {
     );
   }
 
+  deleteUnassignedFile(file: DataFileSummary, event?: Event): void {
+    event?.stopPropagation();
+    if (!this.canDeleteFile()) return;
+    if (!window.confirm(`确定删除无归属文件“${file.name}”？文件将移入回收站。`)) return;
+    this.subscriptions.add(
+      this.service.deleteFile(file.id).subscribe({
+        next: () => {
+          if (this.selectedFile()?.id === file.id) this.selectedFile.set(null);
+          this.notifications.success('文件已移入回收站。');
+          this.load();
+        },
+        error: (error) => this.notifications.error(error, '删除文件失败。'),
+      }),
+    );
+  }
+
   openPreview(file: DataFileSummary): void {
     this.selectedFile.set(file);
   }
   onViewChange(view: DataFileViewSelection): void {
     if (!this.canCreateView()) return;
-    const mapping = view.output_mode === 'table'
-      ? { selected_columns: view.selected_columns || [] }
-      : {
-          time_column: view.time_column || '',
-          value_column: view.value_column || '',
-          ...(view.point_column ? { point_column: view.point_column } : {}),
-        };
+    const mapping =
+      view.output_mode === 'table'
+        ? { selected_columns: view.selected_columns || [] }
+        : {
+            time_column: view.time_column || '',
+            value_column: view.value_column || '',
+            ...(view.point_column ? { point_column: view.point_column } : {}),
+          };
     const payload: DataFileViewCreate = { view_kind: view.output_mode, mapping };
     this.subscriptions.add(
       this.service.createView(view.file_version_id, payload).subscribe({
-        next: () => this.notifications.success(
-          `${view.output_mode === 'table' ? '表格' : '时序'}数据视图已创建。`,
-        ),
+        next: () =>
+          this.notifications.success(
+            `${view.output_mode === 'table' ? '表格' : '时序'}数据视图已创建。`,
+          ),
         error: (error) => this.notifications.error(error, '数据视图创建失败。'),
       }),
     );
@@ -731,13 +924,39 @@ export class DataCollectionsPage {
     );
   }
 
+  private loadUnassignedFiles(): void {
+    this.unassignedLoading.set(true);
+    this.unassignedError.set('');
+    this.subscriptions.add(
+      this.service.listUnassignedFiles().subscribe({
+        next: (items) => {
+          this.unassignedFiles.set(items || []);
+          this.unassignedLoaded.set(true);
+          this.unassignedLoading.set(false);
+          const selected = this.selectedFile();
+          const refreshed = (items || []).find((item) => item.id === selected?.id);
+          if (refreshed) this.selectedFile.set(refreshed);
+        },
+        error: () => {
+          this.unassignedLoaded.set(false);
+          this.unassignedLoading.set(false);
+          this.unassignedError.set('无法读取无归属文件，请稍后重试。');
+        },
+      }),
+    );
+  }
+
   private refreshExpandedFiles() {
     const ids = [...this.expanded()];
-    if (!ids.length) return EMPTY;
-    return forkJoin(
-      ids.map((id) => this.service.listFiles(id).pipe(catchError(() => of(null)))),
-    ).pipe(
-      tap((results) => {
+    if (!ids.length && !this.showUnassigned()) return EMPTY;
+    const expanded$ = ids.length
+      ? forkJoin(ids.map((id) => this.service.listFiles(id).pipe(catchError(() => of(null)))))
+      : of([]);
+    const unassigned$ = this.showUnassigned()
+      ? this.service.listUnassignedFiles().pipe(catchError(() => of(null)))
+      : of(null);
+    return forkJoin({ expanded: expanded$, unassigned: unassigned$ }).pipe(
+      tap(({ expanded: results, unassigned }) => {
         const map = new Map(this.filesByCollection());
         results.forEach((items, index) => {
           if (items) {
@@ -748,6 +967,13 @@ export class DataCollectionsPage {
           }
         });
         this.filesByCollection.set(map);
+        if (unassigned) {
+          this.unassignedFiles.set(unassigned);
+          this.unassignedLoaded.set(true);
+          const selected = this.selectedFile();
+          const refreshed = unassigned.find((item) => item.id === selected?.id);
+          if (refreshed) this.selectedFile.set(refreshed);
+        }
       }),
     );
   }
