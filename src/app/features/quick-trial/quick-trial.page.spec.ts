@@ -92,9 +92,15 @@ describe('QuickTrialPage', () => {
           preview_limit: 50,
         }),
       ),
-      downloadFileVersion: vi.fn().mockReturnValue(
-        of(new Blob(['record_time,inlet_flow\n2026-01-01 00:00:00,21.2\n2026-01-01 00:15:00,21.8\n'])),
-      ),
+      downloadFileVersion: vi
+        .fn()
+        .mockReturnValue(
+          of(
+            new Blob([
+              'record_time,inlet_flow\n2026-01-01 00:00:00,21.2\n2026-01-01 00:15:00,21.8\n',
+            ]),
+          ),
+        ),
     };
 
     await TestBed.configureTestingModule({
@@ -142,6 +148,15 @@ describe('QuickTrialPage', () => {
     component.setHorizonSteps(96);
     expect(component.horizonSteps()).toBe(96);
     expect(component.dataInputDisplay()).toContain('预测 96点');
+  });
+
+  it('clamps Chronos-2 horizon to the backend-supported maximum', () => {
+    component.setHorizonSteps(192);
+    expect(component.horizonSteps()).toBe(192);
+
+    component.onAlgorithmChange('chronos2');
+    expect(component.maxHorizonSteps()).toBe(96);
+    expect(component.horizonSteps()).toBe(96);
   });
 
   it('executes quick forecast with configured horizon and renders metrics strip', async () => {
