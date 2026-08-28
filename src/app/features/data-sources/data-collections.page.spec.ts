@@ -11,11 +11,15 @@ describe('DataCollectionsPage', () => {
   let createView: ReturnType<typeof vi.fn>;
   let deleteCollection: ReturnType<typeof vi.fn>;
   let removeFileFromCollection: ReturnType<typeof vi.fn>;
+  let deleteFile: ReturnType<typeof vi.fn>;
+  let uploadFile: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
     createView = vi.fn(() => of({ id: 1 }));
     deleteCollection = vi.fn(() => of({ collection_id: 1, status: 'trashed' }));
     removeFileFromCollection = vi.fn(() => of({ collection_id: 1, file_id: 2, removed: true }));
+    deleteFile = vi.fn(() => of({ file_id: 7, status: 'trashed' }));
+    uploadFile = vi.fn(() => of({ task_id: null }));
     TestBed.configureTestingModule({
       imports: [DataCollectionsPage],
       providers: [
@@ -43,9 +47,12 @@ describe('DataCollectionsPage', () => {
                 },
               ]),
             listFiles: () => of([]),
+            listUnassignedFiles: () => of([]),
             createView,
             deleteCollection,
             removeFileFromCollection,
+            deleteFile,
+            uploadFile,
           },
         },
       ],
@@ -114,8 +121,38 @@ describe('DataCollectionsPage', () => {
 
     page.removeFile(page.collections()[0], file);
 
-    expect(confirm).toHaveBeenCalledWith('确定将“flow.csv”移出数据集“DMA 数据”？原文件不会被删除。');
+    expect(confirm).toHaveBeenCalledWith(
+      '确定将“flow.csv”移出数据集“DMA 数据”？原文件不会被删除。',
+    );
     expect(removeFileFromCollection).toHaveBeenCalledWith(1, 2);
     expect(page.selectedFile()).toBeNull();
+  });
+
+  it('uploads a file without a collection and can archive it from the unassigned panel', () => {
+    const page = TestBed.createComponent(DataCollectionsPage).componentInstance;
+    const file = {
+      id: 7,
+      name: 'orphan.csv',
+      file_kind: 'table',
+      format: 'csv',
+      status: 'active',
+      version_count: 1,
+      current_version_id: 8,
+      size_bytes: 10,
+      profile_status: 'ready',
+      created_at: '',
+      updated_at: '',
+    };
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    page.unassignedFiles.set([file]);
+
+    page.uploadFile(null, {
+      target: { files: [new File(['a,b'], 'orphan.csv')] },
+    } as unknown as Event);
+    page.deleteUnassignedFile(file);
+
+    expect(uploadFile).toHaveBeenCalledWith(null, expect.any(File));
+    expect(deleteFile).toHaveBeenCalledWith(7);
+    expect(confirm).toHaveBeenCalledWith('确定删除无归属文件“orphan.csv”？文件将移入回收站。');
   });
 });
