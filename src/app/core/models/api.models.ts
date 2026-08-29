@@ -560,7 +560,7 @@ export interface DataCollectionSummary {
 }
 
 export type DataFileKind =
-  'table' | 'topology' | 'spatial' | 'device_catalog' | 'event_log' | 'document' | 'other' | string;
+  'table' | 'topology' | 'spatial' | 'device_catalog' | 'event_log' | 'document' | 'demo' | 'other' | string;
 
 export interface DataFileVersionSummary {
   id: number;
