@@ -18,9 +18,9 @@ import {
   ForecastResult,
   QuickTrialService,
   TimeSeriesPoint,
-  formatDateStr,
+  inferIntervalMinutes,
+  maxHorizonForAlgorithm,
   parseCsvTextToRows,
-  parseDateMs,
 } from './quick-trial.service';
 import { DataFileService } from '../../core/services/data-file.service';
 import {
@@ -66,9 +66,7 @@ import { NotificationService } from '../../core/services/notification.service';
             <span class="sub-title">SMART WATER ALGORITHM PLATFORM</span>
           </div>
         </div>
-        <p class="hero-desc">
-          快速试用与可视化中心 · 零门槛一键体验水务算法
-        </p>
+        <p class="hero-desc">快速试用与可视化中心 · 零门槛一键体验水务算法</p>
       </header>
 
       <!-- 快速运行输入条 (Quick Run Bar) -->
@@ -95,7 +93,7 @@ import { NotificationService } from '../../core/services/notification.service';
             <select
               id="algoSelect"
               [ngModel]="selectedAlgorithm()"
-              (ngModelChange)="selectedAlgorithm.set($event)"
+              (ngModelChange)="onAlgorithmChange($event)"
             >
               <option value="auto">auto (智能推荐)</option>
               <option value="seasonal_naive">seasonal_naive (季节性基准)</option>
@@ -119,12 +117,7 @@ import { NotificationService } from '../../core/services/notification.service';
           </div>
         </div>
 
-        <button
-          type="button"
-          class="run-btn"
-          [disabled]="running()"
-          (click)="runQuickTrial()"
-        >
+        <button type="button" class="run-btn" [disabled]="running()" (click)="runQuickTrial()">
           @if (running()) {
             <span class="spinner"></span>
             <span>计算中...</span>
@@ -155,11 +148,7 @@ import { NotificationService } from '../../core/services/notification.service';
                 📤 上传本地 CSV
               </button>
             </div>
-            <button
-              type="button"
-              class="close-drawer-btn"
-              (click)="drawerOpen.set(false)"
-            >
+            <button type="button" class="close-drawer-btn" (click)="drawerOpen.set(false)">
               ✕
             </button>
           </div>
@@ -192,16 +181,16 @@ import { NotificationService } from '../../core/services/notification.service';
           @if (dataMode() === 'upload' && customUploadedFile(); as file) {
             <div class="uploaded-banner">
               <div class="file-info-line">
-                <span>📄 临时试用文件：<strong>{{ file.name }}</strong></span>
-                <button
-                  type="button"
-                  class="remove-file-btn"
-                  (click)="clearCustomFile()"
+                <span
+                  >📄 临时试用文件：<strong>{{ file.name }}</strong></span
                 >
+                <button type="button" class="remove-file-btn" (click)="clearCustomFile()">
                   移除并恢复示例
                 </button>
               </div>
-              <small class="temp-note">ℹ️ 此文件为临时试用文件，运行得出预测结果后将自动清理回收。</small>
+              <small class="temp-note"
+                >ℹ️ 此文件为临时试用文件，运行得出预测结果后将自动清理回收。</small
+              >
             </div>
           }
 
@@ -210,7 +199,7 @@ import { NotificationService } from '../../core/services/notification.service';
             <div class="preview-panel-host">
               <app-data-file-preview-panel
                 [fileVersionId]="verId"
-                [profileStatus]="'ready'"
+                [profileStatus]="activeProfileStatus()"
                 [canCreateView]="true"
                 [initialBinding]="currentBindingEcho()"
                 (viewChange)="onViewSelectionChange($event)"
@@ -225,12 +214,19 @@ import { NotificationService } from '../../core/services/notification.service';
               <div class="tuner-header">
                 <div class="tuner-title">
                   <span class="wave-icon">📈</span>
-                  <strong>已选时序波形完整预览与输入区间调优 (原文件全量 {{ parsedTimeSeries().length }} 点)</strong>
+                  <strong
+                    >已选时序波形完整预览与输入区间调优 (原文件全量
+                    {{ parsedTimeSeries().length }} 点)</strong
+                  >
                 </div>
                 <div class="tuner-chips">
-                  <span class="tuner-chip">原文件总点数: {{ parsedTimeSeries().length }} 点 (约 {{ totalDurationHours() }} 小时)</span>
+                  <span class="tuner-chip"
+                    >原文件总点数: {{ parsedTimeSeries().length }} 点 (约
+                    {{ totalDurationHours() }} 小时)</span
+                  >
                   <span class="tuner-chip highlight">
-                    选定输入历史: {{ contextPointsCount() }} 点 (约 {{ contextDurationHours() }} 小时)
+                    选定输入历史: {{ contextPointsCount() }} 点 (约
+                    {{ contextDurationHours() }} 小时)
                   </span>
                   <span class="tuner-chip">采样间隔: {{ detectedIntervalMinutes() }} 分钟</span>
                 </div>
@@ -241,7 +237,9 @@ import { NotificationService } from '../../core/services/notification.service';
                 <div #drawerChartHost class="drawer-chart-canvas"></div>
               </div>
               <p class="slider-hint">
-                💡 <strong>滑动上方图表底部的区间滑块</strong>，可自由在大文件全量时序中框选送入算法的历史输入序列（起始位置与时长）。
+                💡
+                <strong>滑动上方图表底部的区间滑块</strong
+                >，可自由在大文件全量时序中框选送入算法的历史输入序列（起始位置与时长）。
               </p>
 
               <!-- 预测时长 / 步长调节栏 -->
@@ -255,13 +253,15 @@ import { NotificationService } from '../../core/services/notification.service';
                       id="horizonInput"
                       type="number"
                       [min]="4"
-                      [max]="192"
+                      [max]="maxHorizonSteps()"
                       [step]="4"
                       [ngModel]="horizonSteps()"
                       (ngModelChange)="setHorizonSteps($event)"
                       class="horizon-num-input"
                     />
-                    <span class="unit-tag">步 ({{ (horizonSteps() * detectedIntervalMinutes()) / 60 }} 小时)</span>
+                    <span class="unit-tag"
+                      >步 ({{ (horizonSteps() * detectedIntervalMinutes()) / 60 }} 小时)</span
+                    >
                   </div>
                 </div>
 
@@ -295,6 +295,7 @@ import { NotificationService } from '../../core/services/notification.service';
                     type="button"
                     class="preset-btn"
                     [class.active]="horizonSteps() === 192"
+                    [disabled]="maxHorizonSteps() < 192"
                     (click)="setHorizonSteps(192)"
                   >
                     48 小时 (192步)
@@ -303,7 +304,17 @@ import { NotificationService } from '../../core/services/notification.service';
               </div>
 
               <div class="window-summary-alert">
-                <span>🎯 <strong>执行配置：</strong>将以 <code>{{ contextStartTime() }}</code> 至 <code>{{ contextEndTime() }}</code>（共 {{ contextPointsCount() }} 点）作为输入特征，向后外推预测未来 <strong>{{ horizonSteps() }} 步（{{ (horizonSteps() * detectedIntervalMinutes()) / 60 }} 小时）</strong>的时序趋势。</span>
+                <span
+                  >🎯 <strong>执行配置：</strong>将以 <code>{{ contextStartTime() }}</code> 至
+                  <code>{{ contextEndTime() }}</code
+                  >（共 {{ contextPointsCount() }} 点）作为输入特征，向后外推预测未来
+                  <strong
+                    >{{ horizonSteps() }} 步（{{
+                      (horizonSteps() * detectedIntervalMinutes()) / 60
+                    }}
+                    小时）</strong
+                  >的时序趋势。</span
+                >
               </div>
             </div>
           }
@@ -335,14 +346,12 @@ import { NotificationService } from '../../core/services/notification.service';
                 <strong>{{ res.task }} 结果</strong>
               </div>
               <span class="algo-tag">{{ res.algorithm }}</span>
-              <span class="file-tag">{{ res.fileName }} ({{ res.timeColumn }} ➔ {{ res.valueColumn }})</span>
+              <span class="file-tag"
+                >{{ res.fileName }} ({{ res.timeColumn }} ➔ {{ res.valueColumn }})</span
+              >
             </div>
             <div class="header-actions">
-              <button
-                type="button"
-                class="action-btn download-btn"
-                (click)="downloadResultCsv()"
-              >
+              <button type="button" class="action-btn download-btn" (click)="downloadResultCsv()">
                 📥 导出预测数据
               </button>
               <button
@@ -359,7 +368,10 @@ import { NotificationService } from '../../core/services/notification.service';
           <div class="metrics-strip">
             <div class="metric-card">
               <span class="metric-lbl">输入历史序列 (Context)</span>
-              <strong class="metric-val">{{ res.historyPoints.length }} 点 (约 {{ (res.historyPoints.length * res.intervalMinutes) / 60 }} 小时)</strong>
+              <strong class="metric-val"
+                >{{ res.historyPoints.length }} 点 (约
+                {{ (res.historyPoints.length * res.intervalMinutes) / 60 }} 小时)</strong
+              >
             </div>
             <div class="metric-card">
               <span class="metric-lbl">预测步长 (Horizon)</span>
@@ -376,14 +388,14 @@ import { NotificationService } from '../../core/services/notification.service';
             </div>
             <div class="metric-card">
               <span class="metric-lbl">检测主周期 / 置信度</span>
-              <strong class="metric-val"
-                >{{ res.seasonalitySteps }} 步长 · 95% CI</strong
-              >
+              <strong class="metric-val">{{ res.seasonalitySteps }} 步长 · 95% CI</strong>
             </div>
             @if (res.actualFuturePoints && res.actualFuturePoints.length > 0) {
               <div class="metric-card actual-match-card">
                 <span class="metric-lbl">未来真实值对比</span>
-                <strong class="metric-val actual-match">已对齐 {{ res.actualFuturePoints.length }} 点真实观测</strong>
+                <strong class="metric-val actual-match"
+                  >已对齐 {{ res.actualFuturePoints.length }} 点真实观测</strong
+                >
               </div>
             }
           </div>
@@ -1188,6 +1200,14 @@ export class QuickTrialPage implements OnInit, AfterViewInit, OnDestroy {
   readonly customUploadedFile = signal<DataFileSummary | null>(null);
   readonly customCollectionId = signal<number | null>(null);
   readonly customVersionId = signal<number | null>(null);
+  readonly activeProfileStatus = computed(() => {
+    if (this.dataMode() === 'upload') {
+      // uploadTemporaryFile resolves only after the asynchronous profile is
+      // readable, so the embedded preview can use the ready state directly.
+      return this.customUploadedFile() ? 'ready' : 'pending';
+    }
+    return 'ready';
+  });
 
   // 列选择状态
   readonly selectedTimeCol = signal('record_time');
@@ -1259,13 +1279,10 @@ export class QuickTrialPage implements OnInit, AfterViewInit, OnDestroy {
 
   // 检测采样间隔
   readonly detectedIntervalMinutes = computed<number>(() => {
-    const pts = this.parsedTimeSeries();
-    if (pts.length < 2) return 15;
-    const t1 = parseDateMs(pts[0].time);
-    const t2 = parseDateMs(pts[1].time);
-    const diff = Math.abs(t2 - t1) / (60 * 1000);
-    return diff > 0 && diff <= 1440 ? Math.round(diff) : 15;
+    return inferIntervalMinutes(this.parsedTimeSeries());
   });
+
+  readonly maxHorizonSteps = computed(() => maxHorizonForAlgorithm(this.selectedAlgorithm()));
 
   // 原文件总时长小时数
   readonly totalDurationHours = computed<string>(() => {
@@ -1411,8 +1428,13 @@ export class QuickTrialPage implements OnInit, AfterViewInit, OnDestroy {
   }
 
   setHorizonSteps(steps: number): void {
-    const val = Math.max(4, Math.min(Number(steps) || 32, 192));
+    const val = Math.max(4, Math.min(Number(steps) || 32, this.maxHorizonSteps()));
     this.horizonSteps.set(val);
+  }
+
+  onAlgorithmChange(algorithm: string): void {
+    this.selectedAlgorithm.set(algorithm);
+    this.setHorizonSteps(this.horizonSteps());
   }
 
   switchToDemoMode(): void {
@@ -1468,9 +1490,7 @@ export class QuickTrialPage implements OnInit, AfterViewInit, OnDestroy {
 
         const colNames = res.preview.columns.map((c) => c.name);
         const timeCol =
-          colNames.find((c) => /time|date|timestamp|时间/i.test(c)) ||
-          colNames[0] ||
-          '';
+          colNames.find((c) => /time|date|timestamp|时间/i.test(c)) || colNames[0] || '';
         const valCol =
           colNames.find((c) => /flow|val|pressure|metric|num|流量|压力/i.test(c)) ||
           colNames[1] ||
@@ -1479,7 +1499,9 @@ export class QuickTrialPage implements OnInit, AfterViewInit, OnDestroy {
         this.selectedTimeCol.set(timeCol);
         this.selectedValueCol.set(valCol);
         this.uploading.set(false);
-        this.notifications.success(`临时数据 ${file.name} 上传成功，请在下方点选输出列与调整预测窗口`);
+        this.notifications.success(
+          `临时数据 ${file.name} 上传成功，请在下方点选输出列与调整预测窗口`,
+        );
         setTimeout(() => this.initDrawerChart(), 40);
       },
       error: (err) => {
@@ -1511,14 +1533,12 @@ export class QuickTrialPage implements OnInit, AfterViewInit, OnDestroy {
     const file = this.customUploadedFile();
     if (!file) return;
     const fileId = file.id;
-    this.quickTrial
-      .cleanupTemporaryFile(this.customCollectionId(), fileId)
-      .subscribe((cleaned) => {
-        if (cleaned && this.customUploadedFile()?.id === fileId) {
-          this.resetCustomFileState();
-          this.switchToDemoMode();
-        }
-      });
+    this.quickTrial.cleanupTemporaryFile(this.customCollectionId(), fileId).subscribe((cleaned) => {
+      if (cleaned && this.customUploadedFile()?.id === fileId) {
+        this.resetCustomFileState();
+        this.switchToDemoMode();
+      }
+    });
   }
 
   onViewSelectionChange(selection: DataFileViewSelection): void {
@@ -1533,7 +1553,10 @@ export class QuickTrialPage implements OnInit, AfterViewInit, OnDestroy {
     }
   }
 
-  onPreviewLoaded(event: { preview: DataFilePreview; sampleRows: Array<Record<string, unknown>> }): void {
+  onPreviewLoaded(event: {
+    preview: DataFilePreview;
+    sampleRows: Array<Record<string, unknown>>;
+  }): void {
     this.sampleRows.set(event.sampleRows || []);
     if (event.preview.file_version_id && this.fullFileRows().length === 0) {
       this.loadFullFileVersion(event.preview.file_version_id);
@@ -1651,9 +1674,7 @@ export class QuickTrialPage implements OnInit, AfterViewInit, OnDestroy {
     this.drawerOpen.set(false);
 
     const isCustom = Boolean(this.customUploadedFile());
-    const fileName = isCustom
-      ? this.customUploadedFile()!.name
-      : this.demoFileName();
+    const fileName = isCustom ? this.customUploadedFile()!.name : this.demoFileName();
     const timeCol = this.selectedTimeCol();
     const valCol = this.selectedValueCol();
     const pointCol = this.selectedPointCol();
@@ -1668,9 +1689,7 @@ export class QuickTrialPage implements OnInit, AfterViewInit, OnDestroy {
       if (verId) {
         this.quickTrial
           .executeEphemeralWorkflow({
-            task:
-              this.scenarios.find((s) => s.id === this.selectedTaskId())?.name ||
-              '时序预测',
+            task: this.scenarios.find((s) => s.id === this.selectedTaskId())?.name || '时序预测',
             algorithm: this.selectedAlgorithm(),
             fileName,
             fileVersionId: verId,
@@ -1680,6 +1699,8 @@ export class QuickTrialPage implements OnInit, AfterViewInit, OnDestroy {
             sampleRows: effectiveRows,
             inputStartIndex: startIdx,
             inputEndIndex: endIdx,
+            inputStartTime: this.parsedTimeSeries()[startIdx]?.time,
+            inputEndTime: this.parsedTimeSeries()[endIdx]?.time,
             horizonSteps: horizon,
           })
           .subscribe({
@@ -1712,8 +1733,9 @@ export class QuickTrialPage implements OnInit, AfterViewInit, OnDestroy {
           this.sampleRows.set(preview.rows || []);
           execute(preview.rows || []);
         },
-        error: () => {
-          execute([]);
+        error: (err) => {
+          this.running.set(false);
+          this.notifications.error(err, '无法加载选定的数据窗口');
         },
       });
     } else {
@@ -1780,10 +1802,7 @@ export class QuickTrialPage implements OnInit, AfterViewInit, OnDestroy {
       }
     }
 
-    const horizonHours = Math.max(
-      1,
-      Math.round((res.horizonSteps * res.intervalMinutes) / 60),
-    );
+    const horizonHours = Math.max(1, Math.round((res.horizonSteps * res.intervalMinutes) / 60));
 
     const legendData: Array<{ name: string; itemStyle?: { color: string } }> = [
       { name: '历史观测真实值', itemStyle: { color: '#0284c7' } },
@@ -1942,17 +1961,18 @@ export class QuickTrialPage implements OnInit, AfterViewInit, OnDestroy {
     const res = this.result();
     if (!res) return;
 
-    const rows: string[] = [
-      'timestamp,type,predicted_value,actual_value,lower_bound,upper_bound',
-    ];
+    const rows: string[] = ['timestamp,type,predicted_value,actual_value,lower_bound,upper_bound'];
     for (const p of res.historyPoints) {
       rows.push(`${p.time},history,,${p.value},,`);
     }
+    const actualByTime = new Map(
+      (res.actualFuturePoints || []).map((point) => [point.time, point.value]),
+    );
     for (let i = 0; i < res.forecastPoints.length; i++) {
       const p = res.forecastPoints[i];
       const lower = res.lowerBand[i]?.value ?? '';
       const upper = res.upperBand[i]?.value ?? '';
-      const actual = res.actualFuturePoints?.[i]?.value ?? '';
+      const actual = actualByTime.get(p.time) ?? '';
       rows.push(`${p.time},forecast,${p.value},${actual},${lower},${upper}`);
     }
 
