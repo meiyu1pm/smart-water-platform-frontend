@@ -76,6 +76,23 @@ describe('QuickTrialPage', () => {
     dataFileSpy = {
       listCollections: vi.fn().mockReturnValue(of([])),
       listFiles: vi.fn().mockReturnValue(of([])),
+      getBuiltinDemo: vi.fn().mockReturnValue(
+        of({
+          file: {
+            id: 9,
+            name: '示例小区_2024-01.csv',
+            file_kind: 'demo',
+            format: 'csv',
+            status: 'active',
+            version_count: 1,
+            current_version_id: 3,
+            size_bytes: 10,
+            created_at: '',
+            updated_at: '',
+          },
+          version: { id: 3 },
+        }),
+      ),
       getPreview: vi.fn().mockReturnValue(
         of({
           file_version_id: 3,

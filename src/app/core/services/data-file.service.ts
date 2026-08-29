@@ -41,6 +41,12 @@ export class DataFileService {
     return this.api.get<DataFileSummary[]>(`/api/v1/data-collections/${collectionId}/files`);
   }
 
+  getBuiltinDemo(): Observable<{ file: DataFileSummary; version: DataFileVersionSummary }> {
+    return this.api.get<{ file: DataFileSummary; version: DataFileVersionSummary }>(
+      '/api/v1/data-files/builtin-demo',
+    );
+  }
+
   removeFileFromCollection(collectionId: number, fileId: number): Observable<{ collection_id: number; file_id: number; removed: boolean }> {
     return this.api.delete<{ collection_id: number; file_id: number; removed: boolean }>(
       `/api/v1/data-collections/${collectionId}/files/${fileId}`,
@@ -65,6 +71,21 @@ export class DataFileService {
     form.append('file', file, file.name);
     form.append('file_name', name?.trim() || file.name);
     return this.api.post<DataFileUploadResult, FormData>('/api/v1/data-files/uploads', form);
+  }
+
+  uploadUnassignedFile(file: File, name?: string): Observable<DataFileUploadResult> {
+    const form = new FormData();
+    form.append('file', file, file.name);
+    form.append('file_name', name?.trim() || file.name);
+    form.append('file_kind', 'quick_trial');
+    form.append('description', '快速试用临时文件');
+    return this.api.post<DataFileUploadResult, FormData>('/api/v1/data-files/uploads', form);
+  }
+
+  deleteFile(fileId: number): Observable<{ file_id: number; status: string; recycle_item_id?: number }> {
+    return this.api.delete<{ file_id: number; status: string; recycle_item_id?: number }>(
+      `/api/v1/data-files/${fileId}`,
+    );
   }
 
   getPreview(versionId: number, limit = 50): Observable<DataFilePreview> {

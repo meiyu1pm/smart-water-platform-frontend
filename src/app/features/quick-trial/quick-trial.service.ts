@@ -48,7 +48,7 @@ export interface QuickTrialScenarioOption {
 
 export interface TempUploadResult {
   file: DataFileSummary;
-  collectionId: number;
+  collectionId: number | null;
   versionId: number;
   preview: DataFilePreview;
 }
@@ -144,9 +144,9 @@ export class QuickTrialService {
       icon: '📈',
       description: '基于水务时序历史趋势与周期性规律，精准外推预测未来供水量或流量走势。',
       defaultAlgorithm: 'auto',
-      demoFileName: 's01_leak_demo.csv',
-      timeColumn: 'record_time',
-      valueColumn: 'inlet_flow',
+      demoFileName: '示例小区_2024-01.csv',
+      timeColumn: '时间',
+      valueColumn: '流量(m³/h)_修复',
     },
     {
       id: 'anomaly-detection',
@@ -154,9 +154,9 @@ export class QuickTrialService {
       icon: '🔍',
       description: '智能捕捉水质、水压突变点与离群波动，快速定位异常工况。',
       defaultAlgorithm: 'auto',
-      demoFileName: 's01_leak_demo.csv',
-      timeColumn: 'record_time',
-      valueColumn: 'pressure',
+      demoFileName: '示例小区_2024-01.csv',
+      timeColumn: '时间',
+      valueColumn: '压力(MPa)_修复',
     },
     {
       id: 'dma-leakage',
@@ -164,9 +164,9 @@ export class QuickTrialService {
       icon: '💧',
       description: '结合水量平衡与最小夜间流量（MNF），智能评估管网漏损风险。',
       defaultAlgorithm: 'auto',
-      demoFileName: 's01_leak_demo.csv',
-      timeColumn: 'record_time',
-      valueColumn: 'inlet_flow',
+      demoFileName: '示例小区_2024-01.csv',
+      timeColumn: '时间',
+      valueColumn: '流量(m³/h)_修复',
     },
   ];
 
@@ -196,25 +196,16 @@ export class QuickTrialService {
    * 上传临时试用文件到平台
    */
   uploadTemporaryFile(file: File): Observable<TempUploadResult> {
-    return this.dataFiles.listCollections().pipe(
-      switchMap((collections) => {
-        const targetCollection = collections[0];
-        if (!targetCollection) {
-          throw new Error('平台暂无可用的数据集目录，请先在数据管理中创建数据集。');
-        }
-        const collectionId = targetCollection.id;
-        return this.dataFiles.uploadFile(collectionId, file).pipe(
-          switchMap((uploadRes: DataFileUploadResult) => {
-            const versionId = uploadRes.version.id;
-            return this.dataFiles.getPreview(versionId).pipe(
-              map((preview) => ({
-                file: uploadRes.file,
-                collectionId,
-                versionId,
-                preview,
-              })),
-            );
-          }),
+    return this.dataFiles.uploadUnassignedFile(file, file.name).pipe(
+      switchMap((uploadRes: DataFileUploadResult) => {
+        const versionId = uploadRes.version.id;
+        return this.dataFiles.getPreview(versionId).pipe(
+          map((preview) => ({
+            file: uploadRes.file,
+            collectionId: null,
+            versionId,
+            preview,
+          })),
         );
       }),
     );
@@ -223,9 +214,9 @@ export class QuickTrialService {
   /**
    * 运行完成后清理临时文件
    */
-  cleanupTemporaryFile(collectionId: number, fileId: number): Observable<boolean> {
-    if (!collectionId || !fileId) return of(true);
-    return this.dataFiles.removeFileFromCollection(collectionId, fileId).pipe(
+  cleanupTemporaryFile(_collectionId: number | null, fileId: number): Observable<boolean> {
+    if (!fileId) return of(true);
+    return this.dataFiles.deleteFile(fileId).pipe(
       map(() => true),
       catchError(() => of(false)),
     );

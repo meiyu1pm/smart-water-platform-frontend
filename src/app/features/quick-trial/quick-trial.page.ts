@@ -1181,8 +1181,10 @@ export class QuickTrialPage implements OnInit, AfterViewInit, OnDestroy {
   readonly dataMode = signal<'demo' | 'upload'>('demo');
   readonly drawerOpen = signal(false);
 
-  // Demo 版本 ID 与自定义上传临时文件
-  readonly demoVersionId = signal<number>(3); // 默认 s01_leak_demo.csv 的版本 3
+  // Built-in demo version is resolved by its stable backend identity; database
+  // ids differ between environments and must not be hard-coded in the page.
+  readonly demoVersionId = signal<number | null>(null);
+  readonly demoFileName = signal('示例小区_2024-01.csv');
   readonly customUploadedFile = signal<DataFileSummary | null>(null);
   readonly customCollectionId = signal<number | null>(null);
   readonly customVersionId = signal<number | null>(null);
@@ -1191,6 +1193,7 @@ export class QuickTrialPage implements OnInit, AfterViewInit, OnDestroy {
   readonly selectedTimeCol = signal('record_time');
   readonly selectedValueCol = signal('inlet_flow');
   readonly selectedPointCol = signal<string | undefined>(undefined);
+  readonly demoSampleRows = signal<Array<Record<string, unknown>>>([]);
   readonly sampleRows = signal<Array<Record<string, unknown>>>([]);
   readonly fullFileRows = signal<Array<Record<string, unknown>>>([]);
   readonly uploading = signal(false);
@@ -1308,7 +1311,7 @@ export class QuickTrialPage implements OnInit, AfterViewInit, OnDestroy {
   readonly dataInputDisplay = computed(() => {
     const fileLabel = this.customUploadedFile()
       ? this.customUploadedFile()?.name
-      : 's01_leak_demo.csv (示例)';
+      : `${this.demoFileName()} (示例)`;
     const ctxCount = this.contextPointsCount() || 48;
     const horizon = this.horizonSteps();
     const hrs = ((horizon * this.detectedIntervalMinutes()) / 60).toFixed(0);
@@ -1316,27 +1319,52 @@ export class QuickTrialPage implements OnInit, AfterViewInit, OnDestroy {
   });
 
   ngOnInit(): void {
-    // 动态探测 Demo 文件版本并预读样本行与全量数据
-    this.dataFiles.listCollections().subscribe({
-      next: (collections) => {
-        if (!collections.length) return;
-        const dma = collections.find((c) => /dma|demo/i.test(c.name)) || collections[0];
-        this.dataFiles.listFiles(dma.id).subscribe({
-          next: (files) => {
-            const demo = files.find((f) => /leak|demo/i.test(f.name)) || files[0];
-            if (demo?.current_version_id) {
-              this.demoVersionId.set(demo.current_version_id);
-              this.dataFiles.getPreview(demo.current_version_id).subscribe({
-                next: (preview) => {
-                  this.sampleRows.set(preview.rows || []);
-                },
-              });
-              this.loadFullFileVersion(demo.current_version_id);
-            }
+    // Resolve the platform-owned demo by its stable application identity.
+    // Never choose the first collection/file: a user's upload can change that
+    // ordering and must not replace the built-in example.
+    this.dataFiles.getBuiltinDemo().subscribe({
+      next: ({ file, version }) => {
+        const versionId = version.id || file.current_version_id;
+        if (!versionId) return;
+        this.demoVersionId.set(versionId);
+        this.demoFileName.set(file.name || '示例小区_2024-01.csv');
+        this.dataFiles.getPreview(versionId).subscribe({
+          next: (preview) => {
+            const rows = preview.rows || [];
+            this.demoSampleRows.set(rows);
+            this.sampleRows.set(rows);
+            this.applyDemoColumnDefaults(preview.columns.map((column) => column.name));
           },
         });
+        this.loadFullFileVersion(versionId);
+      },
+      error: () => {
+        // The rest of the portal remains usable when the optional demo seed is
+        // missing; runQuickTrial will show a clear data-unavailable message.
+        this.demoVersionId.set(null);
       },
     });
+  }
+
+  private applyDemoColumnDefaults(columnNames: string[]): void {
+    const scenario = this.scenarios.find((item) => item.id === this.selectedTaskId());
+    const timeColumn = scenario?.timeColumn;
+    const valueColumn = scenario?.valueColumn;
+    if (timeColumn && columnNames.includes(timeColumn)) {
+      this.selectedTimeCol.set(timeColumn);
+    } else if (columnNames.length > 0) {
+      this.selectedTimeCol.set(
+        columnNames.find((name) => /time|date|timestamp|时间|日期/i.test(name)) || columnNames[0],
+      );
+    }
+    if (valueColumn && columnNames.includes(valueColumn)) {
+      this.selectedValueCol.set(valueColumn);
+    } else if (columnNames.length > 0) {
+      this.selectedValueCol.set(
+        columnNames.find((name) => /flow|pressure|value|metric|流量|压力/i.test(name)) ||
+          columnNames[Math.min(1, columnNames.length - 1)],
+      );
+    }
   }
 
   ngAfterViewInit(): void {
@@ -1389,8 +1417,8 @@ export class QuickTrialPage implements OnInit, AfterViewInit, OnDestroy {
 
   switchToDemoMode(): void {
     this.dataMode.set('demo');
-    this.selectedTimeCol.set('record_time');
-    this.selectedValueCol.set('inlet_flow');
+    this.sampleRows.set(this.demoSampleRows());
+    this.applyDemoColumnDefaults(Object.keys(this.demoSampleRows()[0] || {}));
     const demoVer = this.demoVersionId();
     if (demoVer) {
       this.loadFullFileVersion(demoVer);
@@ -1404,10 +1432,15 @@ export class QuickTrialPage implements OnInit, AfterViewInit, OnDestroy {
 
   onTaskChange(taskId: string): void {
     this.selectedTaskId.set(taskId);
-    if (taskId === 'anomaly-detection') {
-      this.selectedValueCol.set('pressure');
+    if (this.dataMode() === 'demo') {
+      this.applyDemoColumnDefaults(Object.keys(this.sampleRows()[0] || {}));
     } else {
-      this.selectedValueCol.set('inlet_flow');
+      const columns = Object.keys(this.fullFileRows()[0] || this.sampleRows()[0] || {});
+      const preferred = taskId === 'anomaly-detection' ? /pressure|压力/i : /flow|流量|value|数值/i;
+      const valueColumn = columns.find((name) => preferred.test(name));
+      if (valueColumn) {
+        this.selectedValueCol.set(valueColumn);
+      }
     }
     setTimeout(() => this.initDrawerChart(), 40);
   }
@@ -1459,14 +1492,33 @@ export class QuickTrialPage implements OnInit, AfterViewInit, OnDestroy {
   clearCustomFile(): void {
     const file = this.customUploadedFile();
     const colId = this.customCollectionId();
-    if (file && colId) {
+    if (file) {
       this.quickTrial.cleanupTemporaryFile(colId, file.id).subscribe();
     }
+    this.resetCustomFileState();
+    this.switchToDemoMode();
+  }
+
+  private resetCustomFileState(): void {
     this.customUploadedFile.set(null);
     this.customCollectionId.set(null);
     this.customVersionId.set(null);
     this.fullFileRows.set([]);
-    this.switchToDemoMode();
+    this.sampleRows.set(this.demoSampleRows());
+  }
+
+  private cleanupCustomFileAfterRun(): void {
+    const file = this.customUploadedFile();
+    if (!file) return;
+    const fileId = file.id;
+    this.quickTrial
+      .cleanupTemporaryFile(this.customCollectionId(), fileId)
+      .subscribe((cleaned) => {
+        if (cleaned && this.customUploadedFile()?.id === fileId) {
+          this.resetCustomFileState();
+          this.switchToDemoMode();
+        }
+      });
   }
 
   onViewSelectionChange(selection: DataFileViewSelection): void {
@@ -1601,7 +1653,7 @@ export class QuickTrialPage implements OnInit, AfterViewInit, OnDestroy {
     const isCustom = Boolean(this.customUploadedFile());
     const fileName = isCustom
       ? this.customUploadedFile()!.name
-      : 's01_leak_demo.csv';
+      : this.demoFileName();
     const timeCol = this.selectedTimeCol();
     const valCol = this.selectedValueCol();
     const pointCol = this.selectedPointCol();
@@ -1636,11 +1688,7 @@ export class QuickTrialPage implements OnInit, AfterViewInit, OnDestroy {
               this.running.set(false);
 
               // 运行后清理上传的临时试用文件
-              if (this.customUploadedFile() && this.customCollectionId()) {
-                const fileId = this.customUploadedFile()!.id;
-                const colId = this.customCollectionId()!;
-                this.quickTrial.cleanupTemporaryFile(colId, fileId).subscribe();
-              }
+              this.cleanupCustomFileAfterRun();
 
               setTimeout(() => {
                 this.initChart();
@@ -1648,6 +1696,7 @@ export class QuickTrialPage implements OnInit, AfterViewInit, OnDestroy {
             },
             error: (err) => {
               this.running.set(false);
+              this.cleanupCustomFileAfterRun();
               this.notifications.error(err, '即席工作流执行异常');
             },
           });
