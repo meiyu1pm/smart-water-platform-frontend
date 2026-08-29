@@ -14,6 +14,11 @@ export const routes: Routes = [
     canActivate: [authGuard],
     children: [
       {
+        path: 'quick-trial',
+        loadComponent: () =>
+          import('./features/quick-trial/quick-trial.page').then((m) => m.QuickTrialPage),
+      },
+      {
         path: 'dashboard',
         loadComponent: () =>
           import('./features/dashboard/dashboard.page').then((m) => m.DashboardPage),
@@ -148,7 +153,7 @@ export const routes: Routes = [
         canActivate: [permissionGuard],
         data: { permission: 'recycle:manage' },
       },
-      { path: '', pathMatch: 'full', redirectTo: 'dashboard' },
+      { path: '', pathMatch: 'full', redirectTo: 'quick-trial' },
     ],
   },
   { path: '**', redirectTo: '' },
