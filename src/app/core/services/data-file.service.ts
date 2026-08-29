@@ -133,12 +133,6 @@ export class DataFileService {
     );
   }
 
-  downloadFileVersion(versionId: number): Observable<Blob> {
-    return this.api.download(
-      `/api/v1/data-file-versions/${encodeURIComponent(versionId)}/download`,
-    );
-  }
-
   private requestId(): string {
     return (
       globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`
@@ -208,6 +202,12 @@ export class DataFileService {
     return this.api.get<DataFilePreview>(
       `/api/v1/data-file-versions/${encodeURIComponent(versionId)}/preview`,
       { max_rows: limit },
+    );
+  }
+
+  downloadFileVersion(versionId: number): Observable<Blob> {
+    return this.api.download(
+      `/api/v1/data-file-versions/${encodeURIComponent(versionId)}/download`,
     );
   }
 
