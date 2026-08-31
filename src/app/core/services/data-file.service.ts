@@ -1,5 +1,5 @@
 import { Injectable, inject } from '@angular/core';
-import { Observable } from 'rxjs';
+import { Observable, map } from 'rxjs';
 
 import {
   DataCollectionSummary,
@@ -199,10 +199,26 @@ export class DataFileService {
   }
 
   getPreview(versionId: number, limit = 50): Observable<DataFilePreview> {
-    return this.api.get<DataFilePreview>(
-      `/api/v1/data-file-versions/${encodeURIComponent(versionId)}/preview`,
-      { max_rows: limit },
-    );
+    return this.api
+      .get<
+        DataFilePreview & {
+          schema?: DataFilePreview['columns'];
+          sample_rows?: DataFilePreview['rows'];
+          row_count?: number | null;
+        }
+      >(`/api/v1/data-file-versions/${encodeURIComponent(versionId)}/preview`, {
+        max_rows: limit,
+      })
+      .pipe(
+        map((value) => ({
+          ...value,
+          file_version_id: value.file_version_id || versionId,
+          columns: value.columns || value.schema || [],
+          rows: value.rows || value.sample_rows || [],
+          total_rows: value.total_rows ?? value.row_count ?? null,
+          preview_limit: value.preview_limit || limit,
+        })),
+      );
   }
 
   downloadFileVersion(versionId: number): Observable<Blob> {

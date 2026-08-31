@@ -1534,7 +1534,7 @@ export class DataCollectionsPage {
         format: item.format || '',
         status: item.status || 'ready',
         version_count: item.version_count || 0,
-        current_version_id: item.current_version_id ?? null,
+        current_version_id: item.current_version_id ?? item.current_version?.id ?? null,
         current_version: item.current_version,
         profile_status: item.profile_status as DataFileSummary['profile_status'],
         row_count: item.row_count,
