@@ -483,7 +483,10 @@ export class QuickTrialService {
     let runData: any = null;
     const startTime = Date.now();
 
-    while (['queued', 'running', 'dispatched'].includes(status) && Date.now() - startTime < 45000) {
+    while (
+      ['pending', 'queued', 'running', 'dispatched'].includes(status) &&
+      Date.now() - startTime < 45000
+    ) {
       await new Promise((r) => setTimeout(r, 1000));
       runData = await firstValueFrom(
         this.api.get<any>(`/api/v1/workflow-runs/${encodeURIComponent(runId)}`),
