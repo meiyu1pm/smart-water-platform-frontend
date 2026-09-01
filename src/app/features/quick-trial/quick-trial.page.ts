@@ -15,7 +15,10 @@ import { Router } from '@angular/router';
 import * as echarts from 'echarts';
 
 import {
+  AnomalyResult,
+  DmaNightFlowResult,
   ForecastResult,
+  QuickTrialResult,
   QuickTrialService,
   TimeSeriesPoint,
   inferIntervalMinutes,
@@ -95,25 +98,25 @@ import { NotificationService } from '../../core/services/notification.service';
               [ngModel]="selectedAlgorithm()"
               (ngModelChange)="onAlgorithmChange($event)"
             >
-              <option value="auto">auto (智能推荐)</option>
-              <option value="seasonal_naive">seasonal_naive (季节性基准)</option>
-              <option value="chronos2">chronos2 (深度学习时序大模型)</option>
+              @for (algorithm of currentAlgorithms(); track algorithm.id) {
+                <option [value]="algorithm.id">{{ algorithm.name }}</option>
+              }
             </select>
             <span class="select-arrow">▼</span>
           </div>
         </div>
 
         <div class="input-group data-group">
-          <label>数据输入与预测窗口</label>
+          <label>数据输入与分析窗口</label>
           <div
             class="data-input-box"
             (click)="toggleDataDrawer()"
             [class.active]="drawerOpen()"
-            title="点击选择输出列、预览时序波形或调整预测窗口"
+            title="点击选择输出列、预览时序波形或调整分析窗口"
           >
             <span class="data-icon">{{ customUploadedFile() ? '📁' : '📊' }}</span>
             <span class="data-summary-text">{{ dataInputDisplay() }}</span>
-            <span class="edit-badge">{{ drawerOpen() ? '收起配置' : '调整输入与预测窗口' }}</span>
+            <span class="edit-badge">{{ drawerOpen() ? '收起配置' : '调整输入与分析窗口' }}</span>
           </div>
         </div>
 
@@ -189,7 +192,7 @@ import { NotificationService } from '../../core/services/notification.service';
                 </button>
               </div>
               <small class="temp-note"
-                >ℹ️ 此文件为临时试用文件，运行得出预测结果后将自动清理回收。</small
+                >ℹ️ 此文件为临时试用文件，算法运行完成后将自动清理回收。</small
               >
             </div>
           }
@@ -242,80 +245,92 @@ import { NotificationService } from '../../core/services/notification.service';
                 >，可自由在大文件全量时序中框选送入算法的历史输入序列（起始位置与时长）。
               </p>
 
-              <!-- 预测时长 / 步长调节栏 -->
-              <div class="horizon-control-bar">
-                <div class="horizon-input-group">
-                  <label for="horizonInput">
-                    <strong>未来预测步长 (Horizon)</strong>
-                  </label>
-                  <div class="horizon-input-wrapper">
-                    <input
-                      id="horizonInput"
-                      type="number"
-                      [min]="4"
-                      [max]="maxHorizonSteps()"
-                      [step]="4"
-                      [ngModel]="horizonSteps()"
-                      (ngModelChange)="setHorizonSteps($event)"
-                      class="horizon-num-input"
-                    />
-                    <span class="unit-tag"
-                      >步 ({{ (horizonSteps() * detectedIntervalMinutes()) / 60 }} 小时)</span
+              @if (selectedTaskId() === 'timeseries-forecast') {
+                <!-- 预测时长 / 步长调节栏 -->
+                <div class="horizon-control-bar">
+                  <div class="horizon-input-group">
+                    <label for="horizonInput">
+                      <strong>未来预测步长 (Horizon)</strong>
+                    </label>
+                    <div class="horizon-input-wrapper">
+                      <input
+                        id="horizonInput"
+                        type="number"
+                        [min]="4"
+                        [max]="maxHorizonSteps()"
+                        [step]="4"
+                        [ngModel]="horizonSteps()"
+                        (ngModelChange)="setHorizonSteps($event)"
+                        class="horizon-num-input"
+                      />
+                      <span class="unit-tag"
+                        >步 ({{ (horizonSteps() * detectedIntervalMinutes()) / 60 }} 小时)</span
+                      >
+                    </div>
+                  </div>
+
+                  <div class="preset-buttons">
+                    <span class="preset-label">快捷预设:</span>
+                    <button
+                      type="button"
+                      class="preset-btn"
+                      [class.active]="horizonSteps() === 16"
+                      (click)="setHorizonSteps(16)"
                     >
+                      4 小时 (16步)
+                    </button>
+                    <button
+                      type="button"
+                      class="preset-btn"
+                      [class.active]="horizonSteps() === 32"
+                      (click)="setHorizonSteps(32)"
+                    >
+                      8 小时 (32步)
+                    </button>
+                    <button
+                      type="button"
+                      class="preset-btn"
+                      [class.active]="horizonSteps() === 96"
+                      (click)="setHorizonSteps(96)"
+                    >
+                      24 小时 (96步)
+                    </button>
+                    <button
+                      type="button"
+                      class="preset-btn"
+                      [class.active]="horizonSteps() === 192"
+                      [disabled]="maxHorizonSteps() < 192"
+                      (click)="setHorizonSteps(192)"
+                    >
+                      48 小时 (192步)
+                    </button>
                   </div>
                 </div>
 
-                <div class="preset-buttons">
-                  <span class="preset-label">快捷预设:</span>
-                  <button
-                    type="button"
-                    class="preset-btn"
-                    [class.active]="horizonSteps() === 16"
-                    (click)="setHorizonSteps(16)"
+                <div class="window-summary-alert">
+                  <span
+                    >🎯 <strong>执行配置：</strong>将以 <code>{{ contextStartTime() }}</code> 至
+                    <code>{{ contextEndTime() }}</code
+                    >（共 {{ contextPointsCount() }} 点）作为输入特征，向后外推预测未来
+                    <strong
+                      >{{ horizonSteps() }} 步（{{
+                        (horizonSteps() * detectedIntervalMinutes()) / 60
+                      }}
+                      小时）</strong
+                    >的时序趋势。</span
                   >
-                    4 小时 (16步)
-                  </button>
-                  <button
-                    type="button"
-                    class="preset-btn"
-                    [class.active]="horizonSteps() === 32"
-                    (click)="setHorizonSteps(32)"
-                  >
-                    8 小时 (32步)
-                  </button>
-                  <button
-                    type="button"
-                    class="preset-btn"
-                    [class.active]="horizonSteps() === 96"
-                    (click)="setHorizonSteps(96)"
-                  >
-                    24 小时 (96步)
-                  </button>
-                  <button
-                    type="button"
-                    class="preset-btn"
-                    [class.active]="horizonSteps() === 192"
-                    [disabled]="maxHorizonSteps() < 192"
-                    (click)="setHorizonSteps(192)"
-                  >
-                    48 小时 (192步)
-                  </button>
                 </div>
-              </div>
-
-              <div class="window-summary-alert">
-                <span
-                  >🎯 <strong>执行配置：</strong>将以 <code>{{ contextStartTime() }}</code> 至
-                  <code>{{ contextEndTime() }}</code
-                  >（共 {{ contextPointsCount() }} 点）作为输入特征，向后外推预测未来
-                  <strong
-                    >{{ horizonSteps() }} 步（{{
-                      (horizonSteps() * detectedIntervalMinutes()) / 60
-                    }}
-                    小时）</strong
-                  >的时序趋势。</span
-                >
-              </div>
+              } @else {
+                <div class="window-summary-alert">
+                  <span>
+                    🎯 <strong>执行配置：</strong>分析 <code>{{ contextStartTime() }}</code> 至
+                    <code>{{ contextEndTime() }}</code> 的 {{ contextPointsCount() }} 个真实观测点。
+                    @if (selectedTaskId() === 'dma-leakage') {
+                      当前为总表夜间流量初筛，不替代完整水量平衡。
+                    }
+                  </span>
+                </div>
+              }
             </div>
           }
         </section>
@@ -331,7 +346,7 @@ import { NotificationService } from '../../core/services/notification.service';
             <span class="step-item active">1. 自动构建即席工作流拓扑</span>
             <span class="step-item active">2. 绑定视图并发布执行版本</span>
             <span class="step-item active">3. Celery / GPU 算法算子执行计算</span>
-            <span class="step-item">4. 提取真实时序预测结果与置信区间</span>
+            <span class="step-item">4. 提取真实算法结果并生成可视化</span>
           </div>
         </section>
       }
@@ -352,7 +367,7 @@ import { NotificationService } from '../../core/services/notification.service';
             </div>
             <div class="header-actions">
               <button type="button" class="action-btn download-btn" (click)="downloadResultCsv()">
-                📥 导出预测数据
+                📥 导出结果数据
               </button>
               <button
                 type="button"
@@ -364,7 +379,7 @@ import { NotificationService } from '../../core/services/notification.service';
             </div>
           </header>
 
-          <!-- 统计指标带 -->
+          <!-- 各任务独立统计指标 -->
           <div class="metrics-strip">
             <div class="metric-card">
               <span class="metric-lbl">输入历史序列 (Context)</span>
@@ -374,31 +389,58 @@ import { NotificationService } from '../../core/services/notification.service';
               >
             </div>
             <div class="metric-card">
-              <span class="metric-lbl">预测步长 (Horizon)</span>
-              <strong class="metric-val highlight"
-                >未来 {{ (res.horizonSteps * res.intervalMinutes) / 60 }} 小时 ({{
-                  res.horizonSteps
-                }}
-                点)</strong
-              >
-            </div>
-            <div class="metric-card">
               <span class="metric-lbl">采样频率</span>
               <strong class="metric-val">{{ res.intervalMinutes }} 分钟 / 点</strong>
             </div>
-            <div class="metric-card">
-              <span class="metric-lbl">检测主周期 / 置信度</span>
-              <strong class="metric-val">{{ res.seasonalitySteps }} 步长 · 95% CI</strong>
-            </div>
-            @if (res.actualFuturePoints && res.actualFuturePoints.length > 0) {
-              <div class="metric-card actual-match-card">
-                <span class="metric-lbl">未来真实值对比</span>
-                <strong class="metric-val actual-match"
-                  >已对齐 {{ res.actualFuturePoints.length }} 点真实观测</strong
+            @if (res.kind === 'forecast') {
+              <div class="metric-card">
+                <span class="metric-lbl">预测步长 (Horizon)</span>
+                <strong class="metric-val highlight"
+                  >未来 {{ (res.horizonSteps * res.intervalMinutes) / 60 }} 小时 ({{
+                    res.horizonSteps
+                  }}点)</strong
                 >
+              </div>
+              <div class="metric-card">
+                <span class="metric-lbl">检测主周期 / 置信度</span>
+                <strong class="metric-val">{{ res.seasonalitySteps }} 步长 · 95% CI</strong>
+              </div>
+              @if (res.actualFuturePoints && res.actualFuturePoints.length > 0) {
+                <div class="metric-card actual-match-card">
+                  <span class="metric-lbl">未来真实值对比</span>
+                  <strong class="metric-val actual-match"
+                    >已对齐 {{ res.actualFuturePoints.length }} 点真实观测</strong
+                  >
+                </div>
+              }
+            } @else if (res.kind === 'anomaly') {
+              <div class="metric-card">
+                <span class="metric-lbl">异常点数量</span>
+                <strong class="metric-val highlight">{{ res.anomalyCount }} 点</strong>
+              </div>
+              <div class="metric-card">
+                <span class="metric-lbl">Hampel 阈值</span>
+                <strong class="metric-val">{{ res.threshold }}</strong>
+              </div>
+            } @else {
+              <div class="metric-card">
+                <span class="metric-lbl">有效夜间窗口</span>
+                <strong class="metric-val">{{ res.nightlyPoints.length }} 天</strong>
+              </div>
+              <div class="metric-card">
+                <span class="metric-lbl">高夜间流量候选</span>
+                <strong class="metric-val highlight">{{ res.candidatePoints.length }} 天</strong>
+              </div>
+              <div class="metric-card">
+                <span class="metric-lbl">历史基线 / 展示阈值</span>
+                <strong class="metric-val">{{ res.baseline }} / {{ res.displayThreshold }}</strong>
               </div>
             }
           </div>
+
+          @if (res.kind === 'dma-night-flow') {
+            <div class="result-notice">{{ res.notice }}</div>
+          }
 
           <!-- ECharts 图表容器 -->
           <div class="chart-container">
@@ -429,8 +471,8 @@ import { NotificationService } from '../../core/services/notification.service';
 
             <article class="showcase-card" (click)="onTaskChange('dma-leakage')">
               <span class="sc-icon">💧</span>
-              <h3>DMA 分区漏损评估</h3>
-              <p>夜间最小流量分析与水量平衡分解，定位暗漏候选区域。</p>
+              <h3>DMA 夜间流量初筛</h3>
+              <p>真实执行最小夜间流量算法，筛选持续高流量日期并提示业务边界。</p>
               <span class="sc-action">载入配置 ➔</span>
             </article>
           </div>
@@ -1077,6 +1119,16 @@ import { NotificationService } from '../../core/services/notification.service';
       color: #059669;
       font-weight: 700;
     }
+    .result-notice {
+      margin: 0 20px;
+      padding: 10px 12px;
+      border-left: 3px solid #f59e0b;
+      border-radius: 6px;
+      background: #fffbeb;
+      color: #92400e;
+      font-size: 12px;
+      line-height: 1.6;
+    }
     /* 图表容器 */
     .chart-container {
       width: 100%;
@@ -1190,6 +1242,9 @@ export class QuickTrialPage implements OnInit, AfterViewInit, OnDestroy {
   readonly scenarios = this.quickTrial.availableScenarios;
   readonly selectedTaskId = signal('timeseries-forecast');
   readonly selectedAlgorithm = signal('auto');
+  readonly currentAlgorithms = computed(() =>
+    this.quickTrial.algorithmsForTask(this.selectedTaskId()),
+  );
   readonly dataMode = signal<'demo' | 'upload'>('demo');
   readonly drawerOpen = signal(false);
 
@@ -1225,7 +1280,7 @@ export class QuickTrialPage implements OnInit, AfterViewInit, OnDestroy {
 
   // 运行与结果状态
   readonly running = signal(false);
-  readonly result = signal<ForecastResult | null>(null);
+  readonly result = signal<QuickTrialResult | null>(null);
 
   // 抽屉内 Mini 波形图与主结果图
   private _chartHost?: ElementRef<HTMLDivElement>;
@@ -1330,9 +1385,12 @@ export class QuickTrialPage implements OnInit, AfterViewInit, OnDestroy {
       ? this.customUploadedFile()?.name
       : `${this.demoFileName()} (示例)`;
     const ctxCount = this.contextPointsCount() || 48;
-    const horizon = this.horizonSteps();
-    const hrs = ((horizon * this.detectedIntervalMinutes()) / 60).toFixed(0);
-    return `${fileLabel} (${this.selectedTimeCol()} ➔ ${this.selectedValueCol()} · 输入 ${ctxCount}点 ➔ 预测 ${horizon}点/${hrs}h)`;
+    if (this.selectedTaskId() === 'timeseries-forecast') {
+      const horizon = this.horizonSteps();
+      const hrs = ((horizon * this.detectedIntervalMinutes()) / 60).toFixed(0);
+      return `${fileLabel} (${this.selectedTimeCol()} ➔ ${this.selectedValueCol()} · 输入 ${ctxCount}点 ➔ 预测 ${horizon}点/${hrs}h)`;
+    }
+    return `${fileLabel} (${this.selectedTimeCol()} ➔ ${this.selectedValueCol()} · 分析 ${ctxCount}点)`;
   });
 
   ngOnInit(): void {
@@ -1454,6 +1512,9 @@ export class QuickTrialPage implements OnInit, AfterViewInit, OnDestroy {
 
   onTaskChange(taskId: string): void {
     this.selectedTaskId.set(taskId);
+    const scenario = this.scenarios.find((item) => item.id === taskId);
+    this.selectedAlgorithm.set(scenario?.defaultAlgorithm || 'auto');
+    this.result.set(null);
     if (this.dataMode() === 'demo') {
       this.applyDemoColumnDefaults(Object.keys(this.sampleRows()[0] || {}));
     } else {
@@ -1500,7 +1561,7 @@ export class QuickTrialPage implements OnInit, AfterViewInit, OnDestroy {
         this.selectedValueCol.set(valCol);
         this.uploading.set(false);
         this.notifications.success(
-          `临时数据 ${file.name} 上传成功，请在下方点选输出列与调整预测窗口`,
+          `临时数据 ${file.name} 上传成功，请在下方点选输出列与调整分析窗口`,
         );
         setTimeout(() => this.initDrawerChart(), 40);
       },
@@ -1547,7 +1608,7 @@ export class QuickTrialPage implements OnInit, AfterViewInit, OnDestroy {
       if (selection.value_column) this.selectedValueCol.set(selection.value_column);
       this.selectedPointCol.set(selection.point_column);
       this.notifications.success(
-        `已选定输入列：时间[${selection.time_column}] · 预测目标[${selection.value_column}]`,
+        `已选定输入列：时间[${selection.time_column}] · 分析目标[${selection.value_column}]`,
       );
       setTimeout(() => this.initDrawerChart(), 40);
     }
@@ -1689,6 +1750,7 @@ export class QuickTrialPage implements OnInit, AfterViewInit, OnDestroy {
       if (verId) {
         this.quickTrial
           .executeEphemeralWorkflow({
+            taskId: this.selectedTaskId(),
             task: this.scenarios.find((s) => s.id === this.selectedTaskId())?.name || '时序预测',
             algorithm: this.selectedAlgorithm(),
             fileName,
@@ -1763,10 +1825,168 @@ export class QuickTrialPage implements OnInit, AfterViewInit, OnDestroy {
         });
         this.resizeObserver.observe(host);
       }
-      this.renderForecastChart(res);
+      if (res.kind === 'forecast') {
+        this.renderForecastChart(res);
+      } else if (res.kind === 'anomaly') {
+        this.renderAnomalyChart(res);
+      } else {
+        this.renderDmaNightFlowChart(res);
+      }
     } catch {
       // Safe fallback
     }
+  }
+
+  private renderAnomalyChart(res: AnomalyResult): void {
+    if (!this.chart) return;
+    const history = res.historyPoints.map((point) => [point.time, point.value]);
+    const anomaly = res.anomalyPoints.map((point) => [point.time, point.value]);
+    const scores = res.scorePoints.map((point) => [point.time, point.value]);
+    this.chart.setOption(
+      {
+        animation: true,
+        title: {
+          text: `${res.fileName} · Hampel 异常突变检测`,
+          left: 'center',
+          top: 4,
+          textStyle: { fontSize: 14, fontWeight: 'bold', color: '#1e293b' },
+        },
+        legend: {
+          top: 28,
+          data: ['观测值', '异常点', '异常分数'],
+          textStyle: { fontSize: 11, color: '#64748b' },
+        },
+        grid: { top: 62, left: 56, right: 56, bottom: 44 },
+        tooltip: { trigger: 'axis' },
+        xAxis: {
+          type: 'time',
+          axisLabel: { fontSize: 10, color: '#64748b' },
+          axisLine: { lineStyle: { color: '#cbd5e1' } },
+        },
+        yAxis: [
+          {
+            type: 'value',
+            name: res.valueColumn,
+            scale: true,
+            splitLine: { lineStyle: { color: '#f1f5f9' } },
+          },
+          {
+            type: 'value',
+            name: '异常分数',
+            min: 0,
+            splitLine: { show: false },
+          },
+        ],
+        dataZoom: [
+          { type: 'inside' },
+          { type: 'slider', height: 16, bottom: 4, borderColor: '#cbd5e1' },
+        ],
+        series: [
+          {
+            name: '观测值',
+            type: 'line',
+            data: history,
+            showSymbol: false,
+            lineStyle: { color: '#0284c7', width: 2 },
+          },
+          {
+            name: '异常点',
+            type: 'scatter',
+            data: anomaly,
+            symbolSize: 9,
+            itemStyle: { color: '#ef4444' },
+            z: 5,
+          },
+          {
+            name: '异常分数',
+            type: 'line',
+            yAxisIndex: 1,
+            data: scores,
+            showSymbol: false,
+            lineStyle: { color: '#f59e0b', width: 1.5, opacity: 0.85 },
+            markLine: {
+              silent: true,
+              symbol: 'none',
+              lineStyle: { color: '#dc2626', type: 'dashed' },
+              data: [{ yAxis: res.threshold, name: `阈值 ${res.threshold}` }],
+            },
+          },
+        ],
+      },
+      { notMerge: true },
+    );
+  }
+
+  private renderDmaNightFlowChart(res: DmaNightFlowResult): void {
+    if (!this.chart) return;
+    const nightly = res.nightlyPoints.map((point) => [point.time, point.value]);
+    const candidates = res.candidatePoints.map((point) => [point.time, point.value]);
+    this.chart.setOption(
+      {
+        animation: true,
+        title: {
+          text: `${res.fileName} · DMA 夜间流量初筛`,
+          left: 'center',
+          top: 4,
+          textStyle: { fontSize: 14, fontWeight: 'bold', color: '#1e293b' },
+        },
+        legend: {
+          top: 28,
+          data: ['每日夜间流量', '高流量候选'],
+          textStyle: { fontSize: 11, color: '#64748b' },
+        },
+        grid: { top: 62, left: 58, right: 30, bottom: 44 },
+        tooltip: { trigger: 'axis' },
+        xAxis: {
+          type: 'time',
+          axisLabel: { fontSize: 10, color: '#64748b' },
+          axisLine: { lineStyle: { color: '#cbd5e1' } },
+        },
+        yAxis: {
+          type: 'value',
+          name: '夜间流量',
+          min: 0,
+          splitLine: { lineStyle: { color: '#f1f5f9' } },
+        },
+        dataZoom: [
+          { type: 'inside' },
+          { type: 'slider', height: 16, bottom: 4, borderColor: '#cbd5e1' },
+        ],
+        series: [
+          {
+            name: '每日夜间流量',
+            type: 'bar',
+            data: nightly,
+            itemStyle: { color: '#38bdf8', borderRadius: [3, 3, 0, 0] },
+            markLine: {
+              silent: true,
+              symbol: 'none',
+              data: [
+                {
+                  yAxis: res.baseline,
+                  name: `历史基线 ${res.baseline}`,
+                  lineStyle: { color: '#10b981', type: 'dashed' },
+                },
+                {
+                  yAxis: res.displayThreshold,
+                  name: `展示阈值 ${res.displayThreshold}`,
+                  lineStyle: { color: '#f59e0b', type: 'dashed' },
+                },
+              ],
+            },
+          },
+          {
+            name: '高流量候选',
+            type: 'scatter',
+            data: candidates,
+            symbolSize: 10,
+            itemStyle: { color: '#ef4444' },
+            z: 5,
+          },
+        ],
+      },
+      { notMerge: true },
+    );
   }
 
   private renderForecastChart(res: ForecastResult): void {
@@ -1961,29 +2181,53 @@ export class QuickTrialPage implements OnInit, AfterViewInit, OnDestroy {
     const res = this.result();
     if (!res) return;
 
-    const rows: string[] = ['timestamp,type,predicted_value,actual_value,lower_bound,upper_bound'];
-    for (const p of res.historyPoints) {
-      rows.push(`${p.time},history,,${p.value},,`);
-    }
-    const actualByTime = new Map(
-      (res.actualFuturePoints || []).map((point) => [point.time, point.value]),
-    );
-    for (let i = 0; i < res.forecastPoints.length; i++) {
-      const p = res.forecastPoints[i];
-      const lower = res.lowerBand[i]?.value ?? '';
-      const upper = res.upperBand[i]?.value ?? '';
-      const actual = actualByTime.get(p.time) ?? '';
-      rows.push(`${p.time},forecast,${p.value},${actual},${lower},${upper}`);
+    const rows: string[] = [];
+    let suffix: string = res.kind;
+    if (res.kind === 'forecast') {
+      rows.push('timestamp,type,predicted_value,actual_value,lower_bound,upper_bound');
+      for (const point of res.historyPoints) {
+        rows.push(`${point.time},history,,${point.value},,`);
+      }
+      const actualByTime = new Map(
+        (res.actualFuturePoints || []).map((point) => [point.time, point.value]),
+      );
+      for (let index = 0; index < res.forecastPoints.length; index++) {
+        const point = res.forecastPoints[index];
+        const lower = res.lowerBand[index]?.value ?? '';
+        const upper = res.upperBand[index]?.value ?? '';
+        const actual = actualByTime.get(point.time) ?? '';
+        rows.push(`${point.time},forecast,${point.value},${actual},${lower},${upper}`);
+      }
+      suffix = 'forecast';
+    } else if (res.kind === 'anomaly') {
+      rows.push('timestamp,value,anomaly_score,is_anomaly');
+      const scoreByTime = new Map(res.scorePoints.map((point) => [point.time, point.value]));
+      const anomalyTimes = new Set(res.anomalyPoints.map((point) => point.time));
+      for (const point of res.historyPoints) {
+        rows.push(
+          `${point.time},${point.value},${scoreByTime.get(point.time) ?? ''},${anomalyTimes.has(point.time) ? 1 : 0}`,
+        );
+      }
+      suffix = 'anomaly';
+    } else {
+      rows.push('date,night_flow,is_candidate,baseline,display_threshold');
+      const candidateTimes = new Set(res.candidatePoints.map((point) => point.time));
+      for (const point of res.nightlyPoints) {
+        rows.push(
+          `${point.time},${point.value},${candidateTimes.has(point.time) ? 1 : 0},${res.baseline},${res.displayThreshold}`,
+        );
+      }
+      suffix = 'night_flow_screen';
     }
 
     const blob = new Blob([rows.join('\n')], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `${res.fileName}_forecast_result_${Date.now()}.csv`;
+    link.download = `${res.fileName}_${suffix}_${Date.now()}.csv`;
     link.click();
     URL.revokeObjectURL(url);
-    this.notifications.success('预测数据 CSV 已开始下载');
+    this.notifications.success('算法结果 CSV 已开始下载');
   }
 
   openInWorkflowEditor(): void {

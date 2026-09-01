@@ -24,11 +24,13 @@ describe('QuickTrialPage', () => {
           icon: '📈',
           description: '测试时序预测',
           defaultAlgorithm: 'auto',
+          algorithms: [{ id: 'auto', name: 'auto（智能推荐）' }],
           demoFileName: 's01_leak_demo.csv',
           timeColumn: 'record_time',
           valueColumn: 'inlet_flow',
         },
       ],
+      algorithmsForTask: vi.fn().mockReturnValue([{ id: 'auto', name: 'auto（智能推荐）' }]),
       parseTimeSeriesPoints: vi.fn().mockReturnValue([
         { time: '2026-01-01 00:00:00', value: 21.2 },
         { time: '2026-01-01 00:15:00', value: 21.8 },
@@ -37,6 +39,7 @@ describe('QuickTrialPage', () => {
       cleanupTemporaryFile: vi.fn().mockReturnValue(of(true)),
       executeQuickForecast: vi.fn().mockReturnValue(
         of({
+          kind: 'forecast',
           task: '时序预测',
           algorithm: 'auto',
           fileName: 's01_leak_demo.csv',
@@ -55,6 +58,7 @@ describe('QuickTrialPage', () => {
       ),
       executeEphemeralWorkflow: vi.fn().mockReturnValue(
         of({
+          kind: 'forecast',
           task: '时序预测',
           algorithm: 'Auto (Seasonal Naive)',
           fileName: 's01_leak_demo.csv',
