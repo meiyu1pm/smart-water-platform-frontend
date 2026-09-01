@@ -149,7 +149,7 @@ git switch -c feature/<模块>-<事项>
 
 ### 测试要求
 
-测试应覆盖用户能观察到的行为：正常显示、权限隐藏、加载/空态、失败信息、参数类型、路由和关键状态恢复。修复缺陷时先增加能复现问题的测试。
+测试只覆盖核心用户路径、公开契约和真实发生过且容易复发的缺陷。不要为简单展示、私有实现细节或极低概率组合重复增加测试。
 
 ## 4. 提交前检查
 
@@ -158,7 +158,6 @@ git switch -c feature/<模块>-<事项>
 ```powershell
 npm test
 npm run build
-npm run build-storybook
 npx prettier --check src/app/features/example/example.page.ts
 git diff --check
 git status --short
@@ -224,8 +223,6 @@ GitHub Actions 会：
 2. 使用 npm 缓存并执行 `npm ci`；
 3. 执行 `npm test`（Vitest）；
 4. 执行生产构建 `npm run build`；
-5. 执行 Storybook 静态构建 `npm run build-storybook`。
-
 当前 CI 不连接真实后端、数据库、Redis、MinIO 或 GPU，也不执行服务器部署。全仓 `npm run format:check` 当前尚未进入 CI；提交前只检查并格式化本次涉及的文件。
 
 CI 失败时，在 PR 的 **Checks** 或仓库 **Actions** 页面打开失败步骤，先定位第一处真实错误。修复后推送到同一分支会自动重新运行。只有确定是 GitHub Runner 或下载服务临时故障时才使用 Re-run。
@@ -261,7 +258,7 @@ git merge origin/main
 - 页面只使用公开 API，未写死服务器和敏感信息；
 - 权限、加载、空态和错误状态完整；
 - DTO、业务组件和图表职责清晰；
-- 测试、生产构建、Storybook 和本次修改文件的格式检查通过；
+- 必要测试、生产构建和本次修改文件的格式检查通过；涉及共享组件库时再单独检查 Storybook；
 - 响应式页面完成必要宽度检查；
 - PR 链接相关后端变更并说明真实联调状态；
 - GitHub Actions 全部通过并至少完成一次审查。
