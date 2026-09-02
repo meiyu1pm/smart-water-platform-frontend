@@ -1,7 +1,7 @@
 import { ChangeDetectionStrategy, Component, Input } from '@angular/core';
 import { CommonModule } from '@angular/common';
 
-import { fengtaiLabel, fengtaiValue } from './fengtai-labels';
+import { fengtaiLabel, fengtaiMetricValue } from './fengtai-labels';
 
 @Component({
   selector: 'app-fengtai-quality-panel',
@@ -22,8 +22,8 @@ import { fengtaiLabel, fengtaiValue } from './fengtai-labels';
           @for (entry of comparison; track entry.key) {
             <div>
               <span>{{ label(entry.key) }}</span
-              ><strong>{{ display(entry.before) }}</strong
-              ><strong class="after">{{ display(entry.after) }}</strong>
+              ><strong>{{ display(entry.key, entry.before) }}</strong
+              ><strong class="after">{{ display(entry.key, entry.after) }}</strong>
             </div>
           }
         </div>
@@ -32,7 +32,7 @@ import { fengtaiLabel, fengtaiValue } from './fengtai-labels';
           @for (entry of entries; track entry.key) {
             <div class="metric">
               <span>{{ label(entry.key) }}</span
-              ><strong>{{ display(entry.value) }}</strong>
+              ><strong>{{ display(entry.key, entry.value) }}</strong>
             </div>
           }
         </div>
@@ -131,17 +131,33 @@ export class FengtaiQualityPanelComponent {
     const before = this.record(quality['before'] ?? quality['raw']);
     const after = this.record(quality['after'] ?? quality['repaired'] ?? quality['cleaned']);
     if (!Object.keys(before).length || !Object.keys(after).length) return [];
-    return Array.from(new Set([...Object.keys(before), ...Object.keys(after)]))
-      .slice(0, 6)
-      .map((key) => ({ key, before: before[key], after: after[key] }));
+    return [
+      { key: 'record_count', before: before['rows'], after: after['points'] },
+      {
+        key: 'flow_completeness_percent',
+        before: before['flow_completeness_percent'],
+        after: after['flow_completeness_percent'],
+      },
+      {
+        key: 'pressure_completeness_percent',
+        before: before['pressure_completeness_percent'],
+        after: after['pressure_completeness_percent'],
+      },
+      {
+        key: 'timestamp_regularity_percent',
+        before: before['timestamp_regularity_percent'],
+        after: after['timestamp_regularity_percent'],
+      },
+      { key: 'score', before: before['score'], after: after['score'] },
+    ];
   }
 
   label(key: string): string {
     return fengtaiLabel(key);
   }
 
-  display(value: unknown): string {
-    return fengtaiValue(value);
+  display(key: string, value: unknown): string {
+    return fengtaiMetricValue(key, value);
   }
   private record(value: unknown): Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value)

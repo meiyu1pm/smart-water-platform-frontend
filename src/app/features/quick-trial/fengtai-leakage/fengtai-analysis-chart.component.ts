@@ -143,13 +143,15 @@ export class FengtaiAnalysisChartComponent implements AfterViewInit, OnChanges, 
       {
         animation: false,
         title: {
-          text: '流量、压力与异常变化',
+          text: '入口总表流量、压力与异常变化',
+          subtext: '丰泰风光苑入口总表：小区边界进水及同点压力，不是全管网平均值',
           left: 0,
           textStyle: { color: '#1e293b', fontSize: 14, fontWeight: 'normal' },
+          subtextStyle: { color: '#64748b', fontSize: 11 },
         },
-        legend: { top: 27, type: 'scroll', textStyle: { color: '#64748b', fontSize: 11 } },
+        legend: { top: 45, type: 'scroll', textStyle: { color: '#64748b', fontSize: 11 } },
         tooltip: { trigger: 'axis' },
-        grid: { top: 66, left: 54, right: 54, bottom: 48 },
+        grid: { top: 84, left: 54, right: 54, bottom: 48 },
         xAxis: {
           type: 'time',
           axisLabel: { color: '#64748b', fontSize: 10 },

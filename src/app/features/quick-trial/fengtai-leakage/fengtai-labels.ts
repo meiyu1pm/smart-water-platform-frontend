@@ -24,6 +24,22 @@ const labels: Record<string, string> = {
   affected_pipe_ids: '关联管段数',
   service_pressure_warning: '供水压力提示',
   valve_id: '调节阀门',
+  combined_risk_score: '综合风险评分',
+  quality_score_after: '治理后质量评分',
+  persistent_anomaly_events: '持续异常事件',
+  inspection_priority_count: '优先复核管段',
+  mean_minimum_night_flow_m3h: '平均最小夜间流量',
+  unaccounted_ratio_proxy: '未计量水量占比',
+  rows: '原始记录数',
+  points: '治理后有效点数',
+  expected_points: '规则化应有点数',
+  flow_completeness_percent: '流量完整率',
+  pressure_completeness_percent: '压力完整率',
+  timestamp_regularity_percent: '时间间隔规则率',
+  score: '综合质量评分',
+  remaining_missing_points: '剩余流量缺失点',
+  remaining_pressure_missing_points: '剩余压力缺失点',
+  record_count: '有效记录数',
 };
 
 export function fengtaiLabel(key: string): string {
@@ -36,4 +52,31 @@ export function fengtaiValue(value: unknown): string {
   if (Array.isArray(value)) return value.length ? `${value.length} 项` : '—';
   if (value && typeof value === 'object') return '详见说明';
   return '—';
+}
+
+export function fengtaiMetricValue(key: string, value: unknown): string {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return fengtaiValue(value);
+  if (key === 'unaccounted_ratio' || key === 'unaccounted_ratio_proxy') {
+    return `${(value * 100).toFixed(2)}%`;
+  }
+  if (key.endsWith('_percent')) return `${value.toFixed(2)}%`;
+  if (key === 'combined_risk_score' || key === 'quality_score_after' || key === 'score') {
+    return `${value.toFixed(2)} 分`;
+  }
+  if (key === 'mean_minimum_night_flow_m3h') return `${value.toFixed(2)} m³/h`;
+  if (key === 'inspection_priority_count') return `${value} 条`;
+  if (key === 'persistent_anomaly_events') return `${value} 个`;
+  if (
+    [
+      'rows',
+      'points',
+      'expected_points',
+      'record_count',
+      'remaining_missing_points',
+      'remaining_pressure_missing_points',
+    ].includes(key)
+  ) {
+    return `${value} 点`;
+  }
+  return fengtaiValue(value);
 }

@@ -20,20 +20,14 @@ import { MatSelectModule } from '@angular/material/select';
 import { AuthService } from '../../../core/services/auth.service';
 import { FengtaiAnalysisChartComponent } from './fengtai-analysis-chart.component';
 import { FengtaiCandidatesComponent } from './fengtai-candidates.component';
-import {
-  FengtaiLeakageManifest,
-  FengtaiSimulation,
-  FengtaiStage,
-  FengtaiTopologyNode,
-} from './fengtai-leakage.models';
+import { FengtaiLeakageManifest, FengtaiStage } from './fengtai-leakage.models';
 import { FengtaiLeakageService } from './fengtai-leakage.service';
 import { FengtaiProcessRailComponent } from './fengtai-process-rail.component';
 import { FengtaiQualityPanelComponent } from './fengtai-quality-panel.component';
 import { FengtaiRecommendationComponent } from './fengtai-recommendation.component';
-import { FengtaiSimulationComponent } from './fengtai-simulation.component';
 import { FengtaiTopologyComponent } from './fengtai-topology.component';
 import { FengtaiWaterBalanceComponent } from './fengtai-water-balance.component';
-import { fengtaiLabel, fengtaiValue } from './fengtai-labels';
+import { fengtaiLabel, fengtaiMetricValue } from './fengtai-labels';
 
 @Component({
   selector: 'app-fengtai-leakage-page',
@@ -53,7 +47,6 @@ import { fengtaiLabel, fengtaiValue } from './fengtai-labels';
     FengtaiWaterBalanceComponent,
     FengtaiTopologyComponent,
     FengtaiCandidatesComponent,
-    FengtaiSimulationComponent,
     FengtaiRecommendationComponent,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -63,9 +56,9 @@ import { fengtaiLabel, fengtaiValue } from './fengtai-labels';
         <div>
           <span class="eyebrow">专项快速试用</span>
           <h1>{{ manifest()?.community || '丰泰风光苑' }}漏损闭环</h1>
-          <p>围绕数据治理、趋势基线与现场复核，形成可讨论的候选管段和调节模拟结果。</p>
+          <p>围绕数据治理、趋势基线与现场复核，形成可讨论的候选管段和巡检建议。</p>
         </div>
-        <div class="scope">面向管网运行与检漏人员<br />候选与模拟结果需结合现场复核</div>
+        <div class="scope">面向管网运行与检漏人员<br />候选结果需结合现场复核</div>
       </section>
 
       <section class="toolbar" aria-label="分析策略与窗口选择">
@@ -122,9 +115,15 @@ import { fengtaiLabel, fengtaiValue } from './fengtai-labels';
             @for (entry of summaryEntries(); track entry.key) {
               <article>
                 <span>{{ label(entry.key) }}</span
-                ><strong>{{ display(entry.value) }}</strong>
+                ><strong>{{ display(entry.key, entry.value) }}</strong>
               </article>
             }
+          </section>
+          <section class="method-note">
+            <strong>本次结果由后台实时计算</strong>
+            <span
+              >已执行数据治理、日内稳健基线、持续异常识别、最小夜间流量、水量平衡和管网候选排序，不是预置图片或固定分数。</span
+            >
           </section>
         } @else {
           <section class="empty">
@@ -159,12 +158,6 @@ import { fengtaiLabel, fengtaiValue } from './fengtai-labels';
                 ></app-fengtai-topology>
               }
             </section>
-            <app-fengtai-simulation
-              [valves]="valves()"
-              [running]="simulating()"
-              [result]="simulation()"
-              (simulate)="runSimulation($event.valveId, $event.reduction)"
-            ></app-fengtai-simulation>
           </div>
           <aside>
             <app-fengtai-quality-panel [quality]="analysis()?.quality"></app-fengtai-quality-panel>
@@ -363,6 +356,23 @@ import { fengtaiLabel, fengtaiValue } from './fengtai-labels';
       font-size: 18px;
       font-variant-numeric: tabular-nums;
     }
+    .method-note {
+      padding: 12px 16px;
+      border-left: 4px solid #0f766e;
+      border-radius: 7px;
+      background: #ecfdf5;
+      display: grid;
+      gap: 4px;
+    }
+    .method-note strong {
+      color: #065f46;
+      font-size: 13px;
+    }
+    .method-note span {
+      color: #475569;
+      font-size: 12px;
+      line-height: 1.6;
+    }
     .content {
       display: grid;
       grid-template-columns: minmax(0, 2.1fr) minmax(280px, 0.9fr);
@@ -442,12 +452,10 @@ export class FengtaiLeakagePage implements OnInit {
   readonly manifest = signal<FengtaiLeakageManifest | null>(null);
   readonly topology = signal<import('./fengtai-leakage.models').FengtaiTopology | null>(null);
   readonly analysis = signal<import('./fengtai-leakage.models').FengtaiAnalysis | null>(null);
-  readonly simulation = signal<FengtaiSimulation | null>(null);
   readonly initialLoading = signal(true);
   readonly topologyLoading = signal(true);
   readonly topologyError = signal('');
   readonly analyzing = signal(false);
-  readonly simulating = signal(false);
   readonly error = signal('');
   preset = 'custom';
   startDate = this.monthStart();
@@ -493,9 +501,6 @@ export class FengtaiLeakagePage implements OnInit {
         { title: '候选管段', purpose: '依据综合证据排序重点复核位置。', status: 'pending' },
         { title: '建议', purpose: '输出可供现场讨论的下一步建议。', status: 'pending' },
       ],
-  );
-  readonly valves = computed<FengtaiTopologyNode[]>(() =>
-    (this.topology()?.nodes ?? []).filter((node) => node.type === 'valve'),
   );
   readonly summaryEntries = computed(() =>
     Object.entries(this.analysis()?.summary ?? {})
@@ -545,7 +550,6 @@ export class FengtaiLeakagePage implements OnInit {
       .subscribe({
         next: (analysis) => {
           this.analysis.set(analysis);
-          this.simulation.set(null);
           this.analyzing.set(false);
         },
         error: () => {
@@ -554,38 +558,15 @@ export class FengtaiLeakagePage implements OnInit {
         },
       });
   }
-  runSimulation(valveId: string, reduction: number): void {
-    if (!this.requireAuthenticated()) return;
-    this.simulating.set(true);
-    this.error.set('');
-    this.service
-      .simulate({
-        start_date: this.startDate,
-        end_date: this.endDate,
-        valve_id: valveId,
-        pressure_reduction_percent: reduction,
-        leakage_exponent: 1.15,
-      })
-      .subscribe({
-        next: (result) => {
-          this.simulation.set(result);
-          this.simulating.set(false);
-        },
-        error: () => {
-          this.simulating.set(false);
-          this.error.set('本次调节模拟未完成，请稍后重试。');
-        },
-      });
-  }
   label(key: string): string {
     return fengtaiLabel(key);
   }
-  display(value: unknown): string {
-    return fengtaiValue(value);
+  display(key: string, value: unknown): string {
+    return fengtaiMetricValue(key, value);
   }
   private requireAuthenticated(): boolean {
     if (this.auth.isAuthenticated()) return true;
-    this.error.set('请先登录后再运行分析或调节模拟。');
+    this.error.set('请先登录后再运行分析。');
     this.requiresLogin.emit();
     return false;
   }
