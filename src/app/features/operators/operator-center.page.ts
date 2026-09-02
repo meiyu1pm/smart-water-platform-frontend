@@ -52,6 +52,14 @@ interface OperatorFacetResponse {
   permissions: string[];
 }
 
+interface AlgorithmReleaseSummary {
+  release_id: string;
+  algorithm_version_id: number;
+  version: string;
+  status: string;
+  default_model_version_id: string | null;
+}
+
 const catalogWidthDefault = 380;
 const catalogWidthMin = 320;
 const catalogWidthRatioMax = 0.45;
@@ -273,7 +281,9 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
             ><span class="row-copy"
               ><strong>{{ operatorNames.displayName(operator.code, operator.name) }}</strong
               ><small>{{ operator.code }} · {{ operator.kind }}</small></span
-            ><span class="badge">{{ operator.default_version?.version || operator.active_version?.version || '—' }}</span>
+            ><span class="badge">{{
+              operator.default_version?.version || operator.active_version?.version || '—'
+            }}</span>
           </button>
         } @empty {
           <div class="empty">暂无符合条件的算子。</div>
@@ -311,7 +321,16 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
             <span>查看版本</span>
             <select [ngModel]="viewedVersion()" (ngModelChange)="selectVersion(operator, $event)">
               @for (item of operator.versions || []; track item.id) {
-                <option [value]="item.version">{{ item.version }}{{ item.lifecycle === 'deprecated' ? ' · 已弃用' : item.lifecycle === 'blocked' ? ' · 已阻断' : '' }}</option>
+                <option [value]="item.version">
+                  {{ item.version
+                  }}{{
+                    item.lifecycle === 'deprecated'
+                      ? ' · 已弃用'
+                      : item.lifecycle === 'blocked'
+                        ? ' · 已阻断'
+                        : ''
+                  }}
+                </option>
               }
             </select>
           </label>
@@ -513,7 +532,9 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
                         </div>
                         <div class="param-value-col">
                           <span class="param-val-label">默认值</span>
-                          <span class="param-val-pill">{{ formatParamValue(spec.currentValue) }}</span>
+                          <span class="param-val-pill">{{
+                            formatParamValue(spec.currentValue)
+                          }}</span>
                         </div>
                       </div>
                     } @empty {
@@ -522,13 +543,43 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
                   </div>
                 }
 
+                @if (auth.hasPermission('operator:manage') && version.algorithm) {
+                  <section class="release-binding-card" aria-label="版本默认发布包">
+                    <div>
+                      <strong>新建节点使用的公共发布包</strong>
+                      <p class="muted">
+                        只影响之后创建的节点；已有节点和已发布工作流继续使用原来的模型快照。
+                      </p>
+                    </div>
+                    <div class="release-binding-actions">
+                      <select
+                        aria-label="公共发布包"
+                        [ngModel]="version.default_release_id || ''"
+                        [disabled]="loadingReleases() || savingRelease()"
+                        (ngModelChange)="saveDefaultRelease(operator, version, $event)"
+                      >
+                        <option value="">不绑定公共发布包</option>
+                        @for (release of releases(); track release.release_id) {
+                          <option [value]="release.release_id">
+                            {{ release.version }} · {{ release.status
+                            }}{{ release.default_model_version_id ? ' · 含默认模型' : '' }}
+                          </option>
+                        }
+                      </select>
+                    </div>
+                  </section>
+                }
+
                 <details class="raw-contract-details">
                   <summary>查看底层原始 JSON 契约</summary>
                   <div class="raw-contract-content">
                     <h4>参数契约 Schema (JSON Schema)</h4>
                     <pre>{{ version.parameter_schema | json }}</pre>
                     <h4>当前默认参数快照 (Raw JSON)</h4>
-                    <pre>{{ (version.default_parameters || version.algorithm?.['default_params'] || {}) | json }}</pre>
+                    <pre>{{
+                      version.default_parameters || version.algorithm?.['default_params'] || {}
+                        | json
+                    }}</pre>
                   </div>
                 </details>
               </div>
@@ -748,7 +799,12 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
                   <div class="version-row">
                     <span class="version-identity">
                       <b>{{ item.version }}</b>
-                      <small>{{ item.lifecycle || (item.version === operator.default_version?.version ? 'current' : 'installed') }}</small>
+                      <small>{{
+                        item.lifecycle ||
+                          (item.version === operator.default_version?.version
+                            ? 'current'
+                            : 'installed')
+                      }}</small>
                     </span>
                     <span>{{ item.status }} · {{ item.maturity }}</span>
                     <span [class.available-text]="item.available">
@@ -1235,7 +1291,9 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
       border: 1px solid #e2e8f0;
       border-radius: 10px;
       gap: 16px;
-      transition: background 0.15s, border-color 0.15s;
+      transition:
+        background 0.15s,
+        border-color 0.15s;
     }
     .param-row:hover {
       background: #f1f5f9;
@@ -1359,6 +1417,24 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
       margin-top: 20px;
       padding-top: 12px;
       border-top: 1px dashed #cbd5e1;
+    }
+    .release-binding-card {
+      margin-top: 18px;
+      padding: 14px;
+      border: 1px solid #dbe5f0;
+      border-radius: 10px;
+      background: #f8fafc;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+    .release-binding-card p {
+      margin: 4px 0 0;
+    }
+    .release-binding-actions select {
+      min-width: 240px;
+      max-width: 360px;
     }
     .raw-contract-details summary {
       color: #64748b;
@@ -1635,7 +1711,9 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
       border: 1px solid transparent;
       border-radius: 9px;
       padding: 10px 12px;
-      transition: border-color 0.16s ease, background 0.16s ease;
+      transition:
+        border-color 0.16s ease,
+        background 0.16s ease;
     }
     .version-select-row:hover:not(.disabled),
     .version-select-row.selected {
@@ -1995,6 +2073,9 @@ export class OperatorCenterPage implements OnDestroy {
   readonly loadingDocuments = signal(false);
   readonly models = signal<ModelVersionSummary[]>([]);
   readonly loadingModels = signal(false);
+  readonly releases = signal<AlgorithmReleaseSummary[]>([]);
+  readonly loadingReleases = signal(false);
+  readonly savingRelease = signal(false);
   readonly selectedModelForDetail = signal<ModelVersionSummary | null>(null);
   readonly activeTab = signal<
     'overview' | 'contract' | 'training' | 'versions' | 'documents' | 'usage'
@@ -2028,6 +2109,7 @@ export class OperatorCenterPage implements OnDestroy {
   private lastCatalogLayout: HTMLElement | null = null;
   private selectionRequestGeneration = 0;
   private documentRequestGeneration = 0;
+  private releaseRequestGeneration = 0;
 
   constructor() {
     this.kind = this.route.snapshot.queryParamMap.get('kind') || '';
@@ -2073,12 +2155,13 @@ export class OperatorCenterPage implements OnDestroy {
             this.operators().find((item) => item.code === current?.code) ||
             this.operators()[0] ||
             null;
-          this.selected.set(target);
-          if (target) this.syncViewedVersion(target);
-          if (target) {
-            if (this.activeTab() === 'documents') this.loadDocuments(target);
-            if (this.activeTab() === 'training') this.loadModels(target);
+          if (!target) {
+            this.selected.set(null);
+            return;
           }
+          const preserveVersion =
+            current?.code === target.code || (!current && !!this.viewedVersion());
+          this.select(target, !preserveVersion);
         },
         error: () => this.message.set('算子目录加载失败，请检查权限或服务状态。'),
       });
@@ -2122,28 +2205,38 @@ export class OperatorCenterPage implements OnDestroy {
       .get<WorkflowTemplateSummary[]>('/api/v1/workflow-templates')
       .subscribe({ next: (items) => this.templates.set(items || []) });
   }
-  select(operator: OperatorSummary): void {
+  select(operator: OperatorSummary, resetVersion = true): void {
     const selectionGeneration = ++this.selectionRequestGeneration;
     this.documentRequestGeneration += 1;
-    this.selected.set(operator);
-    this.syncViewedVersion(operator);
+    if (resetVersion) this.syncViewedVersion(operator, true);
+    const selectedVersion = this.findViewedVersion(operator);
+    const selectedOperator = this.withViewedVersion(operator, selectedVersion);
+    this.selected.set(selectedOperator);
     this.documents.set([]);
     this.documentMessage.set('');
     this.models.set([]);
     this.trainingSelection.set(null);
     this.trainingMessage.set('');
     this.trainingSuccess.set(false);
-    if (this.activeTab() === 'documents') this.loadDocuments(operator);
-    if (this.activeTab() === 'training') this.loadModels(operator);
+    this.releases.set([]);
+    this.loadReleases(selectedOperator);
+    if (this.activeTab() === 'documents') this.loadDocuments(selectedOperator);
+    if (this.activeTab() === 'training') this.loadModels(selectedOperator);
     this.api.get<OperatorSummary>(`/api/v1/operators/${operator.code}`).subscribe({
       next: (detail) => {
         if (selectionGeneration !== this.selectionRequestGeneration) return;
-        const selectedVersion = this.viewedVersion() || detail.default_version?.version || detail.active_version?.version;
-        const version = (detail.versions || []).find((item) => item.version === selectedVersion) || detail.default_version || detail.active_version;
-        this.selected.set(version ? { ...detail, active_version: version } : detail);
-        this.syncViewedVersion(detail, true);
-        if (this.activeTab() === 'documents') this.loadDocuments(detail);
-        if (this.activeTab() === 'training') this.loadModels(detail);
+        const version = this.findViewedVersion(detail);
+        const viewed = this.withViewedVersion(detail, version);
+        this.viewedVersion.set(version?.version || null);
+        this.selected.set(viewed);
+        void this.router.navigate([], {
+          relativeTo: this.route,
+          queryParams: { version: version?.version || null, tab: this.activeTab() },
+          queryParamsHandling: 'merge',
+        });
+        this.loadReleases(viewed);
+        if (this.activeTab() === 'documents') this.loadDocuments(viewed);
+        if (this.activeTab() === 'training') this.loadModels(viewed);
       },
     });
   }
@@ -2157,10 +2250,16 @@ export class OperatorCenterPage implements OnDestroy {
       return;
     }
     this.loadingModels.set(true);
-    const algorithm = operator.active_version?.algorithm as Record<string, unknown> | null | undefined;
+    const algorithm = operator.active_version?.algorithm as
+      Record<string, unknown> | null | undefined;
     const rawVersionId = algorithm?.['algorithm_version_id'] ?? algorithm?.['id'] ?? null;
     this.api
-      .get<ModelVersionSummary[]>('/api/v1/model-versions', rawVersionId === null || rawVersionId === undefined || rawVersionId === '' ? { algorithm_code: code } : { algorithm_version_id: String(rawVersionId) })
+      .get<ModelVersionSummary[]>(
+        '/api/v1/model-versions',
+        rawVersionId === null || rawVersionId === undefined || rawVersionId === ''
+          ? { algorithm_code: code }
+          : { algorithm_version_id: String(rawVersionId) },
+      )
       .subscribe({
         next: (items) => {
           this.models.set(items || []);
@@ -2213,6 +2312,7 @@ export class OperatorCenterPage implements OnDestroy {
         `/api/v1/algorithms/${algorithmCode}/training-runs`,
         {
           dataset_version_id: selection.version.id,
+          algorithm_version: operator.active_version?.version,
           monitor_point_id: selection.channel?.monitor_point_id ?? null,
           metric_code: selection.channel?.metric_code || 'flow',
           value_source: selection.value_source,
@@ -2282,7 +2382,11 @@ export class OperatorCenterPage implements OnDestroy {
   }
   setTab(tab: 'overview' | 'contract' | 'training' | 'versions' | 'documents' | 'usage'): void {
     this.activeTab.set(tab);
-    void this.router.navigate([], { relativeTo: this.route, queryParams: { version: this.viewedVersion(), tab }, queryParamsHandling: 'merge' });
+    void this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: { version: this.viewedVersion(), tab },
+      queryParamsHandling: 'merge',
+    });
     if (this.selected()) {
       if (tab === 'documents') this.loadDocuments(this.selected()!);
       if (tab === 'training') this.loadModels(this.selected()!);
@@ -2307,10 +2411,12 @@ export class OperatorCenterPage implements OnDestroy {
       : '';
   }
   activeRelease(operator: OperatorSummary): { version: string; status: string } | null {
-    const release = operator.active_version?.algorithm?.['active_release'];
-    if (!release || typeof release !== 'object') return null;
-    const value = release as Record<string, unknown>;
-    return { version: String(value['version'] || ''), status: String(value['status'] || '') };
+    const releaseId = operator.active_version?.default_release_id;
+    if (!releaseId) return null;
+    const release = this.releases().find((item) => item.release_id === String(releaseId));
+    return release
+      ? { version: release.version, status: release.status }
+      : { version: String(releaseId), status: '已绑定' };
   }
   versionUnavailableReason(version: OperatorVersionSummary): string {
     const algorithm = version.algorithm as Record<string, unknown> | null;
@@ -2320,14 +2426,123 @@ export class OperatorCenterPage implements OnDestroy {
     const versions = operator.versions || [];
     const current = this.viewedVersion();
     if (!reset && current && versions.some((item) => item.version === current)) return;
-    this.viewedVersion.set(operator.default_version?.version || operator.active_version?.version || versions[0]?.version || null);
+    this.viewedVersion.set(
+      operator.default_version?.version ||
+        operator.active_version?.version ||
+        versions[0]?.version ||
+        null,
+    );
   }
   selectVersion(operator: OperatorSummary, version: string): void {
     const selected = (operator.versions || []).find((item) => item.version === version);
     if (!selected) return;
     this.viewedVersion.set(version);
-    this.selected.set({ ...operator, active_version: selected });
-    void this.router.navigate([], { relativeTo: this.route, queryParams: { version, tab: this.activeTab() }, queryParamsHandling: 'merge' });
+    const viewed = this.withViewedVersion(operator, selected);
+    this.selected.set(viewed);
+    this.editingDefaults.set(false);
+    this.models.set([]);
+    this.documents.set([]);
+    this.loadReleases(viewed);
+    if (this.activeTab() === 'documents') this.loadDocuments(viewed);
+    if (this.activeTab() === 'training') this.loadModels(viewed);
+    void this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: { version, tab: this.activeTab() },
+      queryParamsHandling: 'merge',
+    });
+  }
+  private findViewedVersion(operator: OperatorSummary): OperatorVersionSummary | null {
+    const requested = this.viewedVersion();
+    return (
+      (operator.versions || []).find((item) => item.version === requested) ||
+      operator.default_version ||
+      operator.active_version ||
+      operator.versions?.[0] ||
+      null
+    );
+  }
+  private withViewedVersion(
+    operator: OperatorSummary,
+    version: OperatorVersionSummary | null,
+  ): OperatorSummary {
+    if (!version) return operator;
+    return {
+      ...operator,
+      active_version: version,
+      available: version.available,
+      unavailable_reason: version.unavailable_reasons?.[0] || null,
+      unavailable_reasons: version.unavailable_reasons || [],
+      installed: version.installed,
+      lifecycle: version.lifecycle,
+      runtime_ready: version.runtime_ready,
+      runnable_with_defaults: version.runnable_with_defaults,
+      default_parameters: version.default_parameters,
+      default_release_id: version.default_release_id,
+      default_model_version_id: version.default_model_version_id,
+    };
+  }
+  loadReleases(operator: OperatorSummary): void {
+    const requestGeneration = ++this.releaseRequestGeneration;
+    const code = this.algorithmCode(operator);
+    const rawVersionId = operator.active_version?.algorithm?.['id'];
+    if (!code || rawVersionId === null || rawVersionId === undefined) {
+      this.releases.set([]);
+      return;
+    }
+    const algorithmVersionId = Number(rawVersionId);
+    this.loadingReleases.set(true);
+    this.api.get<AlgorithmReleaseSummary[]>(`/api/v1/algorithms/${code}/releases`).subscribe({
+      next: (items) => {
+        if (requestGeneration !== this.releaseRequestGeneration) return;
+        this.releases.set(
+          (items || []).filter(
+            (item) =>
+              item.algorithm_version_id === algorithmVersionId &&
+              ['approved', 'active'].includes(item.status),
+          ),
+        );
+        this.loadingReleases.set(false);
+      },
+      error: () => {
+        if (requestGeneration !== this.releaseRequestGeneration) return;
+        this.releases.set([]);
+        this.loadingReleases.set(false);
+      },
+    });
+  }
+  saveDefaultRelease(
+    operator: OperatorSummary,
+    version: OperatorVersionSummary,
+    releaseId: string,
+  ): void {
+    if (this.savingRelease()) return;
+    this.savingRelease.set(true);
+    this.api
+      .put<
+        { default_release_id: string | null; default_model_version_id: string | null },
+        { release_id: string | null }
+      >(`/api/v1/operators/${operator.code}/versions/${version.version}/default-release`, {
+        release_id: releaseId || null,
+      })
+      .subscribe({
+        next: (result) => {
+          this.savingRelease.set(false);
+          const updated = {
+            ...version,
+            default_release_id: result.default_release_id,
+            default_model_version_id: result.default_model_version_id,
+          };
+          const versions = (operator.versions || []).map((item) =>
+            item.version === version.version ? updated : item,
+          );
+          this.selected.set(this.withViewedVersion({ ...operator, versions }, updated));
+          this.notice.success('当前版本的新建节点默认发布包已更新。');
+        },
+        error: () => {
+          this.savingRelease.set(false);
+          this.notice.error('公共发布包更新失败，请确认发布包已通过审核且属于当前算法版本。');
+        },
+      });
   }
   algorithmCode(operator: OperatorSummary): string | null {
     return linkedAlgorithmCode(operator);
@@ -2519,10 +2734,9 @@ export class OperatorCenterPage implements OnDestroy {
       .patch<
         { operator: OperatorSummary; version: OperatorVersionSummary },
         { default_parameters: Record<string, unknown> }
-      >(
-        `/api/v1/operators/${operator.code}/versions/${version.version}/default-parameters`,
-        { default_parameters: params },
-      )
+      >(`/api/v1/operators/${operator.code}/versions/${version.version}/default-parameters`, {
+        default_parameters: params,
+      })
       .subscribe({
         next: (res) => {
           this.savingDefaults.set(false);
@@ -2531,7 +2745,7 @@ export class OperatorCenterPage implements OnDestroy {
           if (res?.operator) {
             this.selected.set(res.operator);
           } else {
-            this.select(operator);
+            this.select(operator, false);
           }
         },
         error: (err) => {
@@ -2541,5 +2755,4 @@ export class OperatorCenterPage implements OnDestroy {
         },
       });
   }
-
 }

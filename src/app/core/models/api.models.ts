@@ -560,7 +560,15 @@ export interface DataCollectionSummary {
 }
 
 export type DataFileKind =
-  'table' | 'topology' | 'spatial' | 'device_catalog' | 'event_log' | 'document' | 'demo' | 'other' | string;
+  | 'table'
+  | 'topology'
+  | 'spatial'
+  | 'device_catalog'
+  | 'event_log'
+  | 'document'
+  | 'demo'
+  | 'other'
+  | string;
 
 export interface DataFileVersionSummary {
   id: number;
@@ -739,6 +747,7 @@ export interface OperatorVersionSummary {
   tags?: Array<{ dimension: string; code: string; name: string }>;
   algorithm: Record<string, unknown> | null;
   available: boolean;
+  installed?: boolean;
   runtime_ready?: boolean;
   /** Version lifecycle is independent from whether a runtime is currently online. */
   lifecycle?: 'current' | 'deprecated' | 'blocked' | string;
