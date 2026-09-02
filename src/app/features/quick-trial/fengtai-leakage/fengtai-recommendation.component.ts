@@ -13,10 +13,6 @@ import { CommonModule } from '@angular/common';
         <h3>{{ title }}</h3>
         <p>{{ detail }}</p>
       </div>
-      <div class="warning">分析结果及压力模拟用于安排复核，候选不等同于已确认漏点。</div>
-      @if (limitations?.length) {
-        <p class="limits"><strong>使用边界：</strong>{{ limitations?.join('；') }}</p>
-      }
     </section>
   `,
   styles: `
@@ -44,21 +40,6 @@ import { CommonModule } from '@angular/common';
       font-size: 13px;
       line-height: 1.6;
     }
-    .warning {
-      padding: 8px 10px;
-      border-radius: 6px;
-      background: #fffbeb;
-      color: #92400e;
-      font-size: 12px;
-      line-height: 1.5;
-    }
-    .limits {
-      color: #64748b;
-      font-size: 12px;
-    }
-    .limits strong {
-      color: #475569;
-    }
   `,
 })
 export class FengtaiRecommendationComponent {
@@ -76,8 +57,8 @@ export class FengtaiRecommendationComponent {
         ? String(
             this.recommendation['detail'] ??
               this.recommendation['message'] ??
-              '结合候选排序、夜间流量和现场工况，制定复核顺序。',
+              '按候选排序安排仪表复核、夜间听漏和现场巡检。',
           )
-        : '结合候选排序、夜间流量和现场工况，制定复核顺序。';
+        : '按候选排序安排仪表复核、夜间听漏和现场巡检。';
   }
 }

@@ -2,6 +2,9 @@ export interface FengtaiWindow {
   start_date: string;
   end_date: string;
   label?: string;
+  interval_minutes?: number;
+  full_resolution_points?: number;
+  chart_points?: number;
 }
 
 export interface FengtaiPreset {
@@ -61,6 +64,39 @@ export interface FengtaiTopology {
   [key: string]: unknown;
 }
 
+export type FengtaiAssetType = 'node' | 'pipe' | 'valve' | 'hydrant' | 'meter';
+export interface AssetSelection {
+  type: FengtaiAssetType;
+  id: string;
+  name: string;
+}
+export interface FengtaiAssetDetail {
+  asset: {
+    asset_id: string;
+    asset_type: FengtaiAssetType;
+    name?: string;
+    [key: string]: unknown;
+  };
+  connections: { node_ids: string[]; pipe_ids: string[] };
+  measurement: {
+    scope: 'direct' | 'community_reference';
+    source_label: string;
+    point_name: string;
+    metrics: Array<{ code: string; name: string; unit: string }>;
+    series: {
+      timestamps: string[];
+      flow: Array<number | null>;
+      pressure: Array<number | null>;
+    };
+  };
+  analysis_window: FengtaiWindow & {
+    interval_minutes: number;
+    full_resolution_points: number;
+    series_points: number;
+  };
+  [key: string]: unknown;
+}
+
 export interface FengtaiRawTopologyResponse {
   network?: {
     nodes?: Array<{
@@ -99,6 +135,7 @@ export interface FengtaiRawTopologyResponse {
 }
 
 export interface FengtaiStage {
+  code?: string;
   id?: string;
   name?: string;
   title?: string;
@@ -139,19 +176,4 @@ export interface FengtaiAnalyzeRequest {
   start_date: string;
   end_date: string;
   preset: string;
-}
-
-export interface FengtaiSimulationRequest {
-  start_date: string;
-  end_date: string;
-  valve_id: string;
-  pressure_reduction_percent: number;
-  leakage_exponent: number;
-}
-
-export interface FengtaiSimulation {
-  summary?: Record<string, unknown>;
-  series?: Record<string, unknown>;
-  recommendation?: Record<string, unknown> | string;
-  [key: string]: unknown;
 }

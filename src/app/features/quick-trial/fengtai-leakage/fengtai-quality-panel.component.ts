@@ -37,7 +37,7 @@ import { fengtaiLabel, fengtaiMetricValue } from './fengtai-labels';
           }
         </div>
       } @else {
-        <p class="empty">完成分析后显示修复前后的质量情况。</p>
+        <p class="empty">暂无质量分析结果。</p>
       }
     </section>
   `,

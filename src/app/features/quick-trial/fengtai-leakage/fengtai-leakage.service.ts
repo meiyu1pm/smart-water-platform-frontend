@@ -6,10 +6,9 @@ import {
   FengtaiAnalysis,
   FengtaiAnalyzeRequest,
   FengtaiLeakageManifest,
-  FengtaiSimulation,
-  FengtaiSimulationRequest,
   FengtaiTopology,
   FengtaiRawTopologyResponse,
+  FengtaiAssetDetail,
 } from './fengtai-leakage.models';
 
 @Injectable({ providedIn: 'root' })
@@ -34,10 +33,17 @@ export class FengtaiLeakageService {
     );
   }
 
-  simulate(request: FengtaiSimulationRequest): Observable<FengtaiSimulation> {
-    return this.api.post<FengtaiSimulation, FengtaiSimulationRequest>(
-      `${this.basePath}/simulate`,
-      request,
+  getAssetDetail(
+    assetId: string,
+    startDate: string,
+    endDate: string,
+  ): Observable<FengtaiAssetDetail> {
+    return this.api.get<FengtaiAssetDetail>(
+      `${this.basePath}/assets/${encodeURIComponent(assetId)}`,
+      {
+        start_date: startDate,
+        end_date: endDate,
+      },
     );
   }
 
@@ -47,7 +53,8 @@ export class FengtaiLeakageService {
       ...(network.nodes ?? []).map((node) => ({
         id: node.node_id,
         name: node.name ?? node.node_id,
-        type: node.node_type ?? 'junction',
+        type: 'node',
+        nodeType: node.node_type ?? '节点',
         x: node.x,
         y: node.y,
       })),

@@ -12,10 +12,9 @@ import { FengtaiCandidate } from './fengtai-leakage.models';
     <section class="panel">
       <div class="heading">
         <div>
-          <h3>重点复核候选</h3>
-          <p>按综合证据排序，需由现场复核确认。</p>
+          <h3>重点复核管段</h3>
+          <p>按异常、水量和管网特征综合排序。</p>
         </div>
-        <span class="notice">候选，非已确认漏点</span>
       </div>
       @if (candidates.length) {
         <ol>
@@ -30,7 +29,7 @@ import { FengtaiCandidate } from './fengtai-leakage.models';
           }
         </ol>
       } @else {
-        <p class="empty">本次窗口尚未形成需要优先复核的候选。</p>
+        <p class="empty">暂无重点复核管段。</p>
       }
     </section>
   `,
@@ -57,14 +56,6 @@ import { FengtaiCandidate } from './fengtai-leakage.models';
       color: #64748b;
       font-size: 12px;
       line-height: 1.5;
-    }
-    .notice {
-      color: #9a3412;
-      background: #fff7ed;
-      border-radius: 12px;
-      padding: 3px 8px;
-      font-size: 11px;
-      white-space: nowrap;
     }
     ol {
       margin: 13px 0 0;
@@ -115,12 +106,11 @@ export class FengtaiCandidatesComponent {
       candidate.evidence && !Array.isArray(candidate.evidence) ? candidate.evidence : {};
     const values = { ...evidence, ...candidate } as Record<string, unknown>;
     const parts: string[] = [];
-    if (typeof values['rank_type'] === 'string') parts.push(`按${values['rank_type']}排序`);
     if (typeof values['material'] === 'string') parts.push(`材质：${values['material']}`);
     if (values['diameter'] !== undefined || values['diameter_mm'] !== undefined)
       parts.push(`管径：${values['diameter'] ?? values['diameter_mm']} mm`);
     if (values['topology'] !== undefined || values['topology_weight'] !== undefined)
-      parts.push('已纳入管网连通关系核验');
-    return parts.join('；') || '综合夜间流量、压力和管网关系，建议结合现场巡检复核。';
+      parts.push('管网连通关系');
+    return parts.join('；') || '夜间流量、压力和管网关系综合评分';
   }
 }

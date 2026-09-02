@@ -18,15 +18,18 @@ import { MatProgressBarModule } from '@angular/material/progress-bar';
 import { MatSelectModule } from '@angular/material/select';
 
 import { AuthService } from '../../../core/services/auth.service';
-import { FengtaiAnalysisChartComponent } from './fengtai-analysis-chart.component';
-import { FengtaiCandidatesComponent } from './fengtai-candidates.component';
-import { FengtaiLeakageManifest, FengtaiStage } from './fengtai-leakage.models';
+import { FengtaiAssetDetailComponent } from './fengtai-asset-detail.component';
+import {
+  AssetSelection,
+  FengtaiAssetDetail,
+  FengtaiCandidate,
+  FengtaiLeakageManifest,
+  FengtaiStage,
+} from './fengtai-leakage.models';
 import { FengtaiLeakageService } from './fengtai-leakage.service';
 import { FengtaiProcessRailComponent } from './fengtai-process-rail.component';
-import { FengtaiQualityPanelComponent } from './fengtai-quality-panel.component';
-import { FengtaiRecommendationComponent } from './fengtai-recommendation.component';
+import { FengtaiStageResultComponent } from './fengtai-stage-result.component';
 import { FengtaiTopologyComponent } from './fengtai-topology.component';
-import { FengtaiWaterBalanceComponent } from './fengtai-water-balance.component';
 import { fengtaiLabel, fengtaiMetricValue } from './fengtai-labels';
 
 @Component({
@@ -42,12 +45,9 @@ import { fengtaiLabel, fengtaiMetricValue } from './fengtai-labels';
     MatProgressBarModule,
     MatSelectModule,
     FengtaiProcessRailComponent,
-    FengtaiQualityPanelComponent,
-    FengtaiAnalysisChartComponent,
-    FengtaiWaterBalanceComponent,
+    FengtaiStageResultComponent,
     FengtaiTopologyComponent,
-    FengtaiCandidatesComponent,
-    FengtaiRecommendationComponent,
+    FengtaiAssetDetailComponent,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
@@ -56,9 +56,8 @@ import { fengtaiLabel, fengtaiMetricValue } from './fengtai-labels';
         <div>
           <span class="eyebrow">专项快速试用</span>
           <h1>{{ manifest()?.community || '丰泰风光苑' }}漏损闭环</h1>
-          <p>围绕数据治理、趋势基线与现场复核，形成可讨论的候选管段和巡检建议。</p>
+          <p>数据质量、日内变化、水量平衡与重点管段分析。</p>
         </div>
-        <div class="scope">面向管网运行与检漏人员<br />候选结果需结合现场复核</div>
       </section>
 
       <section class="toolbar" aria-label="分析策略与窗口选择">
@@ -84,10 +83,7 @@ import { fengtaiLabel, fengtaiMetricValue } from './fengtai-labels';
       </section>
       @if (analyzing()) {
         <section class="running">
-          <div>
-            <strong>正在完成数据治理与趋势研判</strong
-            ><span>将依次生成质量检查、水量平衡和候选管段结果。</span>
-          </div>
+          <div><strong>正在分析</strong><span>正在处理所选时间范围的数据。</span></div>
           <mat-progress-bar mode="indeterminate"></mat-progress-bar>
         </section>
       }
@@ -100,15 +96,18 @@ import { fengtaiLabel, fengtaiMetricValue } from './fengtai-labels';
 
       @if (initialLoading()) {
         <section class="loading">
-          <mat-spinner diameter="30"></mat-spinner><span>正在加载试用范围与管网概览…</span>
+          <mat-spinner diameter="30"></mat-spinner><span>正在加载分析数据…</span>
         </section>
       } @else {
         <section class="flow">
           <div>
             <h2>闭环过程</h2>
-            <p>从数据接入到建议，每一步均保留可说明的结果。</p>
           </div>
-          <app-fengtai-process-rail [stages]="stages()"></app-fengtai-process-rail>
+          <app-fengtai-process-rail
+            [stages]="stages()"
+            [selectedCode]="selectedStageCode()"
+            (selectedCodeChange)="selectStage($event)"
+          ></app-fengtai-process-rail>
         </section>
         @if (analysis()) {
           <section class="kpis" aria-label="分析摘要">
@@ -119,62 +118,58 @@ import { fengtaiLabel, fengtaiMetricValue } from './fengtai-labels';
               </article>
             }
           </section>
-          <section class="method-note">
-            <strong>本次结果由后台实时计算</strong>
-            <span
-              >已执行数据治理、日内稳健基线、持续异常识别、最小夜间流量、水量平衡和管网候选排序，不是预置图片或固定分数。</span
-            >
-          </section>
         } @else {
           <section class="empty">
             <mat-icon>timeline</mat-icon>
             <div>
-              <strong>选择一个时间窗口并运行分析</strong
-              ><span>结果将展示数据质量、流量趋势、候选管段及处置建议。</span>
+              <strong>选择分析窗口并运行</strong>
             </div>
           </section>
         }
 
-        <section class="content" [class.has-analysis]="!!analysis()">
-          <div class="main-column">
-            <app-fengtai-analysis-chart
-              [series]="analysis()?.series"
-              [anomalies]="analysis()?.anomalies"
-            ></app-fengtai-analysis-chart>
-            <section class="topology-panel">
-              @if (topologyLoading()) {
-                <div class="topology-status">
-                  <mat-spinner diameter="24"></mat-spinner><span>正在加载管网概览…</span>
-                </div>
-              } @else if (topologyError()) {
-                <div class="topology-status topology-warning">
-                  <span>{{ topologyError() }}</span>
-                  <button mat-button type="button" (click)="loadTopology()">重新加载</button>
-                </div>
-              } @else {
-                <app-fengtai-topology
-                  [topology]="topology() ?? undefined"
-                  [candidates]="analysis()?.candidates ?? []"
-                ></app-fengtai-topology>
+        <section class="stage-workspace">
+          <app-fengtai-stage-result
+            [selectedCode]="selectedStageCode()"
+            [analysis]="analysis()"
+            [manifest]="manifest()"
+          >
+            <div
+              fengtai-topology-slot
+              class="topology-layout"
+              [class.detail-open]="!!selectedAsset()"
+            >
+              <section class="topology-panel">
+                @if (topologyLoading()) {
+                  <div class="topology-status">
+                    <mat-spinner diameter="24"></mat-spinner><span>正在加载管网概览…</span>
+                  </div>
+                } @else if (topologyError()) {
+                  <div class="topology-status topology-warning">
+                    <span>{{ topologyError() }}</span>
+                    <button mat-button type="button" (click)="loadTopology()">重新加载</button>
+                  </div>
+                } @else {
+                  <app-fengtai-topology
+                    [topology]="topology() ?? undefined"
+                    [candidates]="analysis()?.candidates ?? []"
+                    (assetSelected)="openAsset($event)"
+                  ></app-fengtai-topology>
+                }
+              </section>
+              @if (selectedAsset()) {
+                <app-fengtai-asset-detail
+                  [selection]="selectedAsset()"
+                  [detail]="assetDetail()"
+                  [candidate]="selectedCandidate()"
+                  [loading]="assetLoading()"
+                  [error]="assetError()"
+                  (closed)="closeAsset()"
+                  (retry)="reloadAsset()"
+                ></app-fengtai-asset-detail>
               }
-            </section>
-          </div>
-          <aside>
-            <app-fengtai-quality-panel [quality]="analysis()?.quality"></app-fengtai-quality-panel>
-            <app-fengtai-water-balance
-              [balance]="analysis()?.water_balance"
-            ></app-fengtai-water-balance>
-            <app-fengtai-candidates
-              [candidates]="analysis()?.candidates ?? []"
-            ></app-fengtai-candidates>
-          </aside>
+            </div>
+          </app-fengtai-stage-result>
         </section>
-        @if (analysis()) {
-          <app-fengtai-recommendation
-            [recommendation]="analysis()?.recommendation"
-            [limitations]="analysis()?.limitations"
-          ></app-fengtai-recommendation>
-        }
       }
     </main>
   `,
@@ -216,15 +211,6 @@ import { fengtaiLabel, fengtaiMetricValue } from './fengtai-labels';
       color: #d5f5ee;
       font-size: 14px;
       line-height: 1.65;
-    }
-    .scope {
-      align-self: center;
-      border-left: 1px solid rgba(255, 255, 255, 0.32);
-      padding-left: 20px;
-      color: #d5f5ee;
-      font-size: 12px;
-      line-height: 1.7;
-      white-space: nowrap;
     }
     .toolbar {
       display: flex;
@@ -356,42 +342,27 @@ import { fengtaiLabel, fengtaiMetricValue } from './fengtai-labels';
       font-size: 18px;
       font-variant-numeric: tabular-nums;
     }
-    .method-note {
-      padding: 12px 16px;
-      border-left: 4px solid #0f766e;
-      border-radius: 7px;
-      background: #ecfdf5;
-      display: grid;
-      gap: 4px;
-    }
-    .method-note strong {
-      color: #065f46;
-      font-size: 13px;
-    }
-    .method-note span {
-      color: #475569;
-      font-size: 12px;
-      line-height: 1.6;
-    }
-    .content {
-      display: grid;
-      grid-template-columns: minmax(0, 2.1fr) minmax(280px, 0.9fr);
-      gap: 16px;
-    }
-    .main-column,
-    aside {
-      display: grid;
-      align-content: start;
-      gap: 16px;
-    }
-    .main-column > * {
+    .stage-workspace {
       border: 1px solid #dbe4ea;
       border-radius: 10px;
-      padding: 12px;
+      padding: 16px;
       background: #fff;
+    }
+    .topology-layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr);
+      gap: 14px;
+    }
+    .topology-layout.detail-open {
+      grid-template-columns: minmax(0, 1fr) minmax(320px, 420px);
+      align-items: start;
     }
     .topology-panel {
       min-height: 326px;
+      min-width: 0;
+      padding: 12px;
+      border: 1px solid #dbe4ea;
+      border-radius: 10px;
     }
     .topology-status {
       min-height: 300px;
@@ -406,25 +377,13 @@ import { fengtaiLabel, fengtaiMetricValue } from './fengtai-labels';
       flex-direction: column;
       color: #9a3412;
     }
-    aside > * {
-      min-width: 0;
-    }
-    app-fengtai-recommendation {
-      display: block;
-    }
     @media (max-width: 900px) {
       .hero,
       .toolbar {
         align-items: stretch;
         flex-direction: column;
       }
-      .scope {
-        border-left: 0;
-        border-top: 1px solid rgba(255, 255, 255, 0.32);
-        padding: 10px 0 0;
-        white-space: normal;
-      }
-      .content {
+      .topology-layout.detail-open {
         grid-template-columns: 1fr;
       }
     }
@@ -452,6 +411,11 @@ export class FengtaiLeakagePage implements OnInit {
   readonly manifest = signal<FengtaiLeakageManifest | null>(null);
   readonly topology = signal<import('./fengtai-leakage.models').FengtaiTopology | null>(null);
   readonly analysis = signal<import('./fengtai-leakage.models').FengtaiAnalysis | null>(null);
+  readonly selectedStageCode = signal('data_intake');
+  readonly selectedAsset = signal<AssetSelection | null>(null);
+  readonly assetDetail = signal<FengtaiAssetDetail | null>(null);
+  readonly assetLoading = signal(false);
+  readonly assetError = signal('');
   readonly initialLoading = signal(true);
   readonly topologyLoading = signal(true);
   readonly topologyError = signal('');
@@ -495,13 +459,31 @@ export class FengtaiLeakagePage implements OnInit {
   readonly stages = computed<FengtaiStage[]>(
     () =>
       this.analysis()?.stages ?? [
-        { title: '数据接入', purpose: '核对试用窗口内的监测数据。', status: 'pending' },
-        { title: '质量检查', purpose: '识别缺失、异常和不连续记录。', status: 'pending' },
-        { title: '趋势基线', purpose: '形成夜间流量和压力变化参考。', status: 'pending' },
-        { title: '候选管段', purpose: '依据综合证据排序重点复核位置。', status: 'pending' },
-        { title: '建议', purpose: '输出可供现场讨论的下一步建议。', status: 'pending' },
+        { code: 'data_intake', title: '数据接入', status: 'pending' },
+        { code: 'quality_score', title: '质量检查', status: 'pending' },
+        { code: 'data_governance', title: '数据治理', status: 'pending' },
+        { code: 'seasonal_96_slot_forecast', title: '日内基线', status: 'pending' },
+        {
+          code: 'persistent_residual_ewma_cusum',
+          title: '持续异常识别',
+          status: 'pending',
+        },
+        {
+          code: 'night_flow_water_balance',
+          title: '夜间流量与水量平衡',
+          status: 'pending',
+        },
+        { code: 'network_candidates', title: '候选管段', status: 'pending' },
+        { code: 'response_advice', title: '处置建议', status: 'pending' },
       ],
   );
+  readonly selectedCandidate = computed<FengtaiCandidate | null>(() => {
+    const selected = this.selectedAsset();
+    if (!selected || selected.type !== 'pipe') return null;
+    return (
+      this.analysis()?.candidates?.find((candidate) => candidate.pipe_id === selected.id) ?? null
+    );
+  });
   readonly summaryEntries = computed(() =>
     Object.entries(this.analysis()?.summary ?? {})
       .slice(0, 6)
@@ -537,12 +519,13 @@ export class FengtaiLeakagePage implements OnInit {
       },
       error: () => {
         this.topologyLoading.set(false);
-        this.topologyError.set('管网概览暂时未能加载，其他分析功能仍可使用。');
+        this.topologyError.set('管网概览加载失败。');
       },
     });
   }
   runAnalysis(): void {
     if (!this.requireAuthenticated()) return;
+    this.closeAsset();
     this.analyzing.set(true);
     this.error.set('');
     this.service
@@ -550,6 +533,7 @@ export class FengtaiLeakagePage implements OnInit {
       .subscribe({
         next: (analysis) => {
           this.analysis.set(analysis);
+          this.selectedStageCode.set('persistent_residual_ewma_cusum');
           this.analyzing.set(false);
         },
         error: () => {
@@ -557,6 +541,37 @@ export class FengtaiLeakagePage implements OnInit {
           this.error.set('本次分析未完成，请核对时间窗口后重试。');
         },
       });
+  }
+  selectStage(code: string): void {
+    this.selectedStageCode.set(code);
+  }
+  openAsset(selection: AssetSelection): void {
+    this.selectedAsset.set(selection);
+    this.assetDetail.set(null);
+    this.assetError.set('');
+    this.assetLoading.set(true);
+    this.service.getAssetDetail(selection.id, this.startDate, this.endDate).subscribe({
+      next: (detail) => {
+        if (this.selectedAsset()?.id !== selection.id) return;
+        this.assetDetail.set(detail);
+        this.assetLoading.set(false);
+      },
+      error: () => {
+        if (this.selectedAsset()?.id !== selection.id) return;
+        this.assetLoading.set(false);
+        this.assetError.set('资产详情加载失败。');
+      },
+    });
+  }
+  reloadAsset(): void {
+    const selection = this.selectedAsset();
+    if (selection) this.openAsset(selection);
+  }
+  closeAsset(): void {
+    this.selectedAsset.set(null);
+    this.assetDetail.set(null);
+    this.assetLoading.set(false);
+    this.assetError.set('');
   }
   label(key: string): string {
     return fengtaiLabel(key);

@@ -42,9 +42,6 @@ interface DailyBalance {
           }
         </div>
       }
-      @if (notice) {
-        <p class="notice">{{ notice }}</p>
-      }
     </section>
   `,
   styles: `
@@ -89,10 +86,6 @@ interface DailyBalance {
       font-size: 13px;
       font-variant-numeric: tabular-nums;
     }
-    .notice {
-      margin-top: 9px;
-      color: #9a3412;
-    }
     @media (max-width: 520px) {
       .summary {
         grid-template-columns: 1fr;
@@ -117,10 +110,6 @@ export class FengtaiWaterBalanceComponent implements AfterViewInit, OnChanges, O
       .filter((key) => summary[key] !== undefined)
       .slice(0, 3)
       .map((key) => ({ key, value: summary[key] }));
-  }
-  get notice(): string {
-    const value = this.balance?.['notice'];
-    return typeof value === 'string' ? value : '';
   }
   label(key: string): string {
     return fengtaiLabel(key);
@@ -191,7 +180,7 @@ export class FengtaiWaterBalanceComponent implements AfterViewInit, OnChanges, O
                 type: 'text',
                 left: 'center',
                 top: 'middle',
-                style: { text: '完成分析后显示每日水量平衡', fill: '#64748b', fontSize: 12 },
+                style: { text: '暂无水量平衡数据', fill: '#64748b', fontSize: 12 },
               },
             ]
           : [],
