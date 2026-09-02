@@ -120,7 +120,6 @@ import { fengtaiLabel, fengtaiMetricValue } from './fengtai-labels';
           </section>
         } @else {
           <section class="empty">
-            <mat-icon>timeline</mat-icon>
             <div>
               <strong>选择分析窗口并运行</strong>
             </div>
@@ -285,10 +284,6 @@ import { fengtaiLabel, fengtaiMetricValue } from './fengtai-labels';
     .empty {
       justify-content: flex-start;
       padding: 0 28px;
-    }
-    .empty mat-icon {
-      color: #0f766e;
-      transform: scale(1.25);
     }
     .empty div {
       display: grid;

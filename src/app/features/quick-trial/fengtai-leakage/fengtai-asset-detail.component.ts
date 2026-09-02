@@ -42,9 +42,9 @@ import { AssetSelection, FengtaiAssetDetail, FengtaiCandidate } from './fengtai-
           </div>
         }
       </dl>
-      @if (candidate?.score !== undefined) {
+      @if (candidate && candidate.score !== undefined) {
         <div class="risk">
-          <span>综合评分</span><strong>{{ candidate?.score?.toFixed(1) }} 分</strong>
+          <span>综合评分</span><strong>{{ candidate.score.toFixed(1) }} 分</strong>
         </div>
       }
       <span class="scope" [class.reference]="detail.measurement.scope === 'community_reference'">{{
@@ -251,6 +251,8 @@ export class FengtaiAssetDetailComponent implements AfterViewInit, OnChanges, On
           start_node_id: '起点',
           end_node_id: '终点',
           elevation_m: '高程（m）',
+          x: '平面 X 坐标',
+          y: '平面 Y 坐标',
         } as Record<string, string>
       )[key] ?? key
     );
