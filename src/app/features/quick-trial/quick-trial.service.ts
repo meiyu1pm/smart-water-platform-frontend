@@ -16,23 +16,52 @@ export interface TimeSeriesPoint {
   value: number;
 }
 
-export interface ForecastResult {
+export interface QuickTrialResultBase {
+  kind: 'forecast' | 'anomaly' | 'dma-night-flow';
   task: string;
   algorithm: string;
   fileName: string;
   timeColumn: string;
   valueColumn: string;
   historyPoints: TimeSeriesPoint[];
+  intervalMinutes: number;
+  workflowId?: number;
+  runId?: string;
+}
+
+export interface ForecastResult extends QuickTrialResultBase {
+  kind: 'forecast';
   forecastPoints: TimeSeriesPoint[];
   lowerBand: TimeSeriesPoint[];
   upperBand: TimeSeriesPoint[];
   actualFuturePoints?: TimeSeriesPoint[];
   horizonSteps: number;
-  intervalMinutes: number;
   seasonalitySteps: number;
   confidence: number;
-  workflowId?: number;
-  runId?: string;
+}
+
+export interface AnomalyResult extends QuickTrialResultBase {
+  kind: 'anomaly';
+  scorePoints: TimeSeriesPoint[];
+  anomalyPoints: TimeSeriesPoint[];
+  threshold: number;
+  anomalyCount: number;
+}
+
+export interface DmaNightFlowResult extends QuickTrialResultBase {
+  kind: 'dma-night-flow';
+  nightlyPoints: TimeSeriesPoint[];
+  candidatePoints: TimeSeriesPoint[];
+  baseline: number;
+  displayThreshold: number;
+  notice: string;
+}
+
+export type QuickTrialResult = ForecastResult | AnomalyResult | DmaNightFlowResult;
+
+export interface QuickTrialAlgorithmOption {
+  id: string;
+  name: string;
 }
 
 export interface QuickTrialScenarioOption {
@@ -41,6 +70,7 @@ export interface QuickTrialScenarioOption {
   icon: string;
   description: string;
   defaultAlgorithm: string;
+  algorithms: QuickTrialAlgorithmOption[];
   demoFileName: string;
   timeColumn: string;
   valueColumn: string;
@@ -176,6 +206,11 @@ export class QuickTrialService {
       icon: '📈',
       description: '基于水务时序历史趋势与周期性规律，精准外推预测未来供水量或流量走势。',
       defaultAlgorithm: 'auto',
+      algorithms: [
+        { id: 'auto', name: 'auto（智能推荐）' },
+        { id: 'seasonal_naive', name: 'seasonal_naive（季节性基准）' },
+        { id: 'chronos2', name: 'chronos2（深度学习时序模型）' },
+      ],
       demoFileName: '示例小区_2024-01.csv',
       timeColumn: '时间',
       valueColumn: '流量(m³/h)_修复',
@@ -185,22 +220,28 @@ export class QuickTrialService {
       name: '异常突变检测',
       icon: '🔍',
       description: '智能捕捉水质、水压突变点与离群波动，快速定位异常工况。',
-      defaultAlgorithm: 'auto',
+      defaultAlgorithm: 'hampel',
+      algorithms: [{ id: 'hampel', name: 'Hampel（稳健离群检测）' }],
       demoFileName: '示例小区_2024-01.csv',
       timeColumn: '时间',
       valueColumn: '压力(MPa)_修复',
     },
     {
       id: 'dma-leakage',
-      name: 'DMA分区漏损评估',
+      name: 'DMA夜间流量初筛',
       icon: '💧',
-      description: '结合水量平衡与最小夜间流量（MNF），智能评估管网漏损风险。',
-      defaultAlgorithm: 'auto',
+      description: '基于总表最小夜间流量筛查持续高流量日期，结果仅作为漏损核查线索。',
+      defaultAlgorithm: 'minimum_night_flow',
+      algorithms: [{ id: 'minimum_night_flow', name: 'MNF（最小夜间流量）' }],
       demoFileName: '示例小区_2024-01.csv',
       timeColumn: '时间',
       valueColumn: '流量(m³/h)_修复',
     },
   ];
+
+  algorithmsForTask(taskId: string): QuickTrialAlgorithmOption[] {
+    return this.availableScenarios.find((item) => item.id === taskId)?.algorithms || [];
+  }
 
   /**
    * 从样本行中提取有效时序点
@@ -297,6 +338,7 @@ export class QuickTrialService {
    * 方案 B：创建即席工作流并在后端调度 Celery/GPU 算子真实运行
    */
   executeEphemeralWorkflow(params: {
+    taskId: string;
     task: string;
     algorithm: string;
     fileName: string;
@@ -310,11 +352,12 @@ export class QuickTrialService {
     inputStartTime?: string;
     inputEndTime?: string;
     horizonSteps?: number;
-  }): Observable<ForecastResult> {
+  }): Observable<QuickTrialResult> {
     return from(this.runEphemeralWorkflowPipeline(params));
   }
 
   private async runEphemeralWorkflowPipeline(params: {
+    taskId: string;
     task: string;
     algorithm: string;
     fileName: string;
@@ -328,8 +371,9 @@ export class QuickTrialService {
     inputStartTime?: string;
     inputEndTime?: string;
     horizonSteps?: number;
-  }): Promise<ForecastResult> {
+  }): Promise<QuickTrialResult> {
     const {
+      taskId,
       task,
       algorithm,
       fileName,
@@ -345,19 +389,33 @@ export class QuickTrialService {
       horizonSteps: userHorizon,
     } = params;
 
-    const algoCode = algorithm === 'chronos2' ? 'chronos2_flow_forecast' : 'seasonal_naive';
+    const isForecast = taskId === 'timeseries-forecast';
+    const isAnomaly = taskId === 'anomaly-detection';
+    const algoCode = isAnomaly
+      ? 'hampel'
+      : taskId === 'dma-leakage'
+        ? 's01_minimum_night_flow_v1'
+        : algorithm === 'chronos2'
+          ? 'chronos2_flow_forecast'
+          : 'seasonal_naive';
     const horizon = Math.max(4, Math.min(userHorizon ?? 32, maxHorizonForAlgorithm(algorithm)));
-    const algoName =
-      algorithm === 'chronos2'
-        ? 'Chronos-2 (深度学习大模型)'
-        : algorithm === 'auto'
-          ? 'Auto (Seasonal Naive)'
-          : 'Seasonal Naive (季节性基准)';
+    const algoName = isAnomaly
+      ? 'Hampel（稳健离群检测）'
+      : taskId === 'dma-leakage'
+        ? 'MNF（最小夜间流量）'
+        : algorithm === 'chronos2'
+          ? 'Chronos-2 (深度学习大模型)'
+          : algorithm === 'auto'
+            ? 'Auto (Seasonal Naive)'
+            : 'Seasonal Naive (季节性基准)';
 
-    const algoParams: Record<string, unknown> =
-      algoCode === 'chronos2_flow_forecast'
-        ? { horizon, context_length: 288, value_source: 'processed' }
-        : { season_length: 96, horizon };
+    const algoParams: Record<string, unknown> = isAnomaly
+      ? { window: 9, threshold: 4.5 }
+      : taskId === 'dma-leakage'
+        ? { night_start_hour: 2, night_end_hour: 4, min_nights: 7 }
+        : algoCode === 'chronos2_flow_forecast'
+          ? { horizon, context_length: 288, value_source: 'processed' }
+          : { season_length: 96, horizon };
 
     // Resolve the selected window before creating the immutable run. The
     // backend filters after timestamp sorting, so row indexes never leak the
@@ -391,10 +449,21 @@ export class QuickTrialService {
     );
     const viewId = viewRes.id;
 
-    // 2. 组装标准双节点工作流图
+    // 2. 按任务组装真实的双节点工作流图。
     const inputNodeId = 'data_file_input_1';
-    const algoNodeId = 'algo_forecast_1';
-    const outputPort = algoCode === 'chronos2_flow_forecast' ? 'forecast' : 'result';
+    const algoNodeId = isForecast
+      ? 'algo_forecast_1'
+      : isAnomaly
+        ? 'algo_anomaly_1'
+        : 'algo_night_flow_1';
+    const algoVersion = taskId === 'dma-leakage' ? '1.0.0' : '1.0.0';
+    const inputPort = taskId === 'dma-leakage' ? 'net_inflow' : 'series';
+    const outputPort =
+      taskId === 'dma-leakage'
+        ? 'night_flow_excess'
+        : algoCode === 'chronos2_flow_forecast'
+          ? 'forecast'
+          : 'result';
 
     const graph = {
       contract_version: '1.0',
@@ -402,7 +471,7 @@ export class QuickTrialService {
         {
           id: inputNodeId,
           node_code: 'data_file_input_v1',
-          node_version: '1.0.0',
+          node_version: algoVersion,
           parameters: {
             output_mode: 'timeseries',
             binding_key: inputNodeId,
@@ -420,7 +489,7 @@ export class QuickTrialService {
       edges: [
         {
           source: { node_id: inputNodeId, port: 'series' },
-          target: { node_id: algoNodeId, port: 'series' },
+          target: { node_id: algoNodeId, port: inputPort },
         },
       ],
       outputs: [{ node_id: algoNodeId, port: outputPort }],
@@ -442,7 +511,7 @@ export class QuickTrialService {
         {
           workflow_code: wfCode,
           workflow_name: `快速试用_${task}_${algoCode}`,
-          description: '由快速试用中心自动创建并提交执行的即席时序预测工作流',
+          description: `由快速试用中心创建的${task}真实算法工作流`,
           visibility: 'private',
           graph,
         },
@@ -483,7 +552,10 @@ export class QuickTrialService {
     let runData: any = null;
     const startTime = Date.now();
 
-    while (['queued', 'running', 'dispatched'].includes(status) && Date.now() - startTime < 45000) {
+    while (
+      ['pending', 'queued', 'running', 'dispatched'].includes(status) &&
+      Date.now() - startTime < 45000
+    ) {
       await new Promise((r) => setTimeout(r, 1000));
       runData = await firstValueFrom(
         this.api.get<any>(`/api/v1/workflow-runs/${encodeURIComponent(runId)}`),
@@ -528,7 +600,7 @@ export class QuickTrialService {
       ),
     );
     const inputPayload = this.requireArtifactPayload(fullInput, '输入时序');
-    const algoPayload = this.requireArtifactPayload(fullAlgo, '预测结果');
+    const algoPayload = this.requireArtifactPayload(fullAlgo, `${task}结果`);
 
     const historyRows = inputPayload['rows'];
     const artifactPoints = this.parseArtifactPoints(historyRows, '输入时序');
@@ -544,6 +616,73 @@ export class QuickTrialService {
 
     const intervalMinutes = inferIntervalMinutes(historyPoints);
     const lastTimestamp = parseDateMs(historyPoints[historyPoints.length - 1].time);
+
+    if (isAnomaly) {
+      const payloadData = ((algoPayload['payload'] as Record<string, unknown>) ||
+        algoPayload) as Record<string, unknown>;
+      const scores = Array.isArray(payloadData['scores']) ? payloadData['scores'] : [];
+      const labels = Array.isArray(payloadData['labels']) ? payloadData['labels'] : [];
+      if (scores.length !== historyPoints.length || labels.length !== historyPoints.length) {
+        throw new Error('Hampel结果长度与输入时序不一致。');
+      }
+      const scorePoints = historyPoints.map((point, index) => ({
+        time: point.time,
+        value: this.requireFiniteNumber(scores[index], 'Hampel异常分数'),
+      }));
+      const anomalyPoints = historyPoints.filter((_, index) => Number(labels[index]) === 1);
+      return {
+        kind: 'anomaly',
+        task,
+        algorithm: algoName,
+        fileName,
+        timeColumn,
+        valueColumn,
+        historyPoints,
+        intervalMinutes,
+        scorePoints,
+        anomalyPoints,
+        threshold: Number(payloadData['threshold'] || 4.5),
+        anomalyCount: anomalyPoints.length,
+        workflowId,
+        runId,
+      };
+    }
+
+    if (taskId === 'dma-leakage') {
+      const nightlyPoints = this.parseArtifactPoints(algoPayload['rows'], '最小夜间流量');
+      const values = nightlyPoints.map((point) => point.value).sort((left, right) => left - right);
+      const middle = Math.floor(values.length / 2);
+      const baseline =
+        values.length % 2 ? values[middle] : (values[middle - 1] + values[middle]) / 2;
+      const deviations = values
+        .map((value) => Math.abs(value - baseline))
+        .sort((left, right) => left - right);
+      const deviationMiddle = Math.floor(deviations.length / 2);
+      const mad =
+        deviations.length % 2
+          ? deviations[deviationMiddle]
+          : (deviations[deviationMiddle - 1] + deviations[deviationMiddle]) / 2;
+      const displayThreshold = Number((baseline + Math.max(0.01, 3 * 1.4826 * mad)).toFixed(3));
+      const candidatePoints = nightlyPoints.filter((point) => point.value > displayThreshold);
+      return {
+        kind: 'dma-night-flow',
+        task,
+        algorithm: algoName,
+        fileName,
+        timeColumn,
+        valueColumn,
+        historyPoints,
+        intervalMinutes,
+        nightlyPoints,
+        candidatePoints,
+        baseline: Number(baseline.toFixed(3)),
+        displayThreshold,
+        notice:
+          '当前快速试用仅分析总表夜间流量，未扣除合法夜间用水，不等同于完整水量平衡或确认漏损。',
+        workflowId,
+        runId,
+      };
+    }
 
     let forecastPoints: TimeSeriesPoint[] = [];
     let lowerBand: TimeSeriesPoint[] = [];
@@ -604,6 +743,7 @@ export class QuickTrialService {
     });
 
     return {
+      kind: 'forecast',
       task,
       algorithm: algoName,
       fileName,

@@ -354,12 +354,13 @@ export class DataFilePreviewDialogComponent implements OnChanges, OnDestroy {
     this.request?.unsubscribe();
     this.preview.set(null);
     this.error.set('');
-    const versionId = this.file?.current_version_id;
+    const versionId = this.file?.current_version_id || this.file?.current_version?.id;
     if (
       !versionId ||
       ['pending', 'running', 'failed', 'unsupported'].includes(this.file?.profile_status || '')
     ) {
       this.loading.set(false);
+      if (!versionId && this.file) this.error.set('未找到可预览的文件版本。');
       return;
     }
     this.loading.set(true);
