@@ -740,6 +740,12 @@ export interface OperatorVersionSummary {
   algorithm: Record<string, unknown> | null;
   available: boolean;
   runtime_ready?: boolean;
+  /** Version lifecycle is independent from whether a runtime is currently online. */
+  lifecycle?: 'current' | 'deprecated' | 'blocked' | string;
+  runnable_with_defaults?: boolean;
+  unavailable_reasons?: string[];
+  default_release_id?: string | number | null;
+  default_model_version_id?: string | null;
 }
 
 export interface OperatorSummary {
@@ -755,7 +761,17 @@ export interface OperatorSummary {
   unavailable_reason: string | null;
   can_manage: boolean;
   tags?: Array<{ dimension: string; code: string; name: string }>;
+  /** Deprecated compatibility alias. New clients use default_version. */
   active_version: OperatorVersionSummary | null;
+  default_version?: OperatorVersionSummary | null;
+  installed?: boolean;
+  lifecycle?: 'current' | 'deprecated' | 'blocked' | string;
+  runtime_ready?: boolean;
+  runnable_with_defaults?: boolean;
+  unavailable_reasons?: string[];
+  default_parameters?: Record<string, unknown>;
+  default_release_id?: string | number | null;
+  default_model_version_id?: string | null;
   version_count: number;
   versions?: OperatorVersionSummary[];
 }

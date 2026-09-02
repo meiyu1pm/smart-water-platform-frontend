@@ -20,7 +20,10 @@ import type { DataFileBinding } from './workflow-editor.models';
 @Injectable()
 export class WorkflowEditorStore {
   readonly definitions = signal<Definition[]>([]);
-  readonly definitionByCode = computed(() => new Map(this.definitions().map((definition) => [definition.node_code, definition])));
+  /** Definitions are immutable resources, keyed by code@version rather than a mutable active pointer. */
+  readonly definitionByCode = computed(() => new Map(this.definitions().map((definition) => [`${definition.node_code}@${definition.version}`, definition])));
+  readonly defaultDefinitionByCode = computed(() => new Map(this.definitions().filter((definition) => definition.is_default !== false).map((definition) => [definition.node_code, definition])));
+  readonly missingDefinitionKeys = signal<string[]>([]);
   readonly nodes = signal<EditorNode[]>([]);
   readonly edges = signal<Edge[]>([]);
   readonly outputs = signal<Array<{ node_id: string; port: string }>>([]);
@@ -54,6 +57,11 @@ export class WorkflowEditorStore {
   );
 
   setDefinitions(value: Definition[]): void { this.definitions.set(value); }
+  addDefinitions(value: Definition[]): void {
+    const definitions = new Map(this.definitions().map((definition) => [`${definition.node_code}@${definition.version}`, definition]));
+    value.forEach((definition) => definitions.set(`${definition.node_code}@${definition.version}`, definition));
+    this.definitions.set([...definitions.values()]);
+  }
   setNodes(value: EditorNode[]): void { this.nodes.set(value); }
   setEdges(value: Edge[]): void { this.edges.set(value); }
   setOutputs(value: Array<{ node_id: string; port: string }>): void { this.outputs.set(value); }

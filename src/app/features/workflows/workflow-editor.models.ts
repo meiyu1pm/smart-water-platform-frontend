@@ -31,6 +31,10 @@ export interface Definition {
   executor_type?: string;
   composite_workflow_version_id?: number | null;
   composite_interface?: Record<string, unknown> | null;
+  /** True only for the catalogue's default version used when creating a node. */
+  is_default?: boolean;
+  default_release_id?: string | number | null;
+  default_model_version_id?: string | null;
 }
 
 export interface EditorNode {
@@ -41,6 +45,8 @@ export interface EditorNode {
   x: number;
   y: number;
   collapsed: boolean;
+  /** Frozen model choice. Kept outside parameters so a default-model change cannot alter this node. */
+  model_binding?: { model_version_id: string } | null;
   definition?: Definition;
 }
 
