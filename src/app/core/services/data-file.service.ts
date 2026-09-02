@@ -36,6 +36,16 @@ export class DataFileService {
     return this.api.post<DataCollectionSummary, typeof body>('/api/v1/data-collections', body);
   }
 
+  updateCollection(
+    collectionId: number,
+    body: { name?: string; description?: string | null },
+  ): Observable<DataCollectionSummary> {
+    return this.api.patch<DataCollectionSummary, typeof body>(
+      `/api/v1/data-collections/${collectionId}`,
+      body,
+    );
+  }
+
   deleteCollection(
     collectionId: number,
   ): Observable<{ collection_id: number; status: string; recycle_item_id?: number }> {
@@ -161,6 +171,12 @@ export class DataFileService {
     return this.api.delete<{ file_id: number; status: string; recycle_item_id?: number }>(
       `/api/v1/data-files/${fileId}`,
     );
+  }
+
+  renameFile(fileId: number, name: string): Observable<DataFileSummary> {
+    return this.api.patch<DataFileSummary, { name: string }>(`/api/v1/data-files/${fileId}`, {
+      name,
+    });
   }
 
   getFile(fileId: number): Observable<DataFileSummary> {

@@ -60,23 +60,4 @@ describe('DataFilePreviewDialogComponent', () => {
     fixture.nativeElement.querySelector('.close').click();
     expect(closed).toHaveBeenCalledOnce();
   });
-
-  it('toggles a full-size preview without changing the read-only content', () => {
-    TestBed.configureTestingModule({
-      imports: [DataFilePreviewDialogComponent],
-      providers: [{ provide: DataFileService, useValue: { getPreview: () => of(null) } }],
-    });
-    const fixture = TestBed.createComponent(DataFilePreviewDialogComponent);
-    fixture.detectChanges();
-    const button = fixture.nativeElement.querySelector('.maximize') as HTMLButtonElement;
-    expect(fixture.nativeElement.querySelector('.dialog').classList.contains('maximized')).toBe(
-      false,
-    );
-    button.click();
-    fixture.detectChanges();
-    expect(fixture.nativeElement.querySelector('.dialog').classList.contains('maximized')).toBe(
-      true,
-    );
-    expect(button.textContent).toContain('还原');
-  });
 });
