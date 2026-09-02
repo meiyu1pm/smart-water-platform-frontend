@@ -18,6 +18,7 @@ import { NotificationService } from '../../core/services/notification.service';
 import { TaskTrackingHandle, TaskTrackerService } from '../../core/services/task-tracker.service';
 import { OperatorNameService } from '../../core/services/operator-name.service';
 import { BeijingTimePipe } from '../../shared/pipes/beijing-time.pipe';
+import { C1AnomalyResultComponent } from './c1-anomaly-result.component';
 import { WorkflowArtifactRendererComponent } from './workflow-artifact-renderer.component';
 
 interface GraphNode {
@@ -36,6 +37,7 @@ interface GraphNode {
     MatCardModule,
     MatProgressBarModule,
     RouterLink,
+    C1AnomalyResultComponent,
     WorkflowArtifactRendererComponent,
   ],
   template: `
@@ -133,6 +135,8 @@ interface GraphNode {
               <h3>节点输出</h3>
               @if (!selectedArtifacts().length) {
                 <p class="muted">暂无输出。</p>
+              } @else if (node.node_code === 'water_adaptive_anomaly') {
+                <app-c1-anomaly-result [artifacts]="selectedArtifacts()" />
               } @else {
                 @for (item of selectedArtifacts(); track item.id) {
                   <div class="artifact-card">
