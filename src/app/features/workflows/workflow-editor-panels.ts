@@ -233,7 +233,7 @@ export class OperatorCatalogPanelComponent {
   groups(): Array<{ category: string; label: string; items: Definition[] }> {
     const term = this.search.trim().toLowerCase();
     const groups = new Map<string, Definition[]>();
-    for (const item of this.store.definitions()) {
+    for (const item of this.store.definitions().filter((definition) => definition.is_default !== false)) {
       if (term && !this.operatorNames.matches(item.node_code, item.node_name, term)) continue;
       groups.set(item.category, [...(groups.get(item.category) ?? []), item]);
     }
@@ -392,7 +392,7 @@ export class WorkflowCanvasPanelComponent implements AfterViewInit, OnDestroy {
   allowDrop(event: DragEvent): void { event.preventDefault(); }
   onCanvasDrop(event: DragEvent): void {
     event.preventDefault();
-    const definition = this.store.definitionByCode().get(event.dataTransfer?.getData('application/x-node-code') || '');
+    const definition = this.store.defaultDefinitionByCode().get(event.dataTransfer?.getData('application/x-node-code') || '');
     if (definition) void this.addNode(definition);
   }
   addNode(definition: Definition): void {
@@ -420,6 +420,15 @@ export class WorkflowCanvasPanelComponent implements AfterViewInit, OnDestroy {
         </header>
         <small>{{ node.node_code }} · {{ node.node_version }}</small>
         <p>{{ node.definition?.description }}</p>
+        <details class="version-control" (toggle)="loadNodeVersions(node, $event)">
+          <summary>高级：使用版本</summary>
+          <p class="muted">默认情况下新节点使用推荐版本；已有节点始终固定在这里显示的精确版本。</p>
+          <select [ngModel]="node.node_version" (ngModelChange)="changeNodeVersion(node, $event)">
+            @for (version of facade.versionsForNode(node); track version.version) {
+              <option [value]="version.version">{{ version.version }}{{ version.is_default ? ' · 默认' : '' }}</option>
+            }
+          </select>
+        </details>
         <h3>端口</h3>
         <div class="ports">
           @for (port of node.definition?.input_ports || []; track port.key) {
@@ -918,7 +927,7 @@ export class NodeInspectorPanelComponent implements OnDestroy {
       viewSummary: binding.view_summary || '',
     };
   });
-  private lastFetchedCode: string | null = null;
+  private lastFetchedModelScope: string | null = null;
   readonly selectedDataBinding = computed(() => {
     this.store.bindingRevision();
     const node = this.store.selectedNode();
@@ -940,17 +949,18 @@ export class NodeInspectorPanelComponent implements OnDestroy {
     effect(() => {
       const node = this.store.selectedNode();
       if (!node) {
-        this.lastFetchedCode = null;
+        this.lastFetchedModelScope = null;
         this.availableModels.set([]);
         return;
       }
       if (this.requiresModel(node)) {
-        if (this.lastFetchedCode !== node.node_code) {
-          this.lastFetchedCode = node.node_code;
-          this.loadModels(node.node_code);
+        const scope = this.modelScope(node);
+        if (this.lastFetchedModelScope !== scope.key) {
+          this.lastFetchedModelScope = scope.key;
+          this.loadModels(scope);
         }
       } else {
-        this.lastFetchedCode = null;
+        this.lastFetchedModelScope = null;
         this.availableModels.set([]);
       }
     });
@@ -1235,27 +1245,44 @@ export class NodeInspectorPanelComponent implements OnDestroy {
   }
 
   selectedModelId(node: EditorNode): string {
-    return String(node.parameters?.['model_version_id'] || '');
+    return String(node.model_binding?.model_version_id || node.parameters?.['model_version_id'] || '');
   }
 
   onModelChoiceChange(node: EditorNode, modelId: string): void {
     if (modelId === '__none__') {
-      this.facade.setParameter(node.id, 'model_version_id', '');
+      this.facade.setModelBinding(node.id, null);
     } else {
-      this.facade.setParameter(node.id, 'model_version_id', modelId);
+      this.facade.setModelBinding(node.id, modelId);
     }
   }
 
   onModelSelect(node: EditorNode, modelId: string): void {
-    this.facade.setParameter(node.id, 'model_version_id', modelId);
+    this.facade.setModelBinding(node.id, modelId);
+  }
+
+  loadNodeVersions(node: EditorNode, event: Event): void {
+    if ((event.target as HTMLDetailsElement).open) this.facade.loadVersionsForNode(node);
+  }
+
+  changeNodeVersion(node: EditorNode, version: string): void {
+    const definition = this.facade.versionsForNode(node).find((item) => item.version === version);
+    if (definition) this.facade.changeNodeVersion(node, definition);
   }
 
   removeNode(id: string): void { if (typeof window !== 'undefined' && !window.confirm('移除该节点并删除其连接？')) return; this.facade.removeNode(id); }
 
-  private loadModels(algorithmCode: string): void {
+  private modelScope(node: EditorNode): { key: string; algorithmCode: string; algorithmVersionId: string | null } {
+    const algorithm = node.definition?.algorithm as Record<string, unknown> | null | undefined;
+    const algorithmCode = String(algorithm?.['code'] || algorithm?.['algorithm_code'] || node.node_code);
+    const rawId = algorithm?.['algorithm_version_id'] ?? algorithm?.['id'] ?? null;
+    const algorithmVersionId = rawId === null || rawId === undefined || rawId === '' ? null : String(rawId);
+    return { key: algorithmVersionId ? `version:${algorithmVersionId}` : `code:${algorithmCode}`, algorithmCode, algorithmVersionId };
+  }
+
+  private loadModels(scope: { key: string; algorithmCode: string; algorithmVersionId: string | null }): void {
     this.loadingModels.set(true);
     this.api
-      .get<ModelVersionSummary[]>('/api/v1/model-versions', { algorithm_code: algorithmCode })
+      .get<ModelVersionSummary[]>('/api/v1/model-versions', scope.algorithmVersionId ? { algorithm_version_id: scope.algorithmVersionId } : { algorithm_code: scope.algorithmCode })
       .subscribe({
         next: (items) => {
           this.availableModels.set(items || []);

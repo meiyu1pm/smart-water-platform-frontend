@@ -9,14 +9,15 @@ import { Definition, Edge, EditorNode, Graph, StoredBinding } from './workflow-e
 export class WorkflowGraphSerializer {
   serialize(nodes: EditorNode[], edges: Edge[], outputs: Array<{ node_id: string; port: string }>, bindings?: Map<string, StoredBinding>): Graph {
     const validNodes = new Set(nodes.map((n) => n.id));
+    // Unknown historical definitions must round-trip unchanged. The server owns semantic validation.
     const safeEdges = this.sanitizeEdges(nodes, edges);
     const safeOutputs = outputs.filter((o) => {
       const node = nodes.find((n) => n.id === o.node_id);
-      return Boolean(node?.definition?.output_ports.some((p) => p.key === o.port));
+      return !node || !node.definition || node.definition.output_ports.some((p) => p.key === o.port);
     });
     const graph: Graph = {
       contract_version: '1.0',
-      nodes: nodes.filter((n) => validNodes.has(n.id)).map((n) => ({ id: n.id, node_code: n.node_code, node_version: n.node_version, parameters: this.safeParameters(n), ui: { position: { x: n.x, y: n.y }, collapsed: n.collapsed } })),
+      nodes: nodes.filter((n) => validNodes.has(n.id)).map((n) => ({ id: n.id, node_code: n.node_code, node_version: n.node_version, parameters: this.safeParameters(n), ...(n.model_binding?.model_version_id ? { model_binding: { model_version_id: n.model_binding.model_version_id } } : {}), ui: { position: { x: n.x, y: n.y }, collapsed: n.collapsed } })),
       edges: safeEdges,
       outputs: safeOutputs,
     };
@@ -26,11 +27,17 @@ export class WorkflowGraphSerializer {
   deserialize(graph: Graph, definitions: Map<string, Definition>): { nodes: EditorNode[]; edges: Edge[]; outputs: Array<{ node_id: string; port: string }>; bindings: Map<string, StoredBinding> } {
     const nodes = (graph.nodes ?? []).map((raw, index) => {
       const ui = ((raw['ui'] ?? {}) as Record<string, unknown>); const position = ((ui['position'] ?? {}) as Record<string, unknown>);
-      const definition = definitions.get(String(raw['node_code']));
-      return { id: String(raw['id']), node_code: String(raw['node_code']), node_version: String(raw['node_version']), parameters: (raw['parameters'] as Record<string, unknown>) ?? {}, x: Number(position['x'] ?? 34 + (index % 2) * 285), y: Number(position['y'] ?? 30 + Math.floor(index / 2) * 145), collapsed: Boolean(ui['collapsed'] ?? false), definition };
+      const nodeCode = String(raw['node_code']); const nodeVersion = String(raw['node_version']);
+      const definition = definitions.get(`${nodeCode}@${nodeVersion}`);
+      const parameters = { ...((raw['parameters'] as Record<string, unknown>) ?? {}) };
+      const rawBinding = raw['model_binding'] as Record<string, unknown> | undefined;
+      const modelVersionId = String(rawBinding?.['model_version_id'] ?? parameters['model_version_id'] ?? '');
+      // Legacy graphs carried the model inside parameters; normalize on the next successful save.
+      if (modelVersionId) delete parameters['model_version_id'];
+      return { id: String(raw['id']), node_code: nodeCode, node_version: nodeVersion, parameters, ...(modelVersionId ? { model_binding: { model_version_id: modelVersionId } } : {}), x: Number(position['x'] ?? 34 + (index % 2) * 285), y: Number(position['y'] ?? 30 + Math.floor(index / 2) * 145), collapsed: Boolean(ui['collapsed'] ?? false), definition };
     });
     const edges = this.sanitizeEdges(nodes, graph.edges ?? []);
-    const outputs = (graph.outputs ?? []).filter((o) => nodes.find((n) => n.id === o.node_id)?.definition?.output_ports.some((p) => p.key === o.port));
+    const outputs = (graph.outputs ?? []).filter((o) => { const node = nodes.find((n) => n.id === o.node_id); return Boolean(node && (!node.definition || node.definition.output_ports.some((p) => p.key === o.port))); });
     const bindings = new Map<string, StoredBinding>();
     for (const [id, value] of Object.entries(graph.bindings ?? {})) {
       const raw = value as unknown as Record<string, unknown>;
@@ -55,9 +62,11 @@ export class WorkflowGraphSerializer {
     for (const edge of edges) {
       const source = byId.get(edge.source?.node_id); const target = byId.get(edge.target?.node_id);
       const sourcePort = source?.definition?.output_ports.find((p) => p.key === edge.source?.port); const targetPort = target?.definition?.input_ports.find((p) => p.key === edge.target?.port);
-      if (!source || !target || !sourcePort || !targetPort || source.id === target.id) continue;
-      const key = `${source.id}:${sourcePort.key}->${target.id}:${targetPort.key}`; if (seen.has(key)) continue; seen.add(key);
-      result.push({ source: { node_id: source.id, port: sourcePort.key }, target: { node_id: target.id, port: targetPort.key } });
+      // Do not erase historical edges merely because the exact definition is not installed locally.
+      if (!source || !target || source.id === target.id) continue;
+      if ((source.definition && !sourcePort) || (target.definition && !targetPort)) continue;
+      const key = `${source.id}:${edge.source.port}->${target.id}:${edge.target.port}`; if (seen.has(key)) continue; seen.add(key);
+      result.push({ source: { node_id: source.id, port: edge.source.port }, target: { node_id: target.id, port: edge.target.port } });
     }
     return result;
   }

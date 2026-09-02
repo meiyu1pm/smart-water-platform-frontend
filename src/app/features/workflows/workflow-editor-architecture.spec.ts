@@ -220,6 +220,21 @@ describe('workflow editor architecture', () => {
     expect(store.outputs()).toEqual([{ node_id: 'a', port: 'out' }]);
   });
 
+  it('replaces a frozen model when switching to a different algorithm version', () => {
+    const store = new WorkflowEditorStore();
+    const commands = new WorkflowCommandBus(store);
+    const sourceDefinition: Definition = { ...source, algorithm: { code: 'seasonal_robust_anomaly', algorithm_version_id: 11 }, default_model_version_id: 'model-old' };
+    const targetDefinition: Definition = { ...source, version: '2.0.0', algorithm: { code: 'seasonal_robust_anomaly', algorithm_version_id: 12 }, default_model_version_id: 'model-new' };
+    const node = commands.addNode(sourceDefinition, { id: 'algorithm-node' });
+    expect(node.model_binding).toEqual({ model_version_id: 'model-old' });
+
+    commands.changeNodeVersion(node.id, targetDefinition);
+    expect(store.nodes()[0].model_binding).toEqual({ model_version_id: 'model-new' });
+
+    commands.undo();
+    expect(store.nodes()[0].model_binding).toEqual({ model_version_id: 'model-old' });
+  });
+
   it('keeps dataset bindings isolated from graph node parameters', () => {
     const store = new WorkflowEditorStore();
     const commands = new WorkflowCommandBus(store);
@@ -492,7 +507,7 @@ describe('workflow editor facade behavior', () => {
     confirm.mockRestore();
   });
 
-  it('drops connections whose node or port is no longer available', () => {
+  it('preserves connections for a missing historical definition', () => {
     const { facade, store } = configureFacadeTest(createWorkflowApi());
 
     facade.loadGraph({
@@ -515,8 +530,8 @@ describe('workflow editor facade behavior', () => {
       outputs: [],
     });
 
-    expect(facade.graph().edges).toEqual([]);
-    expect(store.message()).toContain('1 条无效连接');
+    expect(facade.graph().edges).toHaveLength(1);
+    expect(facade.graph().edges[0].target.node_id).toBe('retired-node');
   });
 
   it('opens a composite document only after the same node is picked twice quickly', () => {
@@ -670,7 +685,7 @@ describe('workflow editor workspace behavior', () => {
   });
 
   it('opens the exact composite version instead of the newer active catalog version', async () => {
-    configureWorkspaceTest(true);
+    configureWorkspaceTest();
     const fixture = TestBed.createComponent(WorkflowEditorWorkspacePage);
     fixture.detectChanges();
     await fixture.whenStable();
