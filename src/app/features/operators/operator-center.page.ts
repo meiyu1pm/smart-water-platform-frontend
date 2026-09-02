@@ -760,13 +760,48 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
               <div class="tab-body">
                 <h3>已登记算子版本</h3>
                 @for (item of operator.versions || []; track item.id) {
-                  <div class="version-row">
-                    <b>{{ item.version }}</b
-                    ><span>{{ item.status }} · {{ item.maturity }}</span
-                    ><span>{{ item.available ? '可用' : '不可用' }}</span>
-                  </div>
+                  <label
+                    class="version-row version-select-row"
+                    [class.selected]="selectedActivationVersion() === item.version"
+                    [class.current]="isActiveVersion(operator, item)"
+                    [class.disabled]="!canActivateVersion(item)"
+                  >
+                    <input
+                      type="radio"
+                      [name]="'operator-version-' + operator.code"
+                      [checked]="selectedActivationVersion() === item.version"
+                      [disabled]="!canActivateVersion(item)"
+                      (change)="selectedActivationVersion.set(item.version)"
+                    />
+                    <span class="version-identity">
+                      <b>{{ item.version }}</b>
+                      @if (isActiveVersion(operator, item)) {
+                        <small class="current-version-badge">当前启用</small>
+                      }
+                    </span>
+                    <span>{{ item.status }} · {{ item.maturity }}</span>
+                    <span [class.available-text]="item.available">
+                      {{ item.available ? '可用' : versionUnavailableReason(item) }}
+                    </span>
+                  </label>
                 } @empty {
                   <p class="muted">暂无版本记录。</p>
+                }
+                @if (operator.can_manage) {
+                  <div class="version-activation-actions">
+                    <div>
+                      <strong>工作流默认使用活动版本</strong>
+                      <p class="muted">切换只影响新拖入的节点；历史工作流仍保留原版本。</p>
+                    </div>
+                    <button
+                      class="primary"
+                      type="button"
+                      [disabled]="!canActivateSelectedVersion(operator) || activatingVersion()"
+                      (click)="activateSelectedVersion(operator)"
+                    >
+                      {{ activatingVersion() ? '正在启用…' : '启用所选版本' }}
+                    </button>
+                  </div>
                 }
                 @if (activeRelease(operator); as release) {
                   <div class="algorithm-ref">
@@ -1645,6 +1680,61 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
     .version-row b {
       color: #172033;
     }
+    .version-select-row {
+      grid-template-columns: auto minmax(140px, 0.9fr) minmax(150px, 1fr) minmax(180px, 1fr);
+      align-items: center;
+      cursor: pointer;
+      border: 1px solid transparent;
+      border-radius: 9px;
+      padding: 10px 12px;
+      transition: border-color 0.16s ease, background 0.16s ease;
+    }
+    .version-select-row:hover:not(.disabled),
+    .version-select-row.selected {
+      border-color: #93c5fd;
+      background: #f0f7ff;
+    }
+    .version-select-row.current {
+      background: #f0fdf4;
+    }
+    .version-select-row.disabled {
+      cursor: not-allowed;
+      opacity: 0.66;
+    }
+    .version-select-row input {
+      min-width: 0;
+      margin: 0;
+      accent-color: #0f67c9;
+    }
+    .version-identity {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .current-version-badge {
+      color: #087443;
+      background: #dcfae6;
+      border-radius: 999px;
+      padding: 2px 7px;
+      white-space: nowrap;
+    }
+    .available-text {
+      color: #087443;
+    }
+    .version-activation-actions {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 18px;
+      margin-top: 16px;
+      padding: 14px;
+      border: 1px solid #dbe7f5;
+      border-radius: 10px;
+      background: #f8fbff;
+    }
+    .version-activation-actions p {
+      margin: 4px 0 0;
+    }
     .usage-grid {
       display: grid;
       grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -1971,6 +2061,8 @@ export class OperatorCenterPage implements OnDestroy {
   readonly defaultParamsFormModel = signal<Record<string, unknown>>({});
   readonly defaultParamsValid = signal(true);
   readonly savingDefaults = signal(false);
+  readonly selectedActivationVersion = signal<string | null>(null);
+  readonly activatingVersion = signal(false);
   trainingSeasonality = 'auto';
   trainingMinimumCycles = 3;
   trainingMadFloor = 0.000001;
@@ -2033,6 +2125,7 @@ export class OperatorCenterPage implements OnDestroy {
             this.operators()[0] ||
             null;
           this.selected.set(target);
+          if (target) this.syncActivationSelection(target);
           if (target) {
             if (this.activeTab() === 'documents') this.loadDocuments(target);
             if (this.activeTab() === 'training') this.loadModels(target);
@@ -2084,6 +2177,7 @@ export class OperatorCenterPage implements OnDestroy {
     const selectionGeneration = ++this.selectionRequestGeneration;
     this.documentRequestGeneration += 1;
     this.selected.set(operator);
+    this.syncActivationSelection(operator);
     this.documents.set([]);
     this.documentMessage.set('');
     this.models.set([]);
@@ -2096,6 +2190,7 @@ export class OperatorCenterPage implements OnDestroy {
       next: (detail) => {
         if (selectionGeneration !== this.selectionRequestGeneration) return;
         this.selected.set(detail);
+        this.syncActivationSelection(detail, true);
         if (this.activeTab() === 'documents') this.loadDocuments(detail);
         if (this.activeTab() === 'training') this.loadModels(detail);
       },
@@ -2279,6 +2374,72 @@ export class OperatorCenterPage implements OnDestroy {
     if (!release || typeof release !== 'object') return null;
     const value = release as Record<string, unknown>;
     return { version: String(value['version'] || ''), status: String(value['status'] || '') };
+  }
+  isActiveVersion(operator: OperatorSummary, version: OperatorVersionSummary): boolean {
+    return (
+      operator.active_version?.id === version.id ||
+      operator.active_version?.version === version.version
+    );
+  }
+  canActivateVersion(version: OperatorVersionSummary): boolean {
+    return version.available && (version.status === 'ready' || version.status === 'active');
+  }
+  versionUnavailableReason(version: OperatorVersionSummary): string {
+    const algorithm = version.algorithm as Record<string, unknown> | null;
+    return String(algorithm?.['reason'] || '不可用');
+  }
+  canActivateSelectedVersion(operator: OperatorSummary): boolean {
+    const selected = this.selectedActivationVersion();
+    if (!selected || operator.active_version?.version === selected) return false;
+    const version = (operator.versions || []).find((item) => item.version === selected);
+    return Boolean(version && this.canActivateVersion(version));
+  }
+  activateSelectedVersion(operator: OperatorSummary): void {
+    const version = this.selectedActivationVersion();
+    if (!version || !this.canActivateSelectedVersion(operator) || this.activatingVersion()) return;
+    this.activatingVersion.set(true);
+    this.api
+      .post<OperatorVersionSummary, Record<string, never>>(
+        `/api/v1/operators/${encodeURIComponent(operator.code)}/versions/${encodeURIComponent(version)}/activate`,
+        {},
+      )
+      .subscribe({
+        next: () => {
+          this.activatingVersion.set(false);
+          this.notice.success(`算子 ${operator.name} 已启用版本 ${version}。`);
+          this.refreshOperatorDetail(operator.code);
+        },
+        error: (error) => {
+          this.activatingVersion.set(false);
+          const detail =
+            error?.error?.detail?.message || error?.message || '请检查版本状态和权限。';
+          this.notice.error(`启用版本失败：${detail}`);
+        },
+      });
+  }
+  private syncActivationSelection(operator: OperatorSummary, reset = false): void {
+    const versions = operator.versions || [];
+    const current = this.selectedActivationVersion();
+    if (!reset && current && versions.some((item) => item.version === current)) return;
+    const preferred =
+      [...versions]
+        .reverse()
+        .find((item) => this.canActivateVersion(item) && !this.isActiveVersion(operator, item)) ||
+      versions.find((item) => this.isActiveVersion(operator, item)) ||
+      null;
+    this.selectedActivationVersion.set(preferred?.version || null);
+  }
+  private refreshOperatorDetail(code: string): void {
+    this.api.get<OperatorSummary>(`/api/v1/operators/${encodeURIComponent(code)}`).subscribe({
+      next: (detail) => {
+        this.selected.set(detail);
+        this.syncActivationSelection(detail, true);
+        this.operators.update((items) =>
+          items.map((item) => (item.code === detail.code ? { ...item, ...detail } : item)),
+        );
+      },
+      error: () => this.notice.error('版本已更新，但算子详情刷新失败，请手动刷新页面。'),
+    });
   }
   algorithmCode(operator: OperatorSummary): string | null {
     return linkedAlgorithmCode(operator);
