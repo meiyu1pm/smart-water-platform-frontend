@@ -65,7 +65,6 @@ import { FengtaiWaterBalanceComponent } from './fengtai-water-balance.component'
           ></app-fengtai-water-balance>
         }
         @case ('candidate') {
-          <ng-content select="[fengtai-topology-slot]"></ng-content>
           <app-fengtai-candidates
             [candidates]="analysis?.candidates ?? []"
           ></app-fengtai-candidates>

@@ -132,12 +132,9 @@ import { fengtaiLabel, fengtaiMetricValue } from './fengtai-labels';
             [selectedCode]="selectedStageCode()"
             [analysis]="analysis()"
             [manifest]="manifest()"
-          >
-            <div
-              fengtai-topology-slot
-              class="topology-layout"
-              [class.detail-open]="!!selectedAsset()"
-            >
+          ></app-fengtai-stage-result>
+          @if (selectedStageCode() === 'network_candidates') {
+            <div class="topology-layout" [class.detail-open]="!!selectedAsset()">
               <section class="topology-panel">
                 @if (topologyLoading()) {
                   <div class="topology-status">
@@ -168,7 +165,7 @@ import { fengtaiLabel, fengtaiMetricValue } from './fengtai-labels';
                 ></app-fengtai-asset-detail>
               }
             </div>
-          </app-fengtai-stage-result>
+          }
         </section>
       }
     </main>
