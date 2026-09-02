@@ -532,9 +532,9 @@ export class FengtaiLeakagePage implements OnInit {
       .analyze({ start_date: this.startDate, end_date: this.endDate, preset: this.preset })
       .subscribe({
         next: (analysis) => {
+          this.analyzing.set(false);
           this.analysis.set(analysis);
           this.selectedStageCode.set('persistent_residual_ewma_cusum');
-          this.analyzing.set(false);
         },
         error: () => {
           this.analyzing.set(false);
