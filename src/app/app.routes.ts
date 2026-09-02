@@ -16,7 +16,7 @@ export const routes: Routes = [
       {
         path: 'quick-trial',
         loadComponent: () =>
-          import('./features/quick-trial/quick-trial.page').then((m) => m.QuickTrialPage),
+          import('./features/quick-trial/quick-trial-hub.page').then((m) => m.QuickTrialHubPage),
       },
       {
         path: 'dashboard',
