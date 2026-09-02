@@ -23,7 +23,7 @@ import { NotificationService } from '../../core/services/notification.service';
     <section class="login-page">
       <mat-card class="login-card">
         <div class="logo">SW</div>
-        <h1>{{ registering() ? '注册平台账号' : '智能水务算法管理平台' }}</h1>
+        <h1>{{ registering() ? '注册平台账号' : '智慧水务算法管理平台' }}</h1>
         <p>{{ registering() ? '注册后将获得数据上传和工作流使用权限。' : '使用平台账号登录。' }}</p>
         <form [formGroup]="form" (ngSubmit)="submit()">
           @if (registering()) {
