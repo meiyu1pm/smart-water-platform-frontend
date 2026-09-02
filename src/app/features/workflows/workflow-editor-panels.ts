@@ -927,7 +927,7 @@ export class NodeInspectorPanelComponent implements OnDestroy {
       viewSummary: binding.view_summary || '',
     };
   });
-  private lastFetchedCode: string | null = null;
+  private lastFetchedModelScope: string | null = null;
   readonly selectedDataBinding = computed(() => {
     this.store.bindingRevision();
     const node = this.store.selectedNode();
@@ -949,17 +949,18 @@ export class NodeInspectorPanelComponent implements OnDestroy {
     effect(() => {
       const node = this.store.selectedNode();
       if (!node) {
-        this.lastFetchedCode = null;
+        this.lastFetchedModelScope = null;
         this.availableModels.set([]);
         return;
       }
       if (this.requiresModel(node)) {
-        if (this.lastFetchedCode !== node.node_code) {
-          this.lastFetchedCode = node.node_code;
-          this.loadModels(node.node_code);
+        const scope = this.modelScope(node);
+        if (this.lastFetchedModelScope !== scope.key) {
+          this.lastFetchedModelScope = scope.key;
+          this.loadModels(scope);
         }
       } else {
-        this.lastFetchedCode = null;
+        this.lastFetchedModelScope = null;
         this.availableModels.set([]);
       }
     });
@@ -1270,10 +1271,18 @@ export class NodeInspectorPanelComponent implements OnDestroy {
 
   removeNode(id: string): void { if (typeof window !== 'undefined' && !window.confirm('移除该节点并删除其连接？')) return; this.facade.removeNode(id); }
 
-  private loadModels(algorithmCode: string): void {
+  private modelScope(node: EditorNode): { key: string; algorithmCode: string; algorithmVersionId: string | null } {
+    const algorithm = node.definition?.algorithm as Record<string, unknown> | null | undefined;
+    const algorithmCode = String(algorithm?.['code'] || algorithm?.['algorithm_code'] || node.node_code);
+    const rawId = algorithm?.['algorithm_version_id'] ?? algorithm?.['id'] ?? null;
+    const algorithmVersionId = rawId === null || rawId === undefined || rawId === '' ? null : String(rawId);
+    return { key: algorithmVersionId ? `version:${algorithmVersionId}` : `code:${algorithmCode}`, algorithmCode, algorithmVersionId };
+  }
+
+  private loadModels(scope: { key: string; algorithmCode: string; algorithmVersionId: string | null }): void {
     this.loadingModels.set(true);
     this.api
-      .get<ModelVersionSummary[]>('/api/v1/model-versions', { algorithm_code: algorithmCode })
+      .get<ModelVersionSummary[]>('/api/v1/model-versions', scope.algorithmVersionId ? { algorithm_version_id: scope.algorithmVersionId } : { algorithm_code: scope.algorithmCode })
       .subscribe({
         next: (items) => {
           this.availableModels.set(items || []);

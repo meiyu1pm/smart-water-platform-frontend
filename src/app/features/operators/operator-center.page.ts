@@ -707,19 +707,6 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
                                   基线详情
                                 </button>
                                 @if (
-                                  auth.hasPermission('algorithm:publish') &&
-                                  !model.is_default &&
-                                  model.status === 'ready'
-                                ) {
-                                  <button
-                                    class="secondary btn-xs"
-                                    type="button"
-                                    (click)="setDefaultModel(operator, model)"
-                                  >
-                                    设为算子默认
-                                  </button>
-                                }
-                                @if (
                                   auth.user()?.id === model.owner_user_id ||
                                   auth.hasPermission('admin')
                                 ) {
@@ -2170,8 +2157,10 @@ export class OperatorCenterPage implements OnDestroy {
       return;
     }
     this.loadingModels.set(true);
+    const algorithm = operator.active_version?.algorithm as Record<string, unknown> | null | undefined;
+    const rawVersionId = algorithm?.['algorithm_version_id'] ?? algorithm?.['id'] ?? null;
     this.api
-      .get<ModelVersionSummary[]>('/api/v1/model-versions', { algorithm_code: code })
+      .get<ModelVersionSummary[]>('/api/v1/model-versions', rawVersionId === null || rawVersionId === undefined || rawVersionId === '' ? { algorithm_code: code } : { algorithm_version_id: String(rawVersionId) })
       .subscribe({
         next: (items) => {
           this.models.set(items || []);
@@ -2181,23 +2170,6 @@ export class OperatorCenterPage implements OnDestroy {
           this.models.set([]);
           this.loadingModels.set(false);
         },
-      });
-  }
-  setDefaultModel(operator: OperatorSummary, model: ModelVersionSummary): void {
-    const code = this.algorithmCode(operator);
-    if (!code) return;
-    this.api
-      .post<Record<string, unknown>, { model_version_id: string }>(
-        `/api/v1/algorithms/${code}/default-model`,
-        { model_version_id: model.model_version_id },
-      )
-      .subscribe({
-        next: () => {
-          this.notice.success(`已将 ${model.version} 设为算子默认模型`);
-          this.loadModels(operator);
-          this.select(operator);
-        },
-        error: () => this.notice.error('设为默认模型失败，请检查权限。'),
       });
   }
   toggleVisibility(operator: OperatorSummary, model: ModelVersionSummary): void {
