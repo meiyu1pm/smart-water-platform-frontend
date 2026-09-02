@@ -2307,23 +2307,23 @@ export class OperatorCenterPage implements OnDestroy {
     this.trainingBusy.set(true);
     this.trainingSuccess.set(false);
     this.trainingMessage.set('正在创建并调度训练任务…');
+    const exactVersion = operator.active_version?.version;
+    const trainingPath = `/api/v1/algorithms/${algorithmCode}/training-runs${
+      exactVersion ? `?algorithm_version=${encodeURIComponent(exactVersion)}` : ''
+    }`;
     this.api
-      .post<Record<string, unknown>, Record<string, unknown>>(
-        `/api/v1/algorithms/${algorithmCode}/training-runs`,
-        {
-          dataset_version_id: selection.version.id,
-          algorithm_version: operator.active_version?.version,
-          monitor_point_id: selection.channel?.monitor_point_id ?? null,
-          metric_code: selection.channel?.metric_code || 'flow',
-          value_source: selection.value_source,
-          training_params: {
-            seasonality: this.trainingSeasonality,
-            minimum_cycles: Number(this.trainingMinimumCycles),
-            mad_floor: Number(this.trainingMadFloor),
-          },
-          random_seed: 42,
+      .post<Record<string, unknown>, Record<string, unknown>>(trainingPath, {
+        dataset_version_id: selection.version.id,
+        monitor_point_id: selection.channel?.monitor_point_id ?? null,
+        metric_code: selection.channel?.metric_code || 'flow',
+        value_source: selection.value_source,
+        training_params: {
+          seasonality: this.trainingSeasonality,
+          minimum_cycles: Number(this.trainingMinimumCycles),
+          mad_floor: Number(this.trainingMadFloor),
         },
-      )
+        random_seed: 42,
+      })
       .subscribe({
         next: (run) => {
           const runId = String(run['training_run_id'] || run['task_id'] || '');
