@@ -16,7 +16,6 @@ import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatProgressBarModule } from '@angular/material/progress-bar';
 import { MatSelectModule } from '@angular/material/select';
-import { forkJoin } from 'rxjs';
 
 import { AuthService } from '../../../core/services/auth.service';
 import { FengtaiAnalysisChartComponent } from './fengtai-analysis-chart.component';
@@ -143,10 +142,23 @@ import { fengtaiLabel, fengtaiValue } from './fengtai-labels';
               [series]="analysis()?.series"
               [anomalies]="analysis()?.anomalies"
             ></app-fengtai-analysis-chart>
-            <app-fengtai-topology
-              [topology]="topology() ?? undefined"
-              [candidates]="analysis()?.candidates ?? []"
-            ></app-fengtai-topology>
+            <section class="topology-panel">
+              @if (topologyLoading()) {
+                <div class="topology-status">
+                  <mat-spinner diameter="24"></mat-spinner><span>正在加载管网概览…</span>
+                </div>
+              } @else if (topologyError()) {
+                <div class="topology-status topology-warning">
+                  <span>{{ topologyError() }}</span>
+                  <button mat-button type="button" (click)="loadTopology()">重新加载</button>
+                </div>
+              } @else {
+                <app-fengtai-topology
+                  [topology]="topology() ?? undefined"
+                  [candidates]="analysis()?.candidates ?? []"
+                ></app-fengtai-topology>
+              }
+            </section>
             <app-fengtai-simulation
               [valves]="valves()"
               [running]="simulating()"
@@ -368,6 +380,22 @@ import { fengtaiLabel, fengtaiValue } from './fengtai-labels';
       padding: 12px;
       background: #fff;
     }
+    .topology-panel {
+      min-height: 326px;
+    }
+    .topology-status {
+      min-height: 300px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      color: #64748b;
+      font-size: 13px;
+    }
+    .topology-warning {
+      flex-direction: column;
+      color: #9a3412;
+    }
     aside > * {
       min-width: 0;
     }
@@ -416,6 +444,8 @@ export class FengtaiLeakagePage implements OnInit {
   readonly analysis = signal<import('./fengtai-leakage.models').FengtaiAnalysis | null>(null);
   readonly simulation = signal<FengtaiSimulation | null>(null);
   readonly initialLoading = signal(true);
+  readonly topologyLoading = signal(true);
+  readonly topologyError = signal('');
   readonly analyzing = signal(false);
   readonly simulating = signal(false);
   readonly error = signal('');
@@ -479,19 +509,30 @@ export class FengtaiLeakagePage implements OnInit {
   loadInitial(): void {
     this.initialLoading.set(true);
     this.error.set('');
-    forkJoin({
-      manifest: this.service.getManifest(),
-      topology: this.service.getTopology(),
-    }).subscribe({
-      next: ({ manifest, topology }) => {
+    this.loadTopology();
+    this.service.getManifest().subscribe({
+      next: (manifest) => {
         this.manifest.set(manifest);
-        this.topology.set(topology);
         this.applyManifestWindow(manifest);
         this.initialLoading.set(false);
       },
       error: () => {
         this.initialLoading.set(false);
         this.error.set('暂时无法加载试用范围，请稍后重试。');
+      },
+    });
+  }
+  loadTopology(): void {
+    this.topologyLoading.set(true);
+    this.topologyError.set('');
+    this.service.getTopology().subscribe({
+      next: (topology) => {
+        this.topology.set(topology);
+        this.topologyLoading.set(false);
+      },
+      error: () => {
+        this.topologyLoading.set(false);
+        this.topologyError.set('管网概览暂时未能加载，其他分析功能仍可使用。');
       },
     });
   }
