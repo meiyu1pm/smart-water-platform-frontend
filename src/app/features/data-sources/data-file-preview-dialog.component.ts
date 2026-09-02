@@ -27,7 +27,6 @@ import { DataFileService } from '../../core/services/data-file.service';
         role="dialog"
         aria-modal="true"
         aria-labelledby="data-file-preview-title"
-        [class.maximized]="maximized()"
         (click)="$event.stopPropagation()"
       >
         <header class="dialog-header">
@@ -36,14 +35,6 @@ import { DataFileService } from '../../core/services/data-file.service';
             <h2 id="data-file-preview-title">{{ file?.name || '文件预览' }}</h2>
           </div>
           <div class="dialog-actions">
-            <button
-              type="button"
-              class="maximize"
-              [attr.aria-label]="maximized() ? '还原预览大小' : '最大化预览'"
-              (click)="maximized.set(!maximized())"
-            >
-              {{ maximized() ? '还原' : '最大化' }}
-            </button>
             <button type="button" class="close" aria-label="关闭预览" (click)="close.emit()">
               ×
             </button>
@@ -57,23 +48,13 @@ import { DataFileService } from '../../core/services/data-file.service';
               <dd>{{ (currentFile.format || '未知').toUpperCase() }}</dd>
             </div>
             <div>
-              <dt>大小</dt>
+              <dt>上传时间</dt>
+              <dd>{{ formatDateTime(currentFile.created_at) }}</dd>
+            </div>
+            <div>
+              <dt>文件大小</dt>
               <dd>{{ formatBytes(currentFile.size_bytes) }}</dd>
             </div>
-            <div>
-              <dt>版本</dt>
-              <dd>{{ currentFile.version_count }}</dd>
-            </div>
-            <div>
-              <dt>状态</dt>
-              <dd>{{ statusLabel(currentFile) }}</dd>
-            </div>
-            @if (currentFile.current_version?.sha256) {
-              <div class="hash">
-                <dt>SHA256</dt>
-                <dd>{{ currentFile.current_version?.sha256 }}</dd>
-              </div>
-            }
           </dl>
         }
 
@@ -86,7 +67,7 @@ import { DataFileService } from '../../core/services/data-file.service';
         } @else if (blockedPreviewMessage(); as message) {
           <p class="state">{{ message }}</p>
         } @else if (preview(); as value) {
-          <div class="table-wrap">
+          <div class="table-wrap" aria-label="可横向滚动的数据预览表格">
             <table>
               <thead>
                 <tr>
@@ -142,12 +123,6 @@ import { DataFileService } from '../../core/services/data-file.service';
       background: #fff;
       box-shadow: 0 24px 70px rgb(15 23 42 / 24%);
     }
-    .dialog.maximized {
-      width: 100%;
-      max-height: 100%;
-      height: 100%;
-      border-radius: 0;
-    }
     .dialog-header {
       display: flex;
       align-items: flex-start;
@@ -181,21 +156,6 @@ import { DataFileService } from '../../core/services/data-file.service';
       align-items: center;
       gap: 8px;
     }
-    .maximize {
-      min-height: 32px;
-      padding: 0 9px;
-      border: 1px solid #cbd5e1;
-      border-radius: 7px;
-      background: #fff;
-      color: #334155;
-      font-size: 12px;
-      cursor: pointer;
-    }
-    .maximize:hover,
-    .maximize:focus-visible {
-      background: #f8fafc;
-      outline: 2px solid #93c5fd;
-    }
     .close:hover,
     .close:focus-visible {
       background: #e2e8f0;
@@ -217,9 +177,6 @@ import { DataFileService } from '../../core/services/data-file.service';
       gap: 5px;
       min-width: 110px;
     }
-    .metadata .hash {
-      flex: 1 1 100%;
-    }
     dt {
       color: #64748b;
     }
@@ -230,18 +187,35 @@ import { DataFileService } from '../../core/services/data-file.service';
       overflow-wrap: anywhere;
     }
     .table-wrap {
+      width: 100%;
+      height: min(52vh, 600px);
       min-height: 0;
-      max-height: 52vh;
-      overflow: auto;
+      min-width: 0;
+      overflow-x: scroll;
+      overflow-y: auto;
+      scrollbar-gutter: stable;
       border: 1px solid #cbd5e1;
       border-radius: 8px;
     }
-    .dialog.maximized .table-wrap {
-      max-height: calc(100vh - 220px);
+    .table-wrap::-webkit-scrollbar {
+      width: 10px;
+      height: 10px;
+    }
+    .table-wrap::-webkit-scrollbar-track {
+      border-radius: 8px;
+      background: #f1f5f9;
+    }
+    .table-wrap::-webkit-scrollbar-thumb {
+      border: 2px solid #f1f5f9;
+      border-radius: 8px;
+      background: #94a3b8;
+    }
+    .table-wrap::-webkit-scrollbar-thumb:hover {
+      background: #64748b;
     }
     table {
       width: max-content;
-      min-width: 100%;
+      min-width: max(1200px, 120%);
       border-collapse: separate;
       border-spacing: 0;
       font-size: 12px;
@@ -256,6 +230,7 @@ import { DataFileService } from '../../core/services/data-file.service';
       color: #0f172a;
       text-align: left;
       white-space: nowrap;
+      min-width: 140px;
     }
     td {
       max-width: 260px;
@@ -306,7 +281,6 @@ export class DataFilePreviewDialogComponent implements OnChanges, OnDestroy {
   readonly preview = signal<DataFilePreview | null>(null);
   readonly loading = signal(false);
   readonly error = signal('');
-  readonly maximized = signal(false);
 
   ngOnChanges(changes: SimpleChanges): void {
     if ('file' in changes) this.load();
@@ -328,12 +302,19 @@ export class DataFilePreviewDialogComponent implements OnChanges, OnDestroy {
     return `${(value / 1024 / 1024 / 1024).toFixed(1)} GB`;
   }
 
-  statusLabel(file: DataFileSummary): string {
-    if (file.profile_status === 'pending' || file.profile_status === 'running') return '解析中';
-    if (file.profile_status === 'failed') return '解析失败';
-    if (file.profile_status === 'unsupported') return '格式不支持';
-    if (file.profile_status === 'ready' || file.status === 'ready') return '可用';
-    return file.status || '处理中';
+  formatDateTime(value: string | null | undefined): string {
+    if (!value) return '暂无上传时间';
+    const date = new Date(value);
+    if (!Number.isFinite(date.getTime())) return '上传时间未知';
+    return date.toLocaleString('zh-CN', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false,
+    });
   }
 
   previewSummary(value: DataFilePreview): string {

@@ -13,7 +13,7 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatCardModule } from '@angular/material/card';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
-import { EMPTY, Observable, Subscription, interval, of } from 'rxjs';
+import { EMPTY, Observable, Subscription, forkJoin, interval, of } from 'rxjs';
 import { exhaustMap } from 'rxjs/operators';
 
 import {
@@ -37,6 +37,8 @@ type ExplorerEntry = DataFileExplorerItem & {
   collection?: DataFileExplorerFolder | null;
 };
 type MenuState = { x: number; y: number; entry: ExplorerEntry | null };
+type EditingResource =
+  { kind: 'collection'; id: number } | { kind: 'file'; id: number; collectionId: number };
 
 /** File-resource manager for heterogeneous data files. */
 @Component({
@@ -57,227 +59,669 @@ type MenuState = { x: number; y: number; entry: ExplorerEntry | null };
     <header class="page-head">
       <div>
         <p class="eyebrow">数据中心</p>
-        <h1>数据文件</h1>
-        <p>像管理文件一样组织数据资源；双击文件可打开只读预览。</p>
-      </div>
-      <div class="actions">
-        <button mat-stroked-button type="button" (click)="loadExplorer()">刷新</button>
-        @if (canCreateCollection()) {
-          <button
-            mat-flat-button
-            color="primary"
-            type="button"
-            (click)="showCreate.set(!showCreate())"
-          >
-            新建数据集
-          </button>
-        }
+        <h1>数据集管理</h1>
+        <p>管理数据集，并在进入数据集后查看和整理其中的文件。</p>
       </div>
     </header>
 
-    <section class="stat-grid" aria-label="数据文件统计">
-      <mat-card
-        ><span>数据集</span><strong>{{ collections().length }}</strong></mat-card
-      >
-      <mat-card
-        ><span>当前目录文件</span><strong>{{ visibleFiles().length }}</strong></mat-card
-      >
-      <mat-card
-        ><span>当前容量</span><strong>{{ formatBytes(totalBytes()) }}</strong></mat-card
-      >
-      <mat-card
-        ><span>已选择</span><strong>{{ selectedIds().size }}</strong></mat-card
-      >
-    </section>
+    @if (currentParentId() === null) {
+      <section class="stat-grid" aria-label="数据集统计">
+        <mat-card class="stat-card">
+          <span>数据集</span>
+          <strong>{{ statsCollections().length }}</strong>
+          <small class="stat-monthly">+{{ newDatasetsThisMonth() }} 本月新增</small>
+        </mat-card>
+        <mat-card class="stat-card">
+          <span>数据文件</span>
+          <strong>{{ totalDatasetFiles() }}</strong>
+          <small class="stat-monthly"
+            >+{{ monthlyNewFiles() === null ? '—' : monthlyNewFiles() }} 本月新增</small
+          >
+        </mat-card>
+        <mat-card class="stat-card">
+          <span>存储用量</span>
+          <strong>{{ formatBytes(totalDatasetStorage()) }}</strong>
+          <small>数据集文件总容量</small>
+        </mat-card>
+      </section>
+    }
 
     @if (showCreate() && canCreateCollection()) {
-      <mat-card class="create-card"
-        ><h2>新建数据集</h2>
-        <div class="create-row">
-          <mat-form-field appearance="outline"
-            ><mat-label>名称</mat-label><input matInput [(ngModel)]="newName"
-          /></mat-form-field>
-          <mat-form-field appearance="outline"
-            ><mat-label>说明（可选）</mat-label><input matInput [(ngModel)]="newDescription"
-          /></mat-form-field>
-          <button
-            mat-flat-button
-            color="primary"
-            type="button"
-            [disabled]="!newName.trim() || creating()"
-            (click)="createCollection()"
-          >
-            {{ creating() ? '正在创建…' : '创建' }}
-          </button>
-        </div></mat-card
-      >
+      <div class="dialog-backdrop" role="presentation" (click)="closeCreate()">
+        <section
+          class="create-dialog"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="create-dialog-title"
+          (click)="$event.stopPropagation()"
+        >
+          <div class="dialog-header">
+            <div>
+              <p class="eyebrow">数据中心</p>
+              <h2 id="create-dialog-title">新建数据集</h2>
+              <p>先创建一个数据集，再决定现在上传文件还是稍后整理。</p>
+            </div>
+            <button
+              class="dialog-close"
+              type="button"
+              aria-label="关闭"
+              [disabled]="creating()"
+              (click)="closeCreate()"
+            >
+              ×
+            </button>
+          </div>
+
+          <div class="create-dialog-body">
+            <div class="create-basic">
+              <mat-form-field appearance="outline">
+                <mat-label>数据集名称</mat-label>
+                <input matInput [(ngModel)]="newName" placeholder="例如：2024年夏季水质数据" />
+              </mat-form-field>
+              <mat-form-field appearance="outline">
+                <mat-label>说明或简介（可选）</mat-label>
+                <textarea
+                  matInput
+                  rows="5"
+                  [(ngModel)]="newDescription"
+                  placeholder="简单描述这组数据的来源或用途"
+                ></textarea>
+              </mat-form-field>
+            </div>
+
+            <div class="create-choice">
+              <div class="choice-label">接下来要做什么？</div>
+              <button
+                type="button"
+                class="choice-card"
+                [class.selected]="createMode() === 'upload'"
+                [disabled]="!canUploadFile()"
+                (click)="createMode.set('upload')"
+              >
+                <span class="choice-radio" aria-hidden="true"></span>
+                <span>
+                  <strong>立即上传文件</strong>
+                  <small>{{
+                    canUploadFile()
+                      ? '创建数据集后，马上选择一个文件上传。'
+                      : '当前账号没有上传文件权限。'
+                  }}</small>
+                </span>
+              </button>
+              @if (createMode() === 'upload') {
+                <label class="dialog-file-picker">
+                  <span>{{ createFile()?.name || '选择要上传的文件' }}</span>
+                  <small>支持的数据文件格式与文件管理中的上传保持一致。</small>
+                  <input type="file" (change)="chooseCreateFile($event)" />
+                </label>
+              }
+              <button
+                type="button"
+                class="choice-card"
+                [class.selected]="createMode() === 'directory'"
+                (click)="createMode.set('directory')"
+              >
+                <span class="choice-radio" aria-hidden="true"></span>
+                <span>
+                  <strong>仅创建一个目录</strong>
+                  <small>先建立数据集目录，之后在目录管理中上传文件。</small>
+                </span>
+              </button>
+            </div>
+          </div>
+
+          <div class="dialog-footer">
+            <span class="dialog-hint">
+              @if (createMode() === 'upload' && !createFile()) {
+                请选择文件后再创建
+              } @else {
+                创建后可以继续在目录中管理文件
+              }
+            </span>
+            <div class="dialog-actions">
+              <button mat-button type="button" [disabled]="creating()" (click)="closeCreate()">
+                取消
+              </button>
+              <button
+                mat-flat-button
+                color="primary"
+                type="button"
+                [disabled]="!canSubmitCreate()"
+                (click)="createCollection()"
+              >
+                {{ creating() ? '正在创建…' : '创建数据集' }}
+              </button>
+            </div>
+          </div>
+        </section>
+      </div>
+    }
+
+    @if (editingResource(); as resource) {
+      <div class="dialog-backdrop" role="presentation" (click)="closeEditor()">
+        <section
+          class="create-dialog edit-dialog"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="edit-dialog-title"
+          (click)="$event.stopPropagation()"
+        >
+          <div class="dialog-header">
+            <div>
+              <p class="eyebrow">数据管理</p>
+              <h2 id="edit-dialog-title">
+                编辑{{ resource.kind === 'collection' ? '数据集' : '数据表' }}
+              </h2>
+              <p>
+                修改后会同步更新列表中的名称{{ resource.kind === 'collection' ? '和简介' : '' }}。
+              </p>
+            </div>
+            <button
+              class="dialog-close"
+              type="button"
+              aria-label="关闭"
+              [disabled]="editingSaving()"
+              (click)="closeEditor()"
+            >
+              ×
+            </button>
+          </div>
+          <div class="edit-dialog-body">
+            <mat-form-field appearance="outline">
+              <mat-label>{{
+                resource.kind === 'collection' ? '数据集名称' : '数据表名称'
+              }}</mat-label>
+              <input matInput [(ngModel)]="editName" />
+            </mat-form-field>
+            @if (resource.kind === 'collection') {
+              <mat-form-field appearance="outline">
+                <mat-label>说明或简介（可选）</mat-label>
+                <textarea matInput rows="5" [(ngModel)]="editDescription"></textarea>
+              </mat-form-field>
+            }
+          </div>
+          <div class="dialog-footer">
+            <span class="dialog-hint">{{ editingSaving() ? '正在保存…' : '名称不能为空' }}</span>
+            <div class="dialog-actions">
+              <button mat-button type="button" [disabled]="editingSaving()" (click)="closeEditor()">
+                取消
+              </button>
+              <button
+                mat-flat-button
+                color="primary"
+                type="button"
+                [disabled]="!canSubmitEdit()"
+                (click)="saveEdit()"
+              >
+                {{ editingSaving() ? '保存中…' : '保存修改' }}
+              </button>
+            </div>
+          </div>
+        </section>
+      </div>
+    }
+
+    @if (uploadCollectionTarget(); as collection) {
+      <div class="dialog-backdrop" role="presentation" (click)="closeUploadDialog()">
+        <section
+          class="create-dialog upload-dialog"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="upload-dialog-title"
+          (click)="$event.stopPropagation()"
+        >
+          <div class="dialog-header">
+            <div>
+              <p class="eyebrow">数据中心</p>
+              <h2 id="upload-dialog-title">新增数据表</h2>
+              <p>上传一个文件，将它添加到当前数据集。</p>
+            </div>
+            <button
+              class="dialog-close"
+              type="button"
+              aria-label="关闭"
+              [disabled]="uploadingToCollection()"
+              (click)="closeUploadDialog()"
+            >
+              ×
+            </button>
+          </div>
+          <div class="upload-dialog-body">
+            <div class="upload-target">
+              <span>目标数据集</span>
+              <strong>{{ collection.name }}</strong>
+              @if (collection.description?.trim()) {
+                <small>{{ collection.description }}</small>
+              }
+            </div>
+            <label class="dialog-file-picker">
+              <span>
+                {{
+                  uploadSelectedFiles().length
+                    ? '已选择 ' + uploadSelectedFiles().length + ' 个文件'
+                    : '选择要上传的文件'
+                }}
+              </span>
+              <small>
+                {{
+                  uploadSelectedFiles().length
+                    ? uploadFileNames()
+                    : '可一次选择多个文件，文件上传后会作为该数据集中的数据表。'
+                }}
+              </small>
+              <input type="file" multiple (change)="chooseUploadFiles($event)" />
+            </label>
+          </div>
+          <div class="dialog-footer">
+            <span class="dialog-hint">
+              {{ uploadingToCollection() ? '正在上传…' : '请选择一个或多个文件后上传' }}
+            </span>
+            <div class="dialog-actions">
+              <button
+                mat-button
+                type="button"
+                [disabled]="uploadingToCollection()"
+                (click)="closeUploadDialog()"
+              >
+                取消
+              </button>
+              <button
+                mat-flat-button
+                color="primary"
+                type="button"
+                [disabled]="!canSubmitUpload()"
+                (click)="submitUpload()"
+              >
+                {{ uploadingToCollection() ? '上传中…' : '开始上传' }}
+              </button>
+            </div>
+          </div>
+        </section>
+      </div>
     }
 
     <mat-card class="explorer-card" (contextmenu)="openBlankMenu($event)">
-      <div class="explorer-toolbar">
-        <div class="toolbar-copy">
-          <strong>文件资源管理器</strong
-          ><small>{{
-            selectedIds().size
-              ? '已选择 ' + selectedIds().size + ' 项'
-              : '单击选择 · Ctrl/Shift 多选 · Ctrl+C/V 复制'
-          }}</small>
-        </div>
-        <mat-form-field appearance="outline" class="search-field"
-          ><mat-label>搜索当前目录</mat-label
-          ><input matInput [ngModel]="search()" (ngModelChange)="searchChanged($event)"
-        /></mat-form-field>
-      </div>
-      <div class="explorer-layout" cdkDropListGroup>
-        <nav class="side-nav" aria-label="数据文件目录">
-          <button
-            class="nav-entry root"
-            [class.active]="currentParentId() === null"
-            type="button"
-            (click)="navigate(null)"
-          >
-            ⌂ <span>根目录</span>
-          </button>
-          <button
-            class="nav-entry unassigned"
-            [class.active]="currentParentId() === UNASSIGNED"
-            type="button"
-            cdkDropList
-            [cdkDropListData]="UNASSIGNED"
-            (cdkDropListDropped)="dropToFolder($event, UNASSIGNED)"
-            (click)="navigate(UNASSIGNED)"
-          >
-            ▱ <span>无归属</span>
-          </button>
-          <div class="nav-caption">数据集</div>
-          @for (folder of rootFolders(); track folder.id) {
-            <button
-              class="nav-entry"
-              [class.active]="currentParentId() === folder.id"
-              [attr.title]="folder.description || folder.name"
-              type="button"
-              cdkDropList
-              [cdkDropListData]="folder.id"
-              (cdkDropListDropped)="dropToFolder($event, folder.id)"
-              (click)="navigate(folder.id)"
-            >
-              <span class="folder-icon">▰</span><span>{{ folder.name }}</span
-              ><small>{{ folder.file_count }}</small>
-            </button>
-          }
-          @if (!rootFolders().length) {
-            <p class="nav-empty">暂无数据集</p>
-          }
-        </nav>
-
-        <main class="file-pane" aria-label="文件内容">
-          <div class="breadcrumbs">
-            @for (crumb of breadcrumbs(); track crumb.id ?? 'root') {
-              <button type="button" (click)="navigate(crumb.id)">{{ crumb.name }}</button
-              ><span>/</span>
-            }
-          </div>
-          <div class="pane-toolbar">
-            <span>{{
-              currentParentId() === UNASSIGNED
-                ? '无归属文件'
-                : currentParentId() === null
-                  ? '根目录'
-                  : currentFolderName()
-            }}</span>
-            <span class="selection-actions">
-              @if (selectedIds().size) {
-                <button type="button" (click)="clearSelection()">取消选择</button>
-              }
-              @if (canUploadFile()) {
-                <label class="upload-button"
-                  >上传文件<input type="file" (change)="uploadIntoCurrent($event)"
-                /></label>
-              }
-            </span>
-          </div>
-          <input
-            #contextUploadPicker
-            class="visually-hidden"
-            type="file"
-            aria-label="上传文件"
-            (change)="uploadIntoCurrent($event)"
-          />
-          @if (currentParentId() !== null && total() > pageSize()) {
-            <div class="pagination" aria-label="文件分页">
-              <button type="button" [disabled]="page() <= 1" (click)="goToPage(page() - 1)">
-                上一页
-              </button>
-              <span>第 {{ page() }} / {{ totalPages() }} 页 · 共 {{ total() }} 项</span>
-              <button
-                type="button"
-                [disabled]="page() >= totalPages()"
-                (click)="goToPage(page() + 1)"
-              >
-                下一页
-              </button>
-            </div>
-          }
-          @if (loading()) {
-            <p class="state">正在读取资源…</p>
-          } @else if (errorMessage()) {
-            <p class="state error" role="alert">{{ errorMessage() }}</p>
-          } @else {
-            <div
-              class="file-grid"
-              cdkDropList
-              [cdkDropListData]="currentParentId()"
-              (cdkDropListDropped)="dropToCurrent($event)"
-              (click)="clearSelection()"
-              (contextmenu)="openBlankMenu($event)"
-              role="listbox"
-              aria-label="当前目录文件"
-            >
-              @for (entry of filteredEntries(); track entry.kind + ':' + entry.id) {
-                <article
-                  class="file-tile"
-                  [class.selected]="isSelected(entry)"
-                  [class.folder-tile]="isFolder(entry)"
-                  role="option"
-                  [attr.aria-selected]="isSelected(entry)"
-                  tabindex="0"
-                  cdkDrag
-                  [cdkDragData]="entry"
-                  (cdkDragStarted)="dragStarted($event)"
-                  (pointerdown)="rememberDragModifier($event)"
-                  (click)="selectEntry(entry, $event)"
-                  (dblclick)="activateEntry(entry)"
-                  (contextmenu)="openEntryMenu($event, entry)"
+      @if (currentParentId() === null) {
+        <div class="dataset-table-view">
+          <div class="dataset-table-toolbar">
+            <mat-form-field appearance="outline" class="dataset-table-search">
+              <mat-label>搜索</mat-label>
+              <input
+                matInput
+                [ngModel]="search()"
+                (ngModelChange)="searchChanged($event)"
+                placeholder="搜索"
+              />
+            </mat-form-field>
+            <div class="dataset-table-actions">
+              <button mat-stroked-button type="button" (click)="loadExplorer()">刷新</button>
+              @if (managementMode()) {
+                <button
+                  mat-stroked-button
+                  class="management-delete-button"
+                  type="button"
+                  [disabled]="!selectedManagementCount()"
+                  (click)="deleteManagedSelection()"
                 >
-                  <div class="tile-icon" aria-hidden="true">
-                    {{ isFolder(entry) ? '▰' : fileIcon(entry) }}
+                  删除选中{{
+                    selectedManagementCount() ? '（' + selectedManagementCount() + '）' : ''
+                  }}
+                </button>
+                <button mat-button type="button" (click)="toggleManagementMode()">完成</button>
+              } @else if (canManageDataResources()) {
+                <button mat-stroked-button type="button" (click)="toggleManagementMode()">
+                  管理
+                </button>
+              }
+              @if (canCreateCollection()) {
+                <button mat-flat-button color="primary" type="button" (click)="openCreate()">
+                  新建数据集
+                </button>
+              }
+            </div>
+          </div>
+
+          @if (loading()) {
+            <p class="dataset-table-state">正在读取数据集…</p>
+          } @else if (errorMessage()) {
+            <p class="dataset-table-state error" role="alert">{{ errorMessage() }}</p>
+          } @else {
+            <div class="dataset-table" role="table" aria-label="数据集列表">
+              <div class="dataset-table-head" role="row">
+                <span role="columnheader">数据集</span>
+                <span role="columnheader">文件数 / 大小</span>
+                <span role="columnheader">更新时间</span>
+                <span role="columnheader">操作</span>
+              </div>
+              @for (dataset of filteredCollections(); track dataset.id) {
+                <div
+                  class="dataset-table-row"
+                  [class.expanded]="isDatasetExpanded(dataset.id)"
+                  [attr.aria-expanded]="isDatasetExpanded(dataset.id)"
+                  role="row"
+                  tabindex="0"
+                  (click)="toggleDataset(dataset.id)"
+                  (keydown.enter)="toggleDataset(dataset.id)"
+                  (keydown.space)="$event.preventDefault(); toggleDataset(dataset.id)"
+                >
+                  <div class="dataset-table-name" role="cell">
+                    @if (managementMode()) {
+                      <input
+                        class="management-checkbox"
+                        type="checkbox"
+                        [checked]="isCollectionSelected(dataset.id)"
+                        [disabled]="!canDeleteFile()"
+                        aria-label="选择该数据集中的全部数据表"
+                        (click)="$event.stopPropagation()"
+                        (change)="toggleCollectionSelection(dataset.id)"
+                      />
+                    }
+                    <span class="dataset-type-icon" aria-hidden="true">▰</span>
+                    <span class="dataset-table-copy">
+                      <strong>{{ dataset.name }}</strong>
+                      @if (dataset.description?.trim()) {
+                        <small>{{ dataset.description }}</small>
+                      }
+                    </span>
                   </div>
-                  <strong>{{ entry.name }}</strong>
-                  @if (isFolder(entry)) {
-                    <small
-                      >{{ entry.file_count ?? entry.collection?.file_count ?? 0 }} 个文件</small
-                    >
-                  } @else {
-                    <small
-                      >{{ (entry.file?.format || entry.format || '未知').toUpperCase() }} ·
-                      {{ formatBytes(entry.file?.size_bytes ?? entry.size_bytes ?? 0) }}</small
-                    >
-                  }
-                  <ng-template cdkDragPreview
-                    ><span class="drag-preview">{{ dragPreviewLabel(entry) }}</span></ng-template
+                  <span class="dataset-table-metrics" role="cell"
+                    >{{ dataset.file_count }} 个文件 /
+                    {{ formatBytes(dataset.storage_bytes) }}</span
                   >
-                </article>
+                  <span class="dataset-table-updated" role="cell">
+                    {{ formatRelativeTime(dataset.updated_at) }}
+                  </span>
+                  <span class="dataset-table-operation" role="cell">
+                    @if (managementMode() && canCreateCollection()) {
+                      <button
+                        mat-button
+                        type="button"
+                        (click)="$event.stopPropagation(); openCollectionEditor(dataset)"
+                      >
+                        编辑
+                      </button>
+                    }
+                    @if (managementMode() && canDeleteCollection()) {
+                      <button
+                        mat-button
+                        class="management-danger-text"
+                        type="button"
+                        (click)="$event.stopPropagation(); deleteManagedCollection(dataset)"
+                      >
+                        删除数据集
+                      </button>
+                    }
+                    <button
+                      mat-flat-button
+                      color="primary"
+                      type="button"
+                      (click)="$event.stopPropagation(); openUploadDialog(dataset)"
+                    >
+                      新增数据表
+                    </button>
+                    <span class="dataset-expand-indicator" aria-hidden="true">
+                      {{ isDatasetExpanded(dataset.id) ? '⌃' : '⌄' }}
+                    </span>
+                  </span>
+                </div>
+                @if (isDatasetExpanded(dataset.id)) {
+                  <div class="dataset-expanded-panel" role="region">
+                    @if (expandedFileLoading().has(dataset.id)) {
+                      <p class="dataset-expanded-state">正在读取数据表…</p>
+                    } @else if (expandedFileErrors().get(dataset.id); as message) {
+                      <p class="dataset-expanded-state error" role="alert">{{ message }}</p>
+                    } @else {
+                      <div
+                        class="dataset-files-table"
+                        role="table"
+                        [attr.aria-label]="dataset.name + ' 中的数据表'"
+                      >
+                        <div class="dataset-files-head" role="row">
+                          <span class="dataset-files-heading" role="columnheader">
+                            数据表
+                            @if (managementMode()) {
+                              <label class="table-select-all">
+                                <input
+                                  class="management-checkbox"
+                                  type="checkbox"
+                                  [checked]="areAllTablesSelected(dataset.id)"
+                                  [indeterminate]="areSomeTablesSelected(dataset.id)"
+                                  [disabled]="
+                                    !filesForDataset(dataset.id).length || !canDeleteFile()
+                                  "
+                                  aria-label="全选该数据集的数据表"
+                                  (click)="$event.stopPropagation()"
+                                  (change)="toggleAllTables(dataset.id)"
+                                />
+                                <span>全选</span>
+                              </label>
+                            }
+                          </span>
+                          <span role="columnheader">大小</span>
+                          <span role="columnheader">更新时间</span>
+                          <span role="columnheader">数据</span>
+                        </div>
+                        @for (file of filesForDataset(dataset.id); track file.id) {
+                          <div class="dataset-file-row" role="row">
+                            <div class="dataset-file-name" role="cell">
+                              @if (managementMode()) {
+                                <input
+                                  class="management-checkbox"
+                                  type="checkbox"
+                                  [checked]="isTableSelected(file.id)"
+                                  [disabled]="!canDeleteFile()"
+                                  aria-label="选择数据表"
+                                  (click)="$event.stopPropagation()"
+                                  (change)="toggleTableSelection(file.id)"
+                                />
+                              }
+                              <span class="dataset-file-icon" aria-hidden="true">表</span>
+                              <strong>{{ file.name }}</strong>
+                            </div>
+                            <span role="cell">{{ formatBytes(file.size_bytes) }}</span>
+                            <span role="cell">{{ formatRelativeTime(file.updated_at) }}</span>
+                            <span class="dataset-file-preview" role="cell">
+                              @if (managementMode() && canWriteFiles()) {
+                                <button
+                                  mat-button
+                                  type="button"
+                                  (click)="
+                                    $event.stopPropagation(); openFileEditor(dataset.id, file)
+                                  "
+                                >
+                                  编辑
+                                </button>
+                              }
+                              <button
+                                mat-stroked-button
+                                type="button"
+                                (click)="$event.stopPropagation(); previewFile.set(file)"
+                              >
+                                查看详情
+                              </button>
+                            </span>
+                          </div>
+                        } @empty {
+                          <p class="dataset-expanded-state">该数据集暂时没有数据表。</p>
+                        }
+                      </div>
+                    }
+                  </div>
+                }
               } @empty {
-                <div class="blank-state">
+                <div class="dataset-table-empty">
                   <span>⌁</span>
-                  <p>此目录为空</p>
-                  <small>可将文件拖入这里，或在空白处右键粘贴。</small>
+                  <strong>{{ search().trim() ? '没有找到匹配的数据集' : '暂无数据集' }}</strong>
+                  <small>{{
+                    search().trim() ? '请尝试其他搜索词。' : '点击上方“新建数据集”开始使用。'
+                  }}</small>
                 </div>
               }
             </div>
           }
-        </main>
-      </div>
+        </div>
+      } @else {
+        <div class="explorer-toolbar">
+          <div class="toolbar-copy">
+            <strong>文件资源管理器</strong
+            ><small>{{
+              selectedIds().size
+                ? '已选择 ' + selectedIds().size + ' 项'
+                : '单击选择 · Ctrl/Shift 多选 · Ctrl+C/V 复制'
+            }}</small>
+          </div>
+          <div class="explorer-toolbar-actions">
+            <button mat-stroked-button type="button" (click)="loadExplorer()">刷新</button>
+            @if (canCreateCollection()) {
+              <button mat-flat-button color="primary" type="button" (click)="openCreate()">
+                新建数据集
+              </button>
+            }
+          </div>
+        </div>
+        <div class="explorer-layout" cdkDropListGroup>
+          <nav class="side-nav" aria-label="数据文件目录">
+            <div class="nav-caption">数据集</div>
+            @for (folder of rootFolders(); track folder.id) {
+              <button
+                class="nav-entry"
+                [class.active]="currentParentId() === folder.id"
+                [attr.title]="folder.description || folder.name"
+                type="button"
+                cdkDropList
+                [cdkDropListData]="folder.id"
+                (cdkDropListDropped)="dropToFolder($event, folder.id)"
+                (click)="navigate(folder.id)"
+              >
+                <span class="folder-icon">▰</span><span>{{ folder.name }}</span
+                ><small>{{ folder.file_count }}</small>
+              </button>
+            }
+            @if (!rootFolders().length) {
+              <p class="nav-empty">暂无数据集</p>
+            }
+          </nav>
+
+          <main class="file-pane" aria-label="文件内容">
+            <div class="breadcrumbs">
+              @for (crumb of breadcrumbs(); track crumb.id ?? 'root') {
+                <button type="button" (click)="navigate(crumb.id)">{{ crumb.name }}</button
+                ><span>/</span>
+              }
+            </div>
+            <div class="pane-toolbar">
+              <span class="pane-directory-title">{{
+                currentParentId() === UNASSIGNED
+                  ? '无归属文件'
+                  : currentParentId() === null
+                    ? '数据集'
+                    : currentFolderName()
+              }}</span>
+              <div class="pane-toolbar-actions">
+                <mat-form-field appearance="outline" class="search-field"
+                  ><mat-label>搜索</mat-label
+                  ><input
+                    matInput
+                    [ngModel]="search()"
+                    (ngModelChange)="searchChanged($event)"
+                    placeholder="搜索"
+                  />
+                </mat-form-field>
+                <span class="selection-actions">
+                  @if (selectedIds().size) {
+                    <button type="button" (click)="clearSelection()">取消选择</button>
+                  }
+                  @if (canUploadFile() && currentParentId() !== null) {
+                    <label class="upload-button"
+                      >上传文件<input type="file" (change)="uploadIntoCurrent($event)"
+                    /></label>
+                  }
+                </span>
+              </div>
+            </div>
+            <input
+              #contextUploadPicker
+              class="visually-hidden"
+              type="file"
+              aria-label="上传文件"
+              (change)="uploadIntoCurrent($event)"
+            />
+            @if (currentParentId() !== null && total() > pageSize()) {
+              <div class="pagination" aria-label="文件分页">
+                <button type="button" [disabled]="page() <= 1" (click)="goToPage(page() - 1)">
+                  上一页
+                </button>
+                <span>第 {{ page() }} / {{ totalPages() }} 页 · 共 {{ total() }} 项</span>
+                <button
+                  type="button"
+                  [disabled]="page() >= totalPages()"
+                  (click)="goToPage(page() + 1)"
+                >
+                  下一页
+                </button>
+              </div>
+            }
+            @if (loading()) {
+              <p class="state">正在读取资源…</p>
+            } @else if (errorMessage()) {
+              <p class="state error" role="alert">{{ errorMessage() }}</p>
+            } @else {
+              <div
+                class="file-grid"
+                cdkDropList
+                [cdkDropListData]="currentParentId()"
+                (cdkDropListDropped)="dropToCurrent($event)"
+                (click)="clearSelection()"
+                (contextmenu)="openBlankMenu($event)"
+                role="listbox"
+                aria-label="当前目录文件"
+              >
+                @for (entry of filteredEntries(); track entry.kind + ':' + entry.id) {
+                  <article
+                    class="file-tile"
+                    [class.selected]="isSelected(entry)"
+                    [class.folder-tile]="isFolder(entry)"
+                    role="option"
+                    [attr.aria-selected]="isSelected(entry)"
+                    tabindex="0"
+                    cdkDrag
+                    [cdkDragData]="entry"
+                    (cdkDragStarted)="dragStarted($event)"
+                    (pointerdown)="rememberDragModifier($event)"
+                    (click)="selectEntry(entry, $event)"
+                    (dblclick)="activateEntry(entry)"
+                    (contextmenu)="openEntryMenu($event, entry)"
+                  >
+                    <div class="tile-icon" aria-hidden="true">
+                      {{ isFolder(entry) ? '▰' : fileIcon(entry) }}
+                    </div>
+                    <strong>{{ entry.name }}</strong>
+                    @if (isFolder(entry)) {
+                      <small
+                        >{{ entry.file_count ?? entry.collection?.file_count ?? 0 }} 个文件</small
+                      >
+                    } @else {
+                      <small
+                        >{{ (entry.file?.format || entry.format || '未知').toUpperCase() }} ·
+                        {{ formatBytes(entry.file?.size_bytes ?? entry.size_bytes ?? 0) }}</small
+                      >
+                    }
+                    <ng-template cdkDragPreview
+                      ><span class="drag-preview">{{ dragPreviewLabel(entry) }}</span></ng-template
+                    >
+                  </article>
+                } @empty {
+                  <div class="blank-state">
+                    <span>⌁</span>
+                    <p>此目录为空</p>
+                    <small>可将文件拖入这里，或在空白处右键粘贴。</small>
+                  </div>
+                }
+              </div>
+            }
+          </main>
+        </div>
+      }
     </mat-card>
 
     @if (menu(); as menuState) {
@@ -291,7 +735,7 @@ type MenuState = { x: number; y: number; entry: ExplorerEntry | null };
           @if (canCreateCollection()) {
             <button type="button" (click)="startCreateCollection()">新建数据集</button>
           }
-          @if (canUploadFile()) {
+          @if (canUploadFile() && currentParentId() === UNASSIGNED) {
             <button type="button" (click)="openUploadPicker()">上传文件</button>
           }
           <button type="button" (click)="loadExplorer(); menu.set(null)">刷新</button>
@@ -355,8 +799,7 @@ type MenuState = { x: number; y: number; entry: ExplorerEntry | null };
     .page-head,
     .actions,
     .explorer-toolbar,
-    .pane-toolbar,
-    .create-row {
+    .pane-toolbar {
       display: flex;
       align-items: center;
       gap: 12px;
@@ -365,6 +808,13 @@ type MenuState = { x: number; y: number; entry: ExplorerEntry | null };
     .explorer-toolbar {
       justify-content: space-between;
       gap: 20px;
+    }
+    .explorer-toolbar-actions {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 8px;
+      flex: 0 0 auto;
     }
     .page-head {
       margin-bottom: 20px;
@@ -388,11 +838,11 @@ type MenuState = { x: number; y: number; entry: ExplorerEntry | null };
     }
     .stat-grid {
       display: grid;
-      grid-template-columns: repeat(4, minmax(0, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
       gap: 12px;
       margin-bottom: 18px;
     }
-    .stat-grid mat-card {
+    .stat-card {
       display: grid;
       gap: 7px;
       padding: 15px;
@@ -405,17 +855,451 @@ type MenuState = { x: number; y: number; entry: ExplorerEntry | null };
       color: #0f172a;
       font-size: 22px;
     }
-    .create-card,
+    .stat-card small {
+      color: #64748b;
+      font-size: 12px;
+    }
+    .stat-card small.stat-monthly::first-letter {
+      color: #0f9f6e;
+    }
     .explorer-card {
       padding: 18px;
       margin-bottom: 18px;
     }
-    .create-row {
-      align-items: flex-start;
-    }
-    .create-row mat-form-field {
-      flex: 1;
+    .dataset-table-view {
       min-width: 0;
+    }
+    .dataset-table-toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+      padding-bottom: 16px;
+      border-bottom: 1px solid #e2e8f0;
+    }
+    .dataset-table-search {
+      width: min(300px, 100%);
+    }
+    .dataset-table-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .dataset-table {
+      overflow-x: auto;
+    }
+    .dataset-table-head,
+    .dataset-table-row {
+      display: grid;
+      grid-template-columns: minmax(300px, 2fr) 170px 140px 300px;
+      align-items: center;
+      gap: 20px;
+      min-width: 970px;
+    }
+    .dataset-table-head {
+      min-height: 48px;
+      padding: 0 12px;
+      background: #f8fafc;
+      color: #64748b;
+      font-size: 12px;
+      font-weight: 750;
+    }
+    .dataset-table-row {
+      min-height: 86px;
+      padding: 12px;
+      border-top: 1px solid #e2e8f0;
+      color: #334155;
+      font-size: 13px;
+      cursor: pointer;
+      outline: none;
+    }
+    .dataset-table-row:hover {
+      background: #f8fbff;
+    }
+    .dataset-table-row:focus-visible {
+      box-shadow: inset 0 0 0 2px #93c5fd;
+    }
+    .dataset-table-row.expanded {
+      background: #f8fbff;
+    }
+    .dataset-table-name {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      min-width: 0;
+    }
+    .dataset-type-icon {
+      display: grid;
+      flex: 0 0 auto;
+      place-items: center;
+      width: 42px;
+      height: 42px;
+      border-radius: 10px;
+      background: #e0f2fe;
+      color: #0284c7;
+      font-size: 20px;
+    }
+    .dataset-table-copy {
+      display: grid;
+      gap: 5px;
+      min-width: 0;
+    }
+    .dataset-table-copy strong {
+      overflow: hidden;
+      color: #1e3a5f;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 15px;
+    }
+    .dataset-table-copy small {
+      overflow: hidden;
+      color: #94a3b8;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 12px;
+    }
+    .dataset-table-metrics {
+      color: #475569;
+      font-weight: 650;
+    }
+    .dataset-table-updated {
+      color: #64748b;
+    }
+    .dataset-table-operation {
+      display: flex;
+      justify-content: flex-start;
+      align-items: center;
+      gap: 8px;
+    }
+    .dataset-table-operation button {
+      white-space: nowrap;
+    }
+    .management-checkbox {
+      flex: 0 0 auto;
+      width: 16px;
+      height: 16px;
+      margin: 0;
+      accent-color: #0284c7;
+      cursor: pointer;
+    }
+    .management-checkbox:disabled {
+      cursor: not-allowed;
+      opacity: 0.45;
+    }
+    .management-delete-button:not(:disabled) {
+      border-color: #fecaca;
+      color: #b91c1c;
+    }
+    .management-danger-text {
+      color: #b91c1c;
+    }
+    .dataset-expand-indicator {
+      width: 14px;
+      color: #64748b;
+      font-size: 15px;
+      text-align: center;
+    }
+    .dataset-table-state,
+    .dataset-table-empty {
+      display: grid;
+      place-items: center;
+      min-height: 260px;
+      margin: 0;
+      color: #64748b;
+      text-align: center;
+    }
+    .dataset-table-empty {
+      gap: 8px;
+    }
+    .dataset-table-empty span {
+      color: #93c5fd;
+      font-size: 42px;
+    }
+    .dataset-table-empty strong {
+      color: #334155;
+      font-size: 17px;
+    }
+    .dataset-table-empty small {
+      font-size: 13px;
+    }
+    .dataset-expanded-panel {
+      min-width: 970px;
+      padding: 0 0 16px;
+      border-top: 1px solid #dbeafe;
+      background: #f8fbff;
+    }
+    .dataset-files-table {
+      max-height: 260px;
+      overflow-x: auto;
+      overflow-y: auto;
+      border: 1px solid #dbe4ef;
+      border-radius: 10px;
+      background: #fff;
+    }
+    .dataset-files-head,
+    .dataset-file-row {
+      display: grid;
+      grid-template-columns: minmax(300px, 2fr) 170px 140px 300px;
+      align-items: center;
+      gap: 20px;
+      min-width: 970px;
+    }
+    .dataset-files-head {
+      position: sticky;
+      top: 0;
+      z-index: 1;
+      min-height: 42px;
+      padding: 0 12px;
+      background: #f8fafc;
+      color: #64748b;
+      font-size: 12px;
+      font-weight: 750;
+    }
+    .dataset-files-heading,
+    .table-select-all {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .table-select-all {
+      color: #0284c7;
+      font-size: 11px;
+      font-weight: 650;
+      cursor: pointer;
+    }
+    .dataset-file-row {
+      min-height: 58px;
+      padding: 8px 12px;
+      border-top: 1px solid #eef2f7;
+      color: #475569;
+      font-size: 12px;
+    }
+    .dataset-file-name {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-width: 0;
+    }
+    .dataset-file-name strong {
+      overflow: hidden;
+      color: #334155;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .dataset-file-icon {
+      display: grid;
+      flex: 0 0 auto;
+      place-items: center;
+      width: 30px;
+      height: 30px;
+      border-radius: 8px;
+      background: #eff6ff;
+      color: #0284c7;
+      font-size: 12px;
+    }
+    .dataset-file-preview {
+      display: flex;
+      justify-content: flex-start;
+      align-items: center;
+      gap: 6px;
+    }
+    .dataset-expanded-state {
+      margin: 0;
+      padding: 30px 14px;
+      color: #64748b;
+      font-size: 13px;
+      text-align: center;
+    }
+    .dataset-expanded-state.error {
+      color: #b91c1c;
+    }
+
+    .dialog-backdrop {
+      position: fixed;
+      inset: 0;
+      z-index: 1200;
+      display: grid;
+      place-items: center;
+      padding: 20px;
+      background: rgb(15 23 42 / 44%);
+    }
+    .create-dialog {
+      width: min(780px, 100%);
+      max-height: min(720px, calc(100vh - 40px));
+      overflow: auto;
+      border: 1px solid #dbe4ef;
+      border-radius: 18px;
+      background: #fff;
+      box-shadow: 0 24px 70px rgb(15 23 42 / 24%);
+    }
+    .dialog-header,
+    .dialog-footer {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 18px;
+    }
+    .dialog-header {
+      padding: 24px 26px 18px;
+      border-bottom: 1px solid #e2e8f0;
+    }
+    .dialog-header h2 {
+      margin: 4px 0 6px;
+      font-size: 21px;
+    }
+    .dialog-header p:not(.eyebrow) {
+      margin: 0;
+      color: #64748b;
+      font-size: 13px;
+    }
+    .dialog-close {
+      width: 32px;
+      height: 32px;
+      border: 0;
+      border-radius: 8px;
+      background: transparent;
+      color: #64748b;
+      font-size: 25px;
+      line-height: 1;
+      cursor: pointer;
+    }
+    .dialog-close:hover {
+      background: #f1f5f9;
+      color: #0f172a;
+    }
+    .create-dialog-body {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(280px, 1fr);
+      gap: 28px;
+      padding: 24px 26px;
+    }
+    .edit-dialog {
+      width: min(520px, 100%);
+    }
+    .edit-dialog-body {
+      display: grid;
+      gap: 8px;
+      padding: 24px 26px 10px;
+    }
+    .edit-dialog-body mat-form-field {
+      width: 100%;
+    }
+    .upload-dialog {
+      width: min(560px, 100%);
+    }
+    .upload-dialog-body {
+      display: grid;
+      gap: 16px;
+      padding: 24px 26px 10px;
+    }
+    .upload-target {
+      display: grid;
+      gap: 5px;
+      padding: 14px 16px;
+      border-radius: 10px;
+      background: #f8fafc;
+    }
+    .upload-target span,
+    .upload-target small {
+      color: #64748b;
+      font-size: 12px;
+    }
+    .upload-target strong {
+      overflow: hidden;
+      color: #1e3a5f;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 15px;
+    }
+    .create-basic,
+    .create-choice {
+      display: grid;
+      align-content: start;
+      gap: 12px;
+    }
+    .create-basic mat-form-field {
+      width: 100%;
+    }
+    .choice-label {
+      color: #334155;
+      font-size: 13px;
+      font-weight: 750;
+    }
+    .choice-card {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      width: 100%;
+      padding: 15px;
+      border: 1px solid #dbe4ef;
+      border-radius: 12px;
+      background: #fff;
+      color: #0f172a;
+      text-align: left;
+      cursor: pointer;
+    }
+    .choice-card:hover,
+    .choice-card.selected {
+      border-color: #0284c7;
+      background: #f0f9ff;
+    }
+    .choice-radio {
+      flex: 0 0 auto;
+      width: 17px;
+      height: 17px;
+      margin-top: 1px;
+      border: 2px solid #94a3b8;
+      border-radius: 50%;
+      background: #fff;
+    }
+    .choice-card.selected .choice-radio {
+      border: 5px solid #0284c7;
+    }
+    .choice-card strong,
+    .choice-card small {
+      display: block;
+    }
+    .choice-card strong {
+      margin-bottom: 5px;
+      font-size: 14px;
+    }
+    .choice-card small,
+    .dialog-file-picker small {
+      color: #64748b;
+      font-size: 12px;
+      line-height: 1.5;
+    }
+    .dialog-file-picker {
+      display: grid;
+      gap: 4px;
+      padding: 12px 14px;
+      border: 1px dashed #7dd3fc;
+      border-radius: 10px;
+      background: #f8fdff;
+      color: #0369a1;
+      font-size: 13px;
+      cursor: pointer;
+    }
+    .dialog-file-picker input {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      opacity: 0;
+      pointer-events: none;
+    }
+    .dialog-footer {
+      align-items: center;
+      padding: 16px 26px 20px;
+      border-top: 1px solid #e2e8f0;
+    }
+    .dialog-hint {
+      color: #64748b;
+      font-size: 12px;
+    }
+    .dialog-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
     }
     .explorer-toolbar {
       padding-bottom: 14px;
@@ -430,7 +1314,11 @@ type MenuState = { x: number; y: number; entry: ExplorerEntry | null };
       font-size: 11px;
     }
     .search-field {
-      width: min(280px, 100%);
+      width: min(190px, 100%);
+      font-size: 12px;
+    }
+    .search-field input {
+      font-size: 12px;
     }
     .explorer-layout {
       display: grid;
@@ -509,6 +1397,16 @@ type MenuState = { x: number; y: number; entry: ExplorerEntry | null };
       color: #334155;
       font-size: 13px;
       font-weight: 600;
+    }
+    .pane-directory-title {
+      min-width: 0;
+    }
+    .pane-toolbar-actions {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 12px;
+      min-width: 0;
     }
     .selection-actions {
       display: flex;
@@ -639,13 +1537,17 @@ type MenuState = { x: number; y: number; entry: ExplorerEntry | null };
     }
     .blank-state span {
       color: #93c5fd;
-      font-size: 36px;
+      font-size: 44px;
     }
     .blank-state p {
-      margin: 5px 0;
+      margin: 8px 0;
+      color: #334155;
+      font-size: 18px;
+      font-weight: 650;
     }
     .blank-state small {
-      font-size: 11px;
+      font-size: 13px;
+      line-height: 1.6;
     }
     .state.error {
       color: #b91c1c;
@@ -687,9 +1589,6 @@ type MenuState = { x: number; y: number; entry: ExplorerEntry | null };
       font-size: 12px;
     }
     @media (max-width: 760px) {
-      .stat-grid {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-      }
       .explorer-layout {
         grid-template-columns: 1fr;
       }
@@ -720,7 +1619,8 @@ type MenuState = { x: number; y: number; entry: ExplorerEntry | null };
     @media (max-width: 560px) {
       .page-head,
       .explorer-toolbar,
-      .create-row {
+      .pane-toolbar,
+      .dataset-table-toolbar {
         align-items: stretch;
         flex-direction: column;
       }
@@ -730,12 +1630,50 @@ type MenuState = { x: number; y: number; entry: ExplorerEntry | null };
       .search-field {
         width: 100%;
       }
-      .explorer-card,
-      .create-card {
+      .explorer-toolbar-actions {
+        width: 100%;
+        justify-content: flex-start;
+      }
+      .dataset-table-search {
+        width: 100%;
+      }
+      .dataset-table-actions {
+        justify-content: flex-start;
+      }
+      .pane-toolbar-actions {
+        width: 100%;
+        align-items: stretch;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .selection-actions {
+        justify-content: flex-end;
+      }
+      .explorer-card {
         padding: 12px;
       }
       .file-grid {
         grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+    @media (max-width: 700px) {
+      .create-dialog-body {
+        grid-template-columns: 1fr;
+        gap: 20px;
+      }
+      .dialog-header,
+      .dialog-footer,
+      .create-dialog-body {
+        padding-left: 18px;
+        padding-right: 18px;
+      }
+      .dialog-footer {
+        align-items: flex-start;
+        flex-direction: column;
+      }
+      .dialog-actions {
+        width: 100%;
+        justify-content: flex-end;
       }
     }
   `,
@@ -748,7 +1686,20 @@ export class DataCollectionsPage {
   private readonly subscriptions = new Subscription();
 
   readonly collections = signal<DataCollectionSummary[]>([]);
+  readonly statsCollections = signal<DataCollectionSummary[]>([]);
+  readonly monthlyNewFiles = signal<number | null>(null);
   readonly filesByCollection = signal(new Map<number, DataFileSummary[]>());
+  readonly expandedDatasetIds = signal<Set<number>>(new Set());
+  readonly expandedFileLoading = signal<Set<number>>(new Set());
+  readonly expandedFileErrors = signal(new Map<number, string>());
+  readonly managementMode = signal(false);
+  readonly selectedCollectionIds = signal<Set<number>>(new Set());
+  readonly selectedTableIds = signal<Set<number>>(new Set());
+  readonly editingResource = signal<EditingResource | null>(null);
+  readonly editingSaving = signal(false);
+  readonly uploadCollectionTarget = signal<DataCollectionSummary | null>(null);
+  readonly uploadSelectedFiles = signal<File[]>([]);
+  readonly uploadingToCollection = signal(false);
   readonly unassignedFiles = signal<DataFileSummary[]>([]);
   readonly selectedFile = signal<DataFileSummary | null>(null);
   readonly explorerItems = signal<ExplorerEntry[]>([]);
@@ -768,11 +1719,17 @@ export class DataCollectionsPage {
   readonly total = signal(0);
   readonly showCreate = signal(false);
   readonly creating = signal(false);
+  readonly createMode = signal<'upload' | 'directory'>('upload');
+  readonly createFile = signal<File | null>(null);
   newName = '';
   newDescription = '';
+  editName = '';
+  editDescription = '';
   private anchorIndex = -1;
   private dragCopyModifier = false;
   private explorerRequest?: Subscription;
+  private monthlyFileStatsRequest?: Subscription;
+  private monthlyFileStatsSignature = '';
   private explorerGeneration = 0;
   @ViewChild('contextUploadPicker') private contextUploadPicker?: ElementRef<HTMLInputElement>;
 
@@ -800,6 +1757,17 @@ export class DataCollectionsPage {
   readonly moveTargets = computed(() =>
     this.collections().filter((folder) => folder.id !== this.currentParentId()),
   );
+  readonly newDatasetsThisMonth = computed(
+    () =>
+      this.statsCollections().filter((dataset) => this.isCurrentMonth(dataset.created_at)).length,
+  );
+  readonly totalDatasetFiles = computed(() =>
+    this.statsCollections().reduce((total, dataset) => total + (dataset.file_count || 0), 0),
+  );
+  readonly totalDatasetStorage = computed(() =>
+    this.statsCollections().reduce((total, dataset) => total + (dataset.storage_bytes || 0), 0),
+  );
+  readonly selectedManagementCount = computed(() => this.selectedTableIds().size);
 
   constructor() {
     this.loadExplorer();
@@ -811,6 +1779,7 @@ export class DataCollectionsPage {
   }
   ngOnDestroy(): void {
     this.explorerRequest?.unsubscribe();
+    this.monthlyFileStatsRequest?.unsubscribe();
     this.subscriptions.unsubscribe();
   }
 
@@ -981,6 +1950,328 @@ export class DataCollectionsPage {
     if (value < 1024 * 1024 * 1024) return `${(value / 1024 / 1024).toFixed(1)} MB`;
     return `${(value / 1024 / 1024 / 1024).toFixed(1)} GB`;
   }
+  isDatasetExpanded(datasetId: number): boolean {
+    return this.expandedDatasetIds().has(datasetId);
+  }
+  filesForDataset(datasetId: number): DataFileSummary[] {
+    return this.filesByCollection().get(datasetId) || [];
+  }
+  toggleDataset(datasetId: number): void {
+    const next = new Set(this.expandedDatasetIds());
+    if (next.has(datasetId)) {
+      next.delete(datasetId);
+      this.expandedDatasetIds.set(next);
+      return;
+    }
+
+    next.add(datasetId);
+    this.expandedDatasetIds.set(next);
+    this.loadDatasetFiles(datasetId);
+  }
+  canManageDataResources(): boolean {
+    return this.canCreateCollection() || this.canDeleteCollection() || this.canWriteFiles();
+  }
+  toggleManagementMode(): void {
+    if (!this.managementMode() && !this.canManageDataResources()) return;
+    const next = !this.managementMode();
+    this.managementMode.set(next);
+    if (!next) this.clearManagementSelection();
+  }
+  isCollectionSelected(collectionId: number): boolean {
+    return this.selectedCollectionIds().has(collectionId);
+  }
+  toggleCollectionSelection(collectionId: number): void {
+    if (!this.canDeleteFile()) return;
+    const next = new Set(this.selectedCollectionIds());
+    const files = this.filesByCollection().get(collectionId);
+    if (next.has(collectionId)) {
+      next.delete(collectionId);
+      const selectedTables = new Set(this.selectedTableIds());
+      for (const file of files || []) selectedTables.delete(file.id);
+      this.selectedTableIds.set(selectedTables);
+    } else {
+      next.add(collectionId);
+      this.selectedCollectionIds.set(next);
+      const expanded = new Set(this.expandedDatasetIds());
+      expanded.add(collectionId);
+      this.expandedDatasetIds.set(expanded);
+      if (files) {
+        const selectedTables = new Set(this.selectedTableIds());
+        for (const file of files) selectedTables.add(file.id);
+        this.selectedTableIds.set(selectedTables);
+      } else if (!this.expandedFileLoading().has(collectionId)) {
+        this.loadDatasetFiles(collectionId);
+      }
+    }
+    this.selectedCollectionIds.set(next);
+    this.selectedCollectionIds.set(next);
+  }
+  isTableSelected(fileId: number): boolean {
+    return this.selectedTableIds().has(fileId);
+  }
+  areAllTablesSelected(collectionId: number): boolean {
+    const files = this.filesByCollection().get(collectionId) || [];
+    return files.length > 0 && files.every((file) => this.selectedTableIds().has(file.id));
+  }
+  areSomeTablesSelected(collectionId: number): boolean {
+    const files = this.filesByCollection().get(collectionId) || [];
+    const selectedCount = files.filter((file) => this.selectedTableIds().has(file.id)).length;
+    return selectedCount > 0 && selectedCount < files.length;
+  }
+  toggleAllTables(collectionId: number): void {
+    if (!this.canDeleteFile()) return;
+    const files = this.filesByCollection().get(collectionId) || [];
+    const next = new Set(this.selectedTableIds());
+    if (this.areAllTablesSelected(collectionId)) {
+      for (const file of files) next.delete(file.id);
+    } else {
+      for (const file of files) next.add(file.id);
+    }
+    this.selectedTableIds.set(next);
+    // Selecting all tables is intentionally independent from the dataset checkbox.
+    const selectedCollections = new Set(this.selectedCollectionIds());
+    selectedCollections.delete(collectionId);
+    this.selectedCollectionIds.set(selectedCollections);
+  }
+  toggleTableSelection(fileId: number): void {
+    if (!this.canDeleteFile()) return;
+    const next = new Set(this.selectedTableIds());
+    if (next.has(fileId)) next.delete(fileId);
+    else next.add(fileId);
+    this.selectedTableIds.set(next);
+    const selectedCollections = new Set(this.selectedCollectionIds());
+    for (const collectionId of selectedCollections) {
+      const files = this.filesByCollection().get(collectionId) || [];
+      if (files.some((file) => !next.has(file.id))) selectedCollections.delete(collectionId);
+    }
+    this.selectedCollectionIds.set(selectedCollections);
+  }
+  clearManagementSelection(): void {
+    this.selectedCollectionIds.set(new Set());
+    this.selectedTableIds.set(new Set());
+  }
+  deleteManagedSelection(): void {
+    const selectedTableIds = [...this.selectedTableIds()].filter((id) =>
+      this.isSelectedTableDeletable(id),
+    );
+    if (!selectedTableIds.length) return;
+    if (
+      !window.confirm(`确定删除选中的 ${selectedTableIds.length} 张数据表？数据集本身不会被删除。`)
+    )
+      return;
+    this.subscriptions.add(
+      this.service.deleteFiles(selectedTableIds).subscribe({
+        next: () => {
+          this.notifications.success('选中的数据表已移入回收站。');
+          this.clearManagementSelection();
+          this.loadExplorer();
+        },
+        error: (error) => this.notifications.error(error, '批量删除失败。'),
+      }),
+    );
+  }
+  deleteManagedCollection(collection: DataCollectionSummary): void {
+    if (!this.canDeleteCollection()) return;
+    if (!window.confirm(`确定删除数据集“${collection.name}”？数据集及其数据表将移入回收站。`))
+      return;
+    this.subscriptions.add(
+      this.service.deleteCollection(collection.id).subscribe({
+        next: () => {
+          this.clearManagementSelection();
+          this.notifications.success('数据集已移入回收站。');
+          this.loadExplorer();
+        },
+        error: (error) => this.notifications.error(error, '数据集删除失败。'),
+      }),
+    );
+  }
+  openCollectionEditor(collection: DataCollectionSummary): void {
+    if (!this.canCreateCollection()) return;
+    this.editName = collection.name;
+    this.editDescription = collection.description || '';
+    this.editingResource.set({ kind: 'collection', id: collection.id });
+  }
+  openFileEditor(collectionId: number, file: DataFileSummary): void {
+    if (!this.canWriteFiles()) return;
+    this.editName = file.name;
+    this.editDescription = '';
+    this.editingResource.set({ kind: 'file', id: file.id, collectionId });
+  }
+  closeEditor(): void {
+    if (this.editingSaving()) return;
+    this.editingResource.set(null);
+  }
+  canSubmitEdit(): boolean {
+    return !!this.editName.trim() && !this.editingSaving() && !!this.editingResource();
+  }
+  saveEdit(): void {
+    const resource = this.editingResource();
+    const name = this.editName.trim();
+    if (!resource || !name || this.editingSaving()) return;
+    this.editingSaving.set(true);
+
+    if (resource.kind === 'collection') {
+      this.subscriptions.add(
+        this.service
+          .updateCollection(resource.id, {
+            name,
+            description: this.editDescription.trim() || null,
+          })
+          .subscribe({
+            next: (updated) => {
+              this.collections.update((items) =>
+                items.map((item) => (item.id === resource.id ? { ...item, ...updated } : item)),
+              );
+              this.statsCollections.update((items) =>
+                items.map((item) => (item.id === resource.id ? { ...item, ...updated } : item)),
+              );
+              this.editingSaving.set(false);
+              this.editingResource.set(null);
+              this.notifications.success('数据集信息已更新。');
+              this.loadExplorer();
+            },
+            error: (error) => {
+              this.editingSaving.set(false);
+              this.notifications.error(error, '数据集信息更新失败。');
+            },
+          }),
+      );
+      return;
+    }
+
+    this.subscriptions.add(
+      this.service.renameFile(resource.id, name).subscribe({
+        next: (updated) => {
+          const nextFiles = new Map(this.filesByCollection());
+          const files = nextFiles.get(resource.collectionId) || [];
+          nextFiles.set(
+            resource.collectionId,
+            files.map((file) => (file.id === resource.id ? { ...file, ...updated } : file)),
+          );
+          this.filesByCollection.set(nextFiles);
+          if (this.previewFile()?.id === resource.id) {
+            this.previewFile.set({ ...this.previewFile()!, ...updated });
+          }
+          this.editingSaving.set(false);
+          this.editingResource.set(null);
+          this.notifications.success('数据表名称已更新。');
+          this.loadExplorer(resource.collectionId);
+        },
+        error: (error) => {
+          this.editingSaving.set(false);
+          this.notifications.error(error, '数据表名称更新失败。');
+        },
+      }),
+    );
+  }
+  private isSelectedTableDeletable(fileId: number): boolean {
+    return (
+      this.canDeleteFile() &&
+      [...this.filesByCollection().values()].some((files) =>
+        files.some((file) => file.id === fileId),
+      )
+    );
+  }
+  private loadDatasetFiles(datasetId: number): void {
+    const listFiles = (
+      this.service as unknown as {
+        listFiles?: (collectionId: number) => Observable<DataFileSummary[]>;
+      }
+    ).listFiles;
+    if (!listFiles) {
+      const errors = new Map(this.expandedFileErrors());
+      errors.set(datasetId, '暂时无法读取该数据集的数据表。');
+      this.expandedFileErrors.set(errors);
+      return;
+    }
+
+    const loading = new Set(this.expandedFileLoading());
+    loading.add(datasetId);
+    this.expandedFileLoading.set(loading);
+    const errors = new Map(this.expandedFileErrors());
+    errors.delete(datasetId);
+    this.expandedFileErrors.set(errors);
+    this.subscriptions.add(
+      listFiles.call(this.service, datasetId).subscribe({
+        next: (files) => {
+          const nextFiles = new Map(this.filesByCollection());
+          nextFiles.set(datasetId, files || []);
+          this.filesByCollection.set(nextFiles);
+          if (this.selectedCollectionIds().has(datasetId)) {
+            const selectedTables = new Set(this.selectedTableIds());
+            for (const file of files || []) selectedTables.add(file.id);
+            this.selectedTableIds.set(selectedTables);
+          }
+          const nextLoading = new Set(this.expandedFileLoading());
+          nextLoading.delete(datasetId);
+          this.expandedFileLoading.set(nextLoading);
+        },
+        error: () => {
+          const nextLoading = new Set(this.expandedFileLoading());
+          nextLoading.delete(datasetId);
+          this.expandedFileLoading.set(nextLoading);
+          const nextErrors = new Map(this.expandedFileErrors());
+          nextErrors.set(datasetId, '无法读取数据表，请稍后重试。');
+          this.expandedFileErrors.set(nextErrors);
+        },
+      }),
+    );
+  }
+  formatRelativeTime(value: string | null): string {
+    if (!value) return '暂无更新时间';
+    const timestamp = new Date(value).getTime();
+    if (!Number.isFinite(timestamp)) return '更新时间未知';
+    const elapsedSeconds = Math.max(0, Math.floor((Date.now() - timestamp) / 1000));
+    if (elapsedSeconds < 60) return '刚刚';
+    if (elapsedSeconds < 3600) return `${Math.floor(elapsedSeconds / 60)} 分钟前`;
+    if (elapsedSeconds < 86400) return `${Math.floor(elapsedSeconds / 3600)} 小时前`;
+    if (elapsedSeconds < 604800) return `${Math.floor(elapsedSeconds / 86400)} 天前`;
+    if (elapsedSeconds < 2592000) return `${Math.floor(elapsedSeconds / 604800)} 周前`;
+    if (elapsedSeconds < 31536000) return `${Math.floor(elapsedSeconds / 2592000)} 个月前`;
+    return `${Math.floor(elapsedSeconds / 31536000)} 年前`;
+  }
+  private isCurrentMonth(value: string | null | undefined): boolean {
+    if (!value) return false;
+    const date = new Date(value);
+    const now = new Date();
+    return (
+      Number.isFinite(date.getTime()) &&
+      date.getFullYear() === now.getFullYear() &&
+      date.getMonth() === now.getMonth()
+    );
+  }
+  private refreshMonthlyFileStats(datasets: DataCollectionSummary[]): void {
+    const signature = datasets
+      .map((dataset) => `${dataset.id}:${dataset.file_count}:${dataset.updated_at}`)
+      .join('|');
+    if (signature === this.monthlyFileStatsSignature) return;
+    this.monthlyFileStatsSignature = signature;
+    this.monthlyFileStatsRequest?.unsubscribe();
+    if (!datasets.length) {
+      this.monthlyNewFiles.set(0);
+      return;
+    }
+    const listFiles = (
+      this.service as unknown as {
+        listFiles?: (collectionId: number) => Observable<DataFileSummary[]>;
+      }
+    ).listFiles;
+    if (!listFiles) {
+      this.monthlyNewFiles.set(null);
+      return;
+    }
+    this.monthlyNewFiles.set(null);
+    this.monthlyFileStatsRequest = forkJoin(
+      datasets.map((dataset) => listFiles.call(this.service, dataset.id)),
+    ).subscribe({
+      next: (fileGroups) => {
+        this.monthlyNewFiles.set(
+          fileGroups.flat().filter((file) => this.isCurrentMonth(file.created_at)).length,
+        );
+      },
+      error: () => this.monthlyNewFiles.set(null),
+    });
+  }
 
   rememberDragModifier(event: PointerEvent): void {
     this.dragCopyModifier = event.ctrlKey || event.metaKey;
@@ -1022,9 +2313,88 @@ export class DataCollectionsPage {
     this.menu.set(null);
     this.notifications.success('已复制到内部剪贴板。');
   }
-  startCreateCollection(): void {
+  openCreate(): void {
     this.menu.set(null);
-    if (this.canCreateCollection()) this.showCreate.set(true);
+    if (!this.canCreateCollection()) return;
+    this.newName = '';
+    this.newDescription = '';
+    this.createMode.set(this.canUploadFile() ? 'upload' : 'directory');
+    this.createFile.set(null);
+    this.showCreate.set(true);
+  }
+  openUploadDialog(collection: DataCollectionSummary): void {
+    this.menu.set(null);
+    if (!this.canUploadFile()) return;
+    this.uploadCollectionTarget.set(collection);
+    this.uploadSelectedFiles.set([]);
+  }
+  closeUploadDialog(): void {
+    if (this.uploadingToCollection()) return;
+    this.uploadCollectionTarget.set(null);
+    this.uploadSelectedFiles.set([]);
+  }
+  chooseUploadFiles(event: Event): void {
+    const files = Array.from((event.target as HTMLInputElement).files || []);
+    this.uploadSelectedFiles.set(files);
+  }
+  uploadFileNames(): string {
+    const names = this.uploadSelectedFiles().map((file) => file.name);
+    const label = names.join('、');
+    return label.length > 180 ? `${label.slice(0, 177)}…` : label;
+  }
+  canSubmitUpload(): boolean {
+    return (
+      this.canUploadFile() &&
+      !!this.uploadCollectionTarget() &&
+      this.uploadSelectedFiles().length > 0 &&
+      !this.uploadingToCollection()
+    );
+  }
+  submitUpload(): void {
+    const collection = this.uploadCollectionTarget();
+    const files = this.uploadSelectedFiles();
+    if (!collection || !files.length || !this.canUploadFile() || this.uploadingToCollection())
+      return;
+    this.uploadingToCollection.set(true);
+    this.subscriptions.add(
+      forkJoin(files.map((file) => this.service.uploadFile(collection.id, file))).subscribe({
+        next: (results) => {
+          this.uploadingToCollection.set(false);
+          this.closeUploadDialog();
+          this.notifications.success(
+            results.some((result) => !!result.task_id)
+              ? `已上传 ${files.length} 张数据表，正在解析。`
+              : `已上传 ${files.length} 张数据表。`,
+          );
+          this.loadExplorer();
+          if (this.isDatasetExpanded(collection.id)) this.loadDatasetFiles(collection.id);
+        },
+        error: (error) => {
+          this.uploadingToCollection.set(false);
+          this.notifications.error(error, '数据表上传失败。');
+        },
+      }),
+    );
+  }
+  closeCreate(): void {
+    if (this.creating()) return;
+    this.showCreate.set(false);
+    this.createFile.set(null);
+  }
+  chooseCreateFile(event: Event): void {
+    const file = (event.target as HTMLInputElement).files?.[0] ?? null;
+    this.createFile.set(file);
+  }
+  canSubmitCreate(): boolean {
+    return (
+      !!this.newName.trim() &&
+      !this.creating() &&
+      this.canCreateCollection() &&
+      (this.createMode() === 'directory' || (this.canUploadFile() && !!this.createFile()))
+    );
+  }
+  startCreateCollection(): void {
+    this.openCreate();
   }
   openUploadPicker(): void {
     this.menu.set(null);
@@ -1128,6 +2498,21 @@ export class DataCollectionsPage {
     this.menu.set(null);
   }
   @HostListener('document:keydown', ['$event']) handleKeyboard(event: KeyboardEvent): void {
+    if (event.key === 'Escape' && this.showCreate()) {
+      event.preventDefault();
+      this.closeCreate();
+      return;
+    }
+    if (event.key === 'Escape' && this.editingResource()) {
+      event.preventDefault();
+      this.closeEditor();
+      return;
+    }
+    if (event.key === 'Escape' && this.uploadCollectionTarget()) {
+      event.preventDefault();
+      this.closeUploadDialog();
+      return;
+    }
     const target = event.target as HTMLElement | null;
     if (target?.tagName === 'INPUT' || target?.tagName === 'TEXTAREA') return;
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'c') {
@@ -1183,29 +2568,55 @@ export class DataCollectionsPage {
     );
   }
   createCollection(): void {
-    if (!this.newName.trim() || !this.canCreateCollection()) return;
+    if (!this.canSubmitCreate()) return;
+    const name = this.newName.trim();
+    const description = this.newDescription.trim() || null;
+    const mode = this.createMode();
+    const file = this.createFile();
     this.creating.set(true);
     this.subscriptions.add(
-      this.service
-        .createCollection({
-          name: this.newName.trim(),
-          description: this.newDescription.trim() || null,
-        })
-        .subscribe({
-          next: () => {
-            this.notifications.success('数据集已创建。');
-            this.newName = '';
-            this.newDescription = '';
-            this.showCreate.set(false);
-            this.creating.set(false);
-            this.loadExplorer();
-          },
-          error: (error) => {
-            this.creating.set(false);
-            this.notifications.error(error, '数据集创建失败。');
-          },
-        }),
+      this.service.createCollection({ name, description }).subscribe({
+        next: (collection) => {
+          if (mode !== 'upload' || !file) {
+            this.finishCreate('数据集已创建。');
+            return;
+          }
+          this.subscriptions.add(
+            this.service.uploadFile(collection.id, file).subscribe({
+              next: (result) => {
+                this.finishCreate(
+                  result.task_id ? '数据集已创建，文件正在解析。' : '数据集和文件已创建。',
+                );
+              },
+              error: (error) => {
+                this.resetCreateForm();
+                this.creating.set(false);
+                this.loadExplorer();
+                this.notifications.error(error, '数据集已创建，但文件上传失败。');
+              },
+            }),
+          );
+        },
+        error: (error) => {
+          this.creating.set(false);
+          this.notifications.error(error, '数据集创建失败。');
+        },
+      }),
     );
+  }
+  private finishCreate(message: string): void {
+    this.notifications.success(message);
+    this.resetCreateForm();
+    this.creating.set(false);
+    // Keep the user on the current page; a newly created dataset will appear
+    // in the current list after the refresh instead of opening the old folder view.
+    this.loadExplorer();
+  }
+  private resetCreateForm(): void {
+    this.newName = '';
+    this.newDescription = '';
+    this.createFile.set(null);
+    this.showCreate.set(false);
   }
   uploadIntoCurrent(event: Event): void {
     const parentId = this.currentParentId();
@@ -1374,15 +2785,19 @@ export class DataCollectionsPage {
     const rootCollections = folders.filter(
       (folder) => folder.id !== null && folder.id !== undefined,
     );
-    if (parentId === null || rootCollections.length)
-      this.collections.set(
-        rootCollections.map((folder) => ({
-          ...folder,
-          file_count: folder.file_count ?? 0,
-          storage_bytes: folder.storage_bytes ?? 0,
-          parse_issue_count: folder.parse_issue_count ?? 0,
-        })),
-      );
+    const normalizedCollections = rootCollections.map((folder) => ({
+      ...folder,
+      file_count: folder.file_count ?? 0,
+      storage_bytes: folder.storage_bytes ?? 0,
+      parse_issue_count: folder.parse_issue_count ?? 0,
+    }));
+    if (parentId === null || rootCollections.length) {
+      this.collections.set(normalizedCollections);
+      if (parentId === null && !this.search().trim()) {
+        this.statsCollections.set(normalizedCollections);
+        this.refreshMonthlyFileStats(normalizedCollections);
+      }
+    }
     this.currentParentId.set(parentId);
     const entries: ExplorerEntry[] = [];
     // `items` is the authoritative, paginated collection. Older responses may
@@ -1393,6 +2808,7 @@ export class DataCollectionsPage {
     for (const item of rawItems) {
       const virtualUnassigned =
         item.kind === 'unassigned' || (item.id === null && item.type === 'folder');
+      if (virtualUnassigned) continue;
       const kind = virtualUnassigned
         ? 'folder'
         : item.kind || item.type || item.resource_type || (item.collection ? 'folder' : 'file');
@@ -1412,23 +2828,15 @@ export class DataCollectionsPage {
     for (const folder of rootCollections)
       if (!entries.some((entry) => this.isFolder(entry) && entry.id === folder.id))
         entries.push({ id: folder.id, name: folder.name, kind: 'folder', collection: folder });
-    // The API keeps the root folder list complete while the root item list is
-    // paginated. Keep the virtual unassigned folder visible even when sorting
-    // puts it outside the first page; the left navigation remains available
-    // as an alternate entry point.
-    if (
-      parentId === null &&
-      !this.search().trim() &&
-      !entries.some((entry) => entry.id === this.UNASSIGNED)
-    ) {
-      entries.unshift({ id: this.UNASSIGNED, name: '无归属文件', kind: 'unassigned' });
-    }
     this.explorerItems.set(entries);
     this.breadcrumbs.set(
       response.breadcrumbs?.length
-        ? response.breadcrumbs.map((crumb) => ({ id: crumb.id, name: crumb.name }))
+        ? response.breadcrumbs.map((crumb) => ({
+            id: crumb.id,
+            name: crumb.id === null ? '数据集' : crumb.name,
+          }))
         : [
-            { id: null, name: '根目录' },
+            { id: null, name: '数据集' },
             ...(parentId !== null && parentId !== this.UNASSIGNED
               ? [{ id: parentId, name: this.currentFolderName() }]
               : parentId === this.UNASSIGNED
@@ -1490,6 +2898,8 @@ export class DataCollectionsPage {
       list.call(this.service).subscribe({
         next: (items) => {
           this.collections.set(items || []);
+          this.statsCollections.set(items || []);
+          this.refreshMonthlyFileStats(items || []);
           this.loading.set(false);
         },
         error: () => {
