@@ -8,6 +8,7 @@ import { vi } from 'vitest';
 import { QuickTrialPage } from './quick-trial.page';
 import { QuickTrialService } from './quick-trial.service';
 import { DataFileService } from '../../core/services/data-file.service';
+import { AuthService } from '../../core/services/auth.service';
 
 describe('QuickTrialPage', () => {
   let component: QuickTrialPage;
@@ -132,6 +133,7 @@ describe('QuickTrialPage', () => {
         provideRouter([]),
         { provide: QuickTrialService, useValue: quickTrialSpy },
         { provide: DataFileService, useValue: dataFileSpy },
+        { provide: AuthService, useValue: { isAuthenticated: () => true } },
       ],
     }).compileComponents();
 
@@ -143,7 +145,7 @@ describe('QuickTrialPage', () => {
   it('initializes with default task timeseries-forecast and auto algorithm', () => {
     expect(component.selectedTaskId()).toBe('timeseries-forecast');
     expect(component.selectedAlgorithm()).toBe('auto');
-    expect(fixture.nativeElement.textContent).toContain('智能水务');
+    expect(fixture.nativeElement.textContent).toContain('智慧水务');
     expect(fixture.nativeElement.textContent).toContain('时序预测');
   });
 
