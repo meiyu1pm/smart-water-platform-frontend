@@ -170,13 +170,16 @@ export class FengtaiTopologyComponent implements AfterViewInit, OnChanges, OnDes
     const data = params?.data;
     if (!data) return;
     const type = params.dataType === 'edge' ? 'pipe' : (data.type ?? 'node');
-    this.selectedId = String(params.dataType === 'edge' ? (data.id ?? data.name) : data.id);
-    this.assetSelected.emit({
-      type,
-      id: this.selectedId,
-      name: data.name ?? this.selectedId,
-    } as AssetSelection);
-    this.render();
+    const selectedId = String(params.dataType === 'edge' ? (data.id ?? data.name) : data.id);
+    queueMicrotask(() => {
+      this.selectedId = selectedId;
+      this.assetSelected.emit({
+        type,
+        id: selectedId,
+        name: data.name ?? selectedId,
+      } as AssetSelection);
+      this.render();
+    });
   }
   private riskColor(value: unknown): string {
     const valueAsNumber = typeof value === 'number' ? value : Number(value);
