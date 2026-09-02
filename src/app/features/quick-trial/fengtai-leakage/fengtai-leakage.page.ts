@@ -69,11 +69,10 @@ import { fengtaiLabel, fengtaiValue } from './fengtai-labels';
         <div class="scope">面向管网运行与检漏人员<br />候选与模拟结果需结合现场复核</div>
       </section>
 
-      <section class="toolbar" aria-label="分析窗口选择">
+      <section class="toolbar" aria-label="分析策略与窗口选择">
         <mat-form-field appearance="outline"
-          ><mat-label>分析窗口</mat-label
-          ><mat-select [(ngModel)]="preset" (selectionChange)="onPresetChange()"
-            ><mat-option value="custom">自定义窗口</mat-option>
+          ><mat-label>分析策略</mat-label
+          ><mat-select [(ngModel)]="preset">
             @for (item of presets(); track item.id) {
               <mat-option [value]="item.id">{{ item.label }}</mat-option>
             }
@@ -448,17 +447,12 @@ export class FengtaiLeakagePage implements OnInit {
             id === 'balanced' ? '平衡研判' : id === 'sensitive' ? '敏感筛查' : '可用窗口',
           );
       });
-    const ranges = manifest?.date_ranges;
-    if (Array.isArray(ranges))
-      ranges.forEach((item, index) => add(`range-${index}`, item, `可用窗口 ${index + 1}`));
-    else if (ranges && typeof ranges === 'object')
-      Object.entries(ranges).forEach(([id, item]) => {
-        if (item && typeof item === 'object')
-          add(`range-${id}`, item as Record<string, unknown>, '可用窗口');
-      });
-    const fallback = manifest?.default_window;
-    if (fallback && !selected.length) add('default', fallback, '默认窗口');
-    return selected;
+    return selected.length
+      ? selected
+      : [
+          { id: 'balanced', label: '平衡研判' },
+          { id: 'sensitive', label: '敏感筛查' },
+        ];
   });
   readonly stages = computed<FengtaiStage[]>(
     () =>
@@ -519,13 +513,6 @@ export class FengtaiLeakagePage implements OnInit {
         },
       });
   }
-  onPresetChange(): void {
-    const item = this.presets().find((preset) => preset.id === this.preset);
-    if (item) {
-      this.startDate = item.start_date ?? this.startDate;
-      this.endDate = item.end_date ?? this.endDate;
-    }
-  }
   runSimulation(valveId: string, reduction: number): void {
     if (!this.requireAuthenticated()) return;
     this.simulating.set(true);
@@ -562,11 +549,16 @@ export class FengtaiLeakagePage implements OnInit {
     return false;
   }
   private applyManifestWindow(manifest: FengtaiLeakageManifest): void {
-    const item = this.presets()[0];
-    if (!item) return;
-    this.preset = item.id;
-    this.startDate = item.start_date ?? this.startDate;
-    this.endDate = item.end_date ?? this.endDate;
+    const options = this.presets();
+    const requestedPreset = manifest.default_preset ?? 'balanced';
+    this.preset = options.some((item) => item.id === requestedPreset)
+      ? requestedPreset
+      : (options[0]?.id ?? 'balanced');
+    const window = manifest.default_window;
+    if (window) {
+      this.startDate = this.dateValue(window.start_date ?? window.start) ?? this.startDate;
+      this.endDate = this.dateValue(window.end_date ?? window.end) ?? this.endDate;
+    }
   }
   private today(): string {
     return new Date().toISOString().slice(0, 10);
