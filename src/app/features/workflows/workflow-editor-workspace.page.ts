@@ -57,6 +57,7 @@ import {
   WorkflowDocumentTabComponent,
   WorkflowDocumentTabParams,
 } from './workflow-document-tab.component';
+import { SwIconComponent } from '../../shared/components/sw-icon.component';
 
 export const ROOT_CANVAS_PANEL_ID = 'canvas:root' as const;
 export function isRootWorkflowDocumentPanelId(id: string): boolean {
@@ -76,6 +77,7 @@ type OptionalWorkspacePanelId = Exclude<WorkspacePanelId, typeof ROOT_CANVAS_PAN
     OperatorCatalogPanelComponent,
     NodeInspectorPanelComponent,
     WorkflowCanvasPanelComponent,
+    SwIconComponent,
   ],
   providers: [
     WorkflowEditorStore,
@@ -105,31 +107,46 @@ type OptionalWorkspacePanelId = Exclude<WorkspacePanelId, typeof ROOT_CANVAS_PAN
           >
         </div>
         <div class="status" [class.conflict]="autosaveState() === 'conflict'">
+          <span aria-hidden="true"></span>
           {{ autosaveLabel() }}
         </div>
         <div class="actions">
-          <button mat-stroked-button (click)="validate()" [disabled]="busy()">
-            {{ validationButtonLabel() }}
-          </button>
-          <button mat-flat-button (click)="save()" [disabled]="busy()">保存草稿</button>
-          <button mat-flat-button (click)="publish()" [disabled]="busy() || !workflowId()">
-            发布版本
-          </button>
-          <button
-            mat-stroked-button
-            type="button"
-            (click)="registerCompositeOperator()"
-            [disabled]="busy() || !publishedVersionId()"
-          >
-            注册为复合算子
-          </button>
-          <button mat-flat-button (click)="run()" [disabled]="busy() || !publishedVersionId()">
-            运行已发布版本
-          </button>
-          <button mat-stroked-button (click)="toggleWorkspaceTheme()">
-            {{ darkWorkspace() ? '浅色画布' : '深色画布' }}
-          </button>
-          <button mat-stroked-button [matMenuTriggerFor]="windowMenu">窗口</button>
+          <div class="action-cluster primary-actions">
+            <button mat-stroked-button (click)="validate()" [disabled]="busy()">
+              <app-sw-icon name="shield" [size]="16" />{{ validationButtonLabel() }}
+            </button>
+            <button mat-flat-button class="save-action" (click)="save()" [disabled]="busy()">
+              保存草稿
+            </button>
+            <button mat-stroked-button (click)="publish()" [disabled]="busy() || !workflowId()">
+              发布版本
+            </button>
+            <button
+              mat-flat-button
+              class="run-action"
+              (click)="run()"
+              [disabled]="busy() || !publishedVersionId()"
+            >
+              <app-sw-icon name="play" [size]="16" />运行
+            </button>
+          </div>
+          <div class="action-cluster workspace-actions">
+            <button
+              mat-stroked-button
+              type="button"
+              (click)="registerCompositeOperator()"
+              [disabled]="busy() || !publishedVersionId()"
+            >
+              <app-sw-icon name="workflow" [size]="16" />注册复合算子
+            </button>
+            <button mat-stroked-button (click)="toggleWorkspaceTheme()">
+              {{ darkWorkspace() ? '浅色画布' : '深色画布' }}
+            </button>
+            <button mat-stroked-button [matMenuTriggerFor]="windowMenu">窗口</button>
+            <button mat-stroked-button (click)="resetWorkspaceLayout()">
+              <app-sw-icon name="history" [size]="16" />重置布局
+            </button>
+          </div>
           <mat-menu #windowMenu="matMenu">
             @for (panel of windowPanels; track panel.id) {
               <button
@@ -146,11 +163,10 @@ type OptionalWorkspacePanelId = Exclude<WorkspacePanelId, typeof ROOT_CANVAS_PAN
               </button>
             }
           </mat-menu>
-          <button mat-stroked-button (click)="resetWorkspaceLayout()">重置工作区</button>
         </div>
         @if (!guideDismissed()) {
           <div class="onboarding-guide">
-            <span class="guide-icon">提示</span>
+            <span class="guide-icon"><app-sw-icon name="info" [size]="18" /></span>
             <div class="guide-text">
               <strong>快速上手三步法</strong>
               <span
@@ -226,8 +242,8 @@ type OptionalWorkspacePanelId = Exclude<WorkspacePanelId, typeof ROOT_CANVAS_PAN
       grid-template-columns: minmax(220px, 1fr) auto auto;
       align-items: center;
       gap: 14px;
-      min-height: 88px;
-      padding: 10px 18px;
+      min-height: 82px;
+      padding: 10px 16px;
       border-bottom: 1px solid var(--sw-border);
       background: var(--sw-surface);
     }
@@ -235,6 +251,7 @@ type OptionalWorkspacePanelId = Exclude<WorkspacePanelId, typeof ROOT_CANVAS_PAN
       color: var(--sw-color-primary);
       font-size: 12px;
       font-weight: 800;
+      letter-spacing: 0.08em;
     }
     .title h1 {
       margin: 2px 0;
@@ -244,18 +261,63 @@ type OptionalWorkspacePanelId = Exclude<WorkspacePanelId, typeof ROOT_CANVAS_PAN
       color: var(--sw-text-muted);
     }
     .status {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      min-height: 28px;
+      padding: 4px 9px;
+      border: 1px solid color-mix(in srgb, var(--sw-color-success) 18%, var(--sw-border));
+      border-radius: 999px;
+      background: var(--sw-color-success-soft);
       color: var(--sw-color-success);
       font-size: 12px;
       font-weight: 700;
     }
+    .status > span {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: currentColor;
+    }
     .status.conflict {
+      border-color: color-mix(in srgb, var(--sw-color-danger) 22%, var(--sw-border));
+      background: var(--sw-color-danger-soft);
       color: var(--sw-color-danger);
     }
     .actions {
       display: flex;
       justify-content: flex-end;
-      gap: 8px;
+      gap: 10px;
       flex-wrap: wrap;
+    }
+    .action-cluster {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px;
+      border: 1px solid var(--sw-border);
+      border-radius: var(--sw-radius-md);
+      background: var(--sw-surface-muted);
+    }
+    .actions .mat-mdc-button-base {
+      min-height: 34px;
+      height: 34px;
+      padding-inline: 11px;
+      font-size: 12px;
+    }
+    .actions button app-sw-icon {
+      margin-right: 5px;
+    }
+    .save-action,
+    .run-action {
+      box-shadow: none;
+    }
+    .run-action {
+      background: var(--sw-color-secondary);
+      color: white;
+    }
+    .workspace-actions {
+      background: var(--sw-surface);
     }
     .message {
       margin: 8px 18px 0;
@@ -336,6 +398,8 @@ type OptionalWorkspacePanelId = Exclude<WorkspacePanelId, typeof ROOT_CANVAS_PAN
       --dv-separator-border: var(--sw-border);
       --dv-activegroup-visiblepanel-tab-color: var(--sw-text-primary);
       --dv-inactivegroup-visiblepanel-tab-color: var(--sw-text-secondary);
+      --dv-tabs-and-actions-container-height: 36px;
+      --dv-tab-font-size: 12px;
     }
     @media (max-width: 1100px) {
       .workspace-header {
@@ -379,7 +443,13 @@ type OptionalWorkspacePanelId = Exclude<WorkspacePanelId, typeof ROOT_CANVAS_PAN
 
     .guide-icon {
       flex: 0 0 auto;
-      font-size: 18px;
+      display: grid;
+      place-items: center;
+      width: 30px;
+      height: 30px;
+      border-radius: var(--sw-radius-sm);
+      background: var(--sw-color-primary-soft);
+      color: var(--sw-color-primary);
     }
 
     .guide-text {
@@ -425,6 +495,9 @@ type OptionalWorkspacePanelId = Exclude<WorkspacePanelId, typeof ROOT_CANVAS_PAN
       .onboarding-guide {
         margin: 0 12px 10px;
         flex-wrap: wrap;
+      }
+      .action-cluster {
+        flex: 0 0 auto;
       }
     }
   `,

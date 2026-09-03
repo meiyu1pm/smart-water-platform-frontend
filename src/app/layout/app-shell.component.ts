@@ -34,6 +34,7 @@ interface NavigationGroup {
     SwIconComponent,
   ],
   template: `
+    <a class="skip-link" href="#main-content">跳至主要内容</a>
     <mat-sidenav-container class="shell">
       <mat-sidenav
         [mode]="mobile() ? 'over' : 'side'"
@@ -123,7 +124,9 @@ interface NavigationGroup {
             </button>
           }
         </mat-toolbar>
-        <main class="content" [class.workspace-content]="workspace()"><router-outlet /></main>
+        <main id="main-content" class="content" [class.workspace-content]="workspace()" tabindex="-1">
+          <router-outlet />
+        </main>
       </mat-sidenav-content>
     </mat-sidenav-container>
   `,
@@ -131,6 +134,22 @@ interface NavigationGroup {
     .shell {
       height: 100vh;
       background: var(--sw-page-bg);
+    }
+    .skip-link {
+      position: fixed;
+      top: 8px;
+      left: 12px;
+      z-index: 9999;
+      padding: 9px 12px;
+      border-radius: var(--sw-radius-sm);
+      background: var(--sw-color-primary-strong);
+      color: white;
+      text-decoration: none;
+      transform: translateY(-160%);
+      transition: transform var(--sw-motion-fast) var(--sw-ease-standard);
+    }
+    .skip-link:focus {
+      transform: translateY(0);
     }
     .side-nav {
       width: 252px;
