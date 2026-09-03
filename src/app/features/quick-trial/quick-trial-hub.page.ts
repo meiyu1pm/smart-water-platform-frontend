@@ -18,7 +18,7 @@ import { QuickTrialPage } from './quick-trial.page';
         <mat-tab label="单算法试用"
           ><ng-template matTabContent><app-quick-trial-page></app-quick-trial-page></ng-template
         ></mat-tab>
-        <mat-tab label="丰泰风光苑漏损闭环"
+        <mat-tab label="管网漏损闭环"
           ><ng-template matTabContent
             ><app-fengtai-leakage-page
               (requiresLogin)="openLogin()"

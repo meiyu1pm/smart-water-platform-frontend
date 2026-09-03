@@ -17,6 +17,7 @@ import { FengtaiStage } from './fengtai-leakage.models';
           role="tab"
           [class.selected]="isSelected(stage, index)"
           [class.complete]="isComplete(stage)"
+          [class.locked]="!isAvailable(stage, index)"
           [attr.aria-selected]="isSelected(stage, index)"
           [attr.aria-current]="isSelected(stage, index) ? 'step' : null"
           [attr.aria-controls]="'fengtai-stage-' + code(stage, index)"
@@ -26,15 +27,7 @@ import { FengtaiStage } from './fengtai-leakage.models';
         >
           <span class="ordinal">{{ index + 1 }}</span>
           <span class="title">{{ stage.title || stage.name || '分析环节' }}</span>
-          <span class="state">{{
-            isSelected(stage, index)
-              ? isComplete(stage)
-                ? '当前查看 · 已完成'
-                : '当前查看 · 待完成'
-              : isComplete(stage)
-                ? '已完成'
-                : '待完成'
-          }}</span>
+          <span class="state">{{ stateLabel(stage, index) }}</span>
         </button>
       }
     </nav>
@@ -82,6 +75,13 @@ import { FengtaiStage } from './fengtai-leakage.models';
       box-shadow:
         inset 3px 0 0 var(--sw-color-secondary),
         0 3px 10px rgb(15 118 110 / 8%);
+    }
+    .stage.locked:not(.selected) {
+      background: var(--sw-surface-muted);
+    }
+    .stage.locked:not(.selected) .ordinal,
+    .stage.locked:not(.selected) .title {
+      opacity: 0.72;
     }
     .ordinal {
       grid-row: span 2;
@@ -152,6 +152,7 @@ import { FengtaiStage } from './fengtai-leakage.models';
 export class FengtaiProcessRailComponent {
   @Input() stages: FengtaiStage[] = [];
   @Input() selectedCode = '';
+  @Input() availableCodes: ReadonlySet<string> = new Set<string>();
   @Output() readonly selectedCodeChange = new EventEmitter<string>();
 
   code(stage: FengtaiStage, index: number): string {
@@ -166,6 +167,16 @@ export class FengtaiProcessRailComponent {
     return ['complete', 'completed', 'done', 'success'].includes(
       String(stage.status ?? '').toLowerCase(),
     );
+  }
+
+  isAvailable(stage: FengtaiStage, index: number): boolean {
+    return this.availableCodes.has(this.code(stage, index));
+  }
+
+  stateLabel(stage: FengtaiStage, index: number): string {
+    const prefix = this.isSelected(stage, index) ? '当前查看 · ' : '';
+    if (this.isComplete(stage)) return `${prefix}已完成`;
+    return `${prefix}${this.isAvailable(stage, index) ? '可查看' : '待分析'}`;
   }
 
   select(stage: FengtaiStage, index: number): void {

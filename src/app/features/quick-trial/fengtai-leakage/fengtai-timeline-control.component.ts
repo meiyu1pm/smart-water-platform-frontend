@@ -14,13 +14,24 @@ import {
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-    <section class="timeline" aria-label="管网状态时间轴">
+    <section
+      class="timeline"
+      aria-label="管网状态时间轴"
+      (mouseenter)="pause()"
+      (focusin)="pause()"
+    >
       <div class="heading">
         <div>
           <strong>状态时间轴</strong>
-          <span>{{ currentLabel() }}</span>
+          <span>{{ currentLabel() }} · {{ intervalLabel() }}</span>
         </div>
-        <button type="button" (click)="togglePlayback()" [disabled]="timestamps.length < 2">
+        <button
+          type="button"
+          (click)="togglePlayback()"
+          [disabled]="timestamps.length < 2 || reducedMotion"
+          [attr.aria-pressed]="playing"
+          [attr.title]="reducedMotion ? '系统已启用减少动态效果，请使用前后按钮查看' : null"
+        >
           {{ playing ? '暂停' : '播放' }}
         </button>
       </div>
@@ -35,6 +46,7 @@ import {
           [max]="maxIndex()"
           [value]="index"
           [disabled]="!timestamps.length"
+          [attr.aria-valuetext]="currentLabel()"
           (input)="selectIndex($any($event.target).value)"
         />
         <button
@@ -126,10 +138,13 @@ import {
 export class FengtaiTimelineControlComponent implements OnChanges, OnDestroy {
   @Input() timestamps: string[] = [];
   @Input() activeTimestamp: string | null = null;
+  @Input() intervalMinutes: number | null = null;
   @Output() readonly activeTimestampChange = new EventEmitter<string>();
 
   index = 0;
   playing = false;
+  readonly reducedMotion =
+    typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   private timer: ReturnType<typeof setInterval> | null = null;
 
   ngOnChanges(_changes: SimpleChanges): void {
@@ -155,6 +170,15 @@ export class FengtaiTimelineControlComponent implements OnChanges, OnDestroy {
     return Number.isNaN(date.valueOf()) ? value : date.toLocaleString('zh-CN', { hour12: false });
   }
 
+  intervalLabel(): string {
+    if (!this.timestamps.length || !this.intervalMinutes) return '等待分析时间帧';
+    if (this.intervalMinutes >= 1440 && this.intervalMinutes % 1440 === 0)
+      return `${this.intervalMinutes / 1440} 天 / 帧`;
+    if (this.intervalMinutes >= 60 && this.intervalMinutes % 60 === 0)
+      return `${this.intervalMinutes / 60} 小时 / 帧`;
+    return `${this.intervalMinutes} 分钟 / 帧`;
+  }
+
   selectIndex(value: string | number): void {
     const next = Math.max(0, Math.min(this.maxIndex(), Number(value)));
     this.index = Number.isFinite(next) ? next : 0;
@@ -171,7 +195,7 @@ export class FengtaiTimelineControlComponent implements OnChanges, OnDestroy {
       this.pause();
       return;
     }
-    if (this.timestamps.length < 2) return;
+    if (this.timestamps.length < 2 || this.reducedMotion) return;
     this.playing = true;
     this.timer = setInterval(() => {
       if (this.index >= this.maxIndex()) {
@@ -182,7 +206,7 @@ export class FengtaiTimelineControlComponent implements OnChanges, OnDestroy {
     }, 700);
   }
 
-  private pause(): void {
+  pause(): void {
     this.playing = false;
     if (this.timer) clearInterval(this.timer);
     this.timer = null;

@@ -15,7 +15,7 @@ import {
 @Injectable({ providedIn: 'root' })
 export class FengtaiLeakageService {
   private readonly api = inject(ApiClient);
-  private readonly basePath = '/api/v1/demos/fengtai-leakage';
+  private readonly basePath = '/api/v1/demos/leakage-closed-loop';
 
   getManifest(): Observable<FengtaiLeakageManifest> {
     return this.api.get<FengtaiLeakageManifest>(`${this.basePath}/manifest`);
@@ -51,6 +51,20 @@ export class FengtaiLeakageService {
     );
   }
 
+  getReferenceAssetDetail(
+    assetId: string,
+    startDate: string,
+    endDate: string,
+  ): Observable<FengtaiAssetDetail> {
+    return this.api.get<FengtaiAssetDetail>(
+      `${this.basePath}/assets/${encodeURIComponent(assetId)}`,
+      {
+        start_date: startDate,
+        end_date: endDate,
+      },
+    );
+  }
+
   getNetworkFrames(
     analysisId: string,
     startDate: string,
@@ -71,6 +85,7 @@ export class FengtaiLeakageService {
     const network = response.network ?? {};
     const nodes = [
       ...(network.nodes ?? []).map((node) => ({
+        ...node,
         id: node.node_id,
         name: node.name ?? node.node_id,
         type: 'node',
@@ -79,6 +94,7 @@ export class FengtaiLeakageService {
         y: node.y,
       })),
       ...(network.valves ?? []).map((valve) => ({
+        ...valve,
         id: valve.asset_id,
         name: valve.name ?? valve.asset_id,
         type: 'valve',
@@ -86,6 +102,7 @@ export class FengtaiLeakageService {
         y: valve.y,
       })),
       ...(network.hydrants ?? []).map((hydrant) => ({
+        ...hydrant,
         id: hydrant.asset_id,
         name: hydrant.name ?? hydrant.asset_id,
         type: 'hydrant',
@@ -98,6 +115,7 @@ export class FengtaiLeakageService {
       pipes: (network.pipes ?? [])
         .filter((pipe) => !!pipe.start_node_id && !!pipe.end_node_id)
         .map((pipe) => ({
+          ...pipe,
           id: pipe.pipe_id,
           name: pipe.name ?? pipe.pipe_id,
           source: pipe.start_node_id,
