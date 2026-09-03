@@ -65,7 +65,7 @@ import { NotificationService } from '../../core/services/notification.service';
             </svg>
           </div>
           <div class="brand-text">
-            <h1>智能水务<span>算法平台</span></h1>
+            <h1>智慧水务<span>算法平台</span></h1>
             <span class="sub-title">SMART WATER ALGORITHM PLATFORM</span>
           </div>
         </div>

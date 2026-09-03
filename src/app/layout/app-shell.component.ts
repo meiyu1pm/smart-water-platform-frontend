@@ -38,7 +38,7 @@ interface NavigationItem {
       >
         <div class="brand">
           <span class="brand-mark">SW</span>
-          <div><strong>智能水务平台</strong><small>算法管理</small></div>
+          <div><strong>智慧水务平台</strong><small>算法管理</small></div>
         </div>
         <mat-divider />
         <mat-nav-list>
