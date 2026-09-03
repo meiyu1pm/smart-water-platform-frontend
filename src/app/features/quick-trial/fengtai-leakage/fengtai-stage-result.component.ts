@@ -98,20 +98,23 @@ import { FengtaiWaterBalanceComponent } from './fengtai-water-balance.component'
       gap: 10px;
     }
     .overview article {
-      padding: 12px;
-      border: 1px solid #dbe4ea;
-      border-radius: 8px;
-      background: #f8fafc;
+      min-height: 66px;
+      padding: 11px 12px;
+      border: 1px solid var(--sw-border);
+      border-radius: var(--sw-radius-sm);
+      background: var(--sw-surface-muted);
       display: grid;
+      align-content: center;
       gap: 4px;
     }
     .overview span {
-      color: #64748b;
+      color: var(--sw-text-muted);
       font-size: 11px;
     }
     .overview strong {
-      color: #0f766e;
-      font-size: 16px;
+      color: var(--sw-color-secondary-strong);
+      font-size: 15px;
+      font-variant-numeric: tabular-nums;
     }
     @media (max-width: 700px) {
       .overview {

@@ -51,7 +51,7 @@ import { SwIconComponent } from '../../shared/components/sw-icon.component';
         <div class="brand-badge">
           <div class="logo-icon">
             <svg viewBox="0 0 36 36" width="32" height="32" fill="none">
-              <rect width="36" height="36" rx="8" fill="#0284c7" />
+              <rect width="36" height="36" rx="8" fill="var(--sw-color-primary)" />
               <path
                 d="M18 7L27 12V24L18 29L9 24V12L18 7Z"
                 stroke="white"
@@ -68,11 +68,12 @@ import { SwIconComponent } from '../../shared/components/sw-icon.component';
             </svg>
           </div>
           <div class="brand-text">
+            <span class="section-kicker">算法快速试用</span>
             <h1>智慧水务<span>算法平台</span></h1>
             <span class="sub-title">SMART WATER ALGORITHM PLATFORM</span>
           </div>
         </div>
-        <p class="hero-desc">快速试用与可视化中心 · 零门槛一键体验水务算法</p>
+        <p class="hero-desc">选择任务、算法与数据，在一个界面完成配置、运行和结果查看。</p>
       </header>
 
       <!-- 快速运行输入条 (Quick Run Bar) -->
@@ -111,10 +112,13 @@ import { SwIconComponent } from '../../shared/components/sw-icon.component';
 
         <div class="input-group data-group">
           <label>数据输入与分析窗口</label>
-          <div
+          <button
+            type="button"
             class="data-input-box"
             (click)="toggleDataDrawer()"
             [class.active]="drawerOpen()"
+            [attr.aria-expanded]="drawerOpen()"
+            aria-controls="quick-trial-data-drawer"
             title="点击选择输出列、预览时序波形或调整分析窗口"
           >
             <span class="data-icon"
@@ -122,7 +126,7 @@ import { SwIconComponent } from '../../shared/components/sw-icon.component';
             /></span>
             <span class="data-summary-text">{{ dataInputDisplay() }}</span>
             <span class="edit-badge">{{ drawerOpen() ? '收起配置' : '调整输入与分析窗口' }}</span>
-          </div>
+          </button>
         </div>
 
         <button type="button" class="run-btn" [disabled]="running()" (click)="runQuickTrial()">
@@ -138,12 +142,13 @@ import { SwIconComponent } from '../../shared/components/sw-icon.component';
 
       <!-- 数据选择与上传抽屉 (内嵌标准预览、即时波形图与预测窗口调控) -->
       @if (drawerOpen()) {
-        <section class="data-drawer-panel">
+        <section id="quick-trial-data-drawer" class="data-drawer-panel" aria-label="数据输入配置">
           <div class="drawer-header">
             <div class="drawer-tabs">
               <button
                 type="button"
                 [class.active]="dataMode() === 'demo'"
+                [attr.aria-pressed]="dataMode() === 'demo'"
                 (click)="switchToDemoMode()"
               >
                 <app-sw-icon name="flask" [size]="17" />平台示例数据
@@ -151,13 +156,19 @@ import { SwIconComponent } from '../../shared/components/sw-icon.component';
               <button
                 type="button"
                 [class.active]="dataMode() === 'upload'"
+                [attr.aria-pressed]="dataMode() === 'upload'"
                 (click)="switchToUploadMode()"
               >
-                📤 上传本地 CSV
+                <app-sw-icon name="upload" [size]="17" />上传本地 CSV
               </button>
             </div>
-            <button type="button" class="close-drawer-btn" (click)="drawerOpen.set(false)">
-              ✕
+            <button
+              type="button"
+              class="close-drawer-btn"
+              aria-label="关闭数据输入配置"
+              (click)="drawerOpen.set(false)"
+            >
+              <app-sw-icon name="close" [size]="18" />
             </button>
           </div>
 
@@ -172,16 +183,18 @@ import { SwIconComponent } from '../../shared/components/sw-icon.component';
                 class="file-input-hidden"
               />
               @if (uploading()) {
-                <div class="upload-loading">
+                <div class="upload-loading" role="status" aria-live="polite">
                   <span class="spinner"></span>
                   <span>正在上传并解析文件结构...</span>
                 </div>
               } @else {
-                <div class="drop-target" (click)="fileInput.click()">
+                <button type="button" class="drop-target" (click)="fileInput.click()">
                   <span class="upload-icon"><app-sw-icon name="upload" [size]="28" /></span>
                   <strong>点击或拖拽上传本地 CSV 时序数据文件</strong>
-                  <p>上传后可在下方交互式预览并点选输入列，运行完成后将自动清理回收该临时文件。</p>
-                </div>
+                  <span class="drop-description"
+                    >上传后可在下方交互式预览并点选输入列，运行完成后将自动清理回收该临时文件。</span
+                  >
+                </button>
               }
             </div>
           }
@@ -318,8 +331,9 @@ import { SwIconComponent } from '../../shared/components/sw-icon.component';
                 </div>
 
                 <div class="window-summary-alert">
-                  <span
-                    >🎯 <strong>执行配置：</strong>将以 <code>{{ contextStartTime() }}</code> 至
+                  <span>
+                    <app-sw-icon name="info" [size]="16" />
+                    <strong>执行配置：</strong>将以 <code>{{ contextStartTime() }}</code> 至
                     <code>{{ contextEndTime() }}</code
                     >（共 {{ contextPointsCount() }} 点）作为输入特征，向后外推预测未来
                     <strong
@@ -333,7 +347,8 @@ import { SwIconComponent } from '../../shared/components/sw-icon.component';
               } @else {
                 <div class="window-summary-alert">
                   <span>
-                    🎯 <strong>执行配置：</strong>分析 <code>{{ contextStartTime() }}</code> 至
+                    <app-sw-icon name="info" [size]="16" />
+                    <strong>执行配置：</strong>分析 <code>{{ contextStartTime() }}</code> 至
                     <code>{{ contextEndTime() }}</code> 的 {{ contextPointsCount() }} 个真实观测点。
                     @if (selectedTaskId() === 'dma-leakage') {
                       当前为总表夜间流量初筛，不替代完整水量平衡。
@@ -348,15 +363,22 @@ import { SwIconComponent } from '../../shared/components/sw-icon.component';
 
       <!-- 运行中状态动画 -->
       @if (running()) {
-        <section class="running-state-card">
+        <section class="running-state-card" role="status" aria-live="polite">
+          <header>
+            <span class="running-mark"><app-sw-icon name="activity" [size]="18" /></span>
+            <div>
+              <strong>正在执行 {{ selectedTaskName() }}</strong>
+              <span>完成后将在此处展示指标和可视化结果</span>
+            </div>
+          </header>
           <div class="progress-bar-track">
             <div class="progress-bar-fill"></div>
           </div>
           <div class="step-badges">
-            <span class="step-item active">1. 自动构建即席工作流拓扑</span>
-            <span class="step-item active">2. 绑定视图并发布执行版本</span>
-            <span class="step-item active">3. Celery / GPU 算法算子执行计算</span>
-            <span class="step-item">4. 提取真实算法结果并生成可视化</span>
+            <span class="step-item active">准备分析任务</span>
+            <span class="step-item active">读取时序数据</span>
+            <span class="step-item active">执行算法计算</span>
+            <span class="step-item">整理可视化结果</span>
           </div>
         </section>
       }
@@ -377,7 +399,7 @@ import { SwIconComponent } from '../../shared/components/sw-icon.component';
             </div>
             <div class="header-actions">
               <button type="button" class="action-btn download-btn" (click)="downloadResultCsv()">
-                📥 导出结果数据
+                <app-sw-icon name="file" [size]="17" />导出结果数据
               </button>
               <button
                 type="button"
@@ -465,26 +487,26 @@ import { SwIconComponent } from '../../shared/components/sw-icon.component';
             <p>选择推荐场景，快速体验水务算法精准分析能力</p>
           </div>
           <div class="showcase-grid">
-            <article class="showcase-card" (click)="onTaskChange('timeseries-forecast')">
+            <button type="button" class="showcase-card" (click)="onTaskChange('timeseries-forecast')">
               <span class="sc-icon"><app-sw-icon name="chart" [size]="22" /></span>
-              <h3>时序预测</h3>
-              <p>供水量外推、水厂进水流量趋势分析，辅助调度决策与峰谷平衡。</p>
-              <span class="sc-action">载入配置 ➔</span>
-            </article>
+              <span class="sc-title">时序预测</span>
+              <span class="sc-copy">供水量外推、水厂进水流量趋势分析，辅助调度决策与峰谷平衡。</span>
+              <span class="sc-action">载入配置 <span aria-hidden="true">→</span></span>
+            </button>
 
-            <article class="showcase-card" (click)="onTaskChange('anomaly-detection')">
+            <button type="button" class="showcase-card" (click)="onTaskChange('anomaly-detection')">
               <span class="sc-icon"><app-sw-icon name="search" [size]="22" /></span>
-              <h3>异常突变检测</h3>
-              <p>水质浊度突升、管网水压突降智能识别，秒级捕捉异常工况。</p>
-              <span class="sc-action">载入配置 ➔</span>
-            </article>
+              <span class="sc-title">异常突变检测</span>
+              <span class="sc-copy">水质浊度突升、管网水压突降智能识别，快速定位异常工况。</span>
+              <span class="sc-action">载入配置 <span aria-hidden="true">→</span></span>
+            </button>
 
-            <article class="showcase-card" (click)="onTaskChange('dma-leakage')">
+            <button type="button" class="showcase-card" (click)="onTaskChange('dma-leakage')">
               <span class="sc-icon"><app-sw-icon name="droplet" [size]="22" /></span>
-              <h3>DMA 夜间流量初筛</h3>
-              <p>真实执行最小夜间流量算法，筛选持续高流量日期并提示业务边界。</p>
-              <span class="sc-action">载入配置 ➔</span>
-            </article>
+              <span class="sc-title">DMA 夜间流量初筛</span>
+              <span class="sc-copy">执行最小夜间流量分析，筛选持续高流量日期并呈现研判依据。</span>
+              <span class="sc-action">载入配置 <span aria-hidden="true">→</span></span>
+            </button>
           </div>
         </section>
       }
@@ -497,20 +519,14 @@ import { SwIconComponent } from '../../shared/components/sw-icon.component';
       min-height: calc(100vh - 120px);
     }
     .trial-container {
-      max-width: 1080px;
       margin: 0 auto;
-      padding: 36px 20px 60px;
       display: flex;
       flex-direction: column;
-      gap: 28px;
     }
     /* 居中 Hero 品牌区 */
     .brand-hero {
-      text-align: center;
       display: flex;
       flex-direction: column;
-      align-items: center;
-      gap: 10px;
     }
     .brand-badge {
       display: flex;
@@ -550,17 +566,8 @@ import { SwIconComponent } from '../../shared/components/sw-icon.component';
     .quick-run-bar {
       display: flex;
       align-items: center;
-      background: #ffffff;
-      border: 1.5px solid #cbd5e1;
-      border-radius: 14px;
-      padding: 10px 14px;
-      box-shadow: 0 10px 30px rgba(15, 23, 42, 0.07);
-      gap: 16px;
+      border: 1px solid;
       transition: all 0.2s ease;
-    }
-    .quick-run-bar:focus-within {
-      border-color: #0284c7;
-      box-shadow: 0 12px 36px rgba(2, 132, 199, 0.14);
     }
     .input-group {
       display: flex;
@@ -690,11 +697,8 @@ import { SwIconComponent } from '../../shared/components/sw-icon.component';
     }
     /* 抽屉面板 */
     .data-drawer-panel {
-      background: #ffffff;
-      border: 1.5px solid #cbd5e1;
-      border-radius: 14px;
+      border: 1px solid;
       padding: 18px 20px;
-      box-shadow: 0 12px 30px rgba(15, 23, 42, 0.08);
       display: flex;
       flex-direction: column;
       gap: 16px;
@@ -769,7 +773,8 @@ import { SwIconComponent } from '../../shared/components/sw-icon.component';
       font-size: 13px;
       color: #1e293b;
     }
-    .drop-target p {
+    .drop-description {
+      display: block;
       margin: 4px 0 0;
       font-size: 11px;
       color: #94a3b8;
@@ -981,13 +986,10 @@ import { SwIconComponent } from '../../shared/components/sw-icon.component';
     /* 运行状态卡片 */
     .running-state-card {
       padding: 24px;
-      background: #ffffff;
-      border: 1px solid #e2e8f0;
-      border-radius: 12px;
+      border: 1px solid;
       display: flex;
       flex-direction: column;
       gap: 16px;
-      box-shadow: 0 4px 14px rgba(15, 23, 42, 0.05);
     }
     .progress-bar-track {
       width: 100%;
@@ -1023,11 +1025,8 @@ import { SwIconComponent } from '../../shared/components/sw-icon.component';
     }
     /* 结果面板 */
     .result-dashboard {
-      background: #ffffff;
-      border: 1.5px solid #cbd5e1;
-      border-radius: 14px;
+      border: 1px solid;
       padding: 24px;
-      box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
       display: flex;
       flex-direction: column;
       gap: 20px;
@@ -1182,34 +1181,12 @@ import { SwIconComponent } from '../../shared/components/sw-icon.component';
     }
     .showcase-card {
       padding: 18px;
-      background: #ffffff;
-      border: 1px solid #e2e8f0;
-      border-radius: 12px;
+      border: 1px solid;
       cursor: pointer;
       transition: all 0.2s ease;
       display: flex;
       flex-direction: column;
       gap: 8px;
-    }
-    .showcase-card:hover {
-      border-color: #0284c7;
-      box-shadow: 0 8px 24px rgba(2, 132, 199, 0.12);
-      transform: translateY(-2px);
-    }
-    .sc-icon {
-      font-size: 24px;
-    }
-    .showcase-card h3 {
-      margin: 0;
-      font-size: 15px;
-      color: #0f172a;
-    }
-    .showcase-card p {
-      margin: 0;
-      font-size: 12px;
-      color: #64748b;
-      line-height: 1.5;
-      flex: 1;
     }
     .sc-action {
       font-size: 12px;
@@ -1227,12 +1204,35 @@ import { SwIconComponent } from '../../shared/components/sw-icon.component';
       gap: 24px;
     }
     .brand-hero {
-      gap: 8px;
+      align-items: flex-start;
+      gap: 7px;
+      padding: 22px 24px;
+      text-align: left;
+      border: 1px solid color-mix(in srgb, var(--sw-color-primary) 18%, var(--sw-border));
+      border-radius: var(--sw-radius-lg);
+      background:
+        radial-gradient(
+          circle at 88% 0%,
+          color-mix(in srgb, var(--sw-color-secondary) 14%, transparent),
+          transparent 20rem
+        ),
+        var(--sw-surface);
+      box-shadow: var(--sw-shadow-sm);
+    }
+    .brand-badge {
+      justify-content: flex-start;
+    }
+    .section-kicker {
+      display: block;
+      margin-bottom: 3px;
+      color: var(--sw-color-secondary-strong);
+      font-size: 11px;
+      font-weight: 750;
+      letter-spacing: 0.08em;
     }
     .brand-text h1,
     .task-tag,
     .showcase-header h2,
-    .showcase-card h3,
     .drop-target strong,
     .file-info-line,
     .metric-val,
@@ -1252,14 +1252,13 @@ import { SwIconComponent } from '../../shared/components/sw-icon.component';
     .hero-desc,
     .input-group label,
     .drawer-tabs button,
-    .drop-target p,
+    .drop-description,
     .temp-note,
     .slider-hint,
     .unit-tag,
     .preset-label,
     .metric-lbl,
     .showcase-header p,
-    .showcase-card p,
     .step-badges {
       color: var(--sw-text-muted);
     }
@@ -1274,7 +1273,8 @@ import { SwIconComponent } from '../../shared/components/sw-icon.component';
       box-shadow: var(--sw-shadow-sm);
     }
     .quick-run-bar {
-      padding: 12px 14px;
+      padding: 14px 16px;
+      gap: 14px;
     }
     .quick-run-bar:focus-within {
       border-color: var(--sw-focus);
@@ -1289,6 +1289,17 @@ import { SwIconComponent } from '../../shared/components/sw-icon.component';
       border-color: var(--sw-border);
       background: var(--sw-surface-muted);
       color: var(--sw-text-primary);
+    }
+    .select-wrapper select,
+    .data-input-box {
+      min-height: 42px;
+    }
+    .data-input-box {
+      width: 100%;
+      height: 42px;
+      box-sizing: border-box;
+      text-align: left;
+      font: inherit;
     }
     .select-wrapper select:hover,
     .select-wrapper select:focus,
@@ -1307,6 +1318,7 @@ import { SwIconComponent } from '../../shared/components/sw-icon.component';
       color: var(--sw-color-primary-strong);
     }
     .run-btn {
+      min-height: 44px;
       background: var(--sw-color-primary-strong);
       box-shadow: 0 1px 2px rgb(0 38 54 / 18%);
     }
@@ -1316,6 +1328,9 @@ import { SwIconComponent } from '../../shared/components/sw-icon.component';
       box-shadow: 0 5px 14px rgb(8 119 164 / 20%);
     }
     .drop-target {
+      width: 100%;
+      color: inherit;
+      font: inherit;
       border-color: var(--sw-border-strong);
       background: var(--sw-surface-muted);
     }
@@ -1329,6 +1344,84 @@ import { SwIconComponent } from '../../shared/components/sw-icon.component';
     .download-btn {
       border-color: var(--sw-border);
       background: var(--sw-surface);
+    }
+    .close-drawer-btn {
+      width: 40px;
+      height: 40px;
+      display: grid;
+      place-items: center;
+      border-radius: var(--sw-radius-sm);
+    }
+    .close-drawer-btn:hover {
+      color: var(--sw-text-primary);
+      background: var(--sw-surface-muted);
+    }
+    .window-summary-alert > span {
+      display: flex;
+      align-items: flex-start;
+      gap: 7px;
+      line-height: 1.6;
+    }
+    .window-summary-alert app-sw-icon {
+      margin-top: 1px;
+      flex: 0 0 auto;
+    }
+    .running-state-card {
+      gap: 14px;
+      padding: 18px 20px;
+      border-color: color-mix(in srgb, var(--sw-color-primary) 24%, var(--sw-border));
+      background:
+        linear-gradient(90deg, var(--sw-color-primary-faint), transparent 62%),
+        var(--sw-surface);
+    }
+    .running-state-card header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .running-state-card header > div {
+      display: grid;
+      gap: 2px;
+    }
+    .running-state-card header strong {
+      font-size: 14px;
+    }
+    .running-state-card header span:not(.running-mark) {
+      color: var(--sw-text-muted);
+      font-size: 12px;
+    }
+    .running-mark {
+      width: 36px;
+      height: 36px;
+      display: grid;
+      place-items: center;
+      border-radius: 50%;
+      background: var(--sw-color-primary-soft);
+      color: var(--sw-color-primary-strong);
+    }
+    .step-badges {
+      gap: 8px;
+    }
+    .step-item {
+      flex: 1;
+      min-width: 0;
+      padding-left: 15px;
+      position: relative;
+    }
+    .step-item::before {
+      content: '';
+      width: 7px;
+      height: 7px;
+      position: absolute;
+      top: 4px;
+      left: 0;
+      border: 2px solid var(--sw-border-strong);
+      border-radius: 50%;
+      background: var(--sw-surface);
+    }
+    .step-item.active::before {
+      border-color: var(--sw-color-primary);
+      background: var(--sw-color-primary);
     }
     .progress-bar-track {
       background: var(--sw-surface-sunken);
@@ -1349,6 +1442,46 @@ import { SwIconComponent } from '../../shared/components/sw-icon.component';
       border-color: var(--sw-color-primary);
       box-shadow: var(--sw-shadow-md);
       transform: none;
+    }
+    .showcase-card {
+      min-width: 0;
+      white-space: normal;
+      text-align: left;
+      color: inherit;
+      font: inherit;
+    }
+    .sc-title {
+      color: var(--sw-text-primary);
+      font-size: 15px;
+      font-weight: 750;
+    }
+    .sc-copy {
+      min-height: 3.6em;
+      color: var(--sw-text-secondary);
+      font-size: 12px;
+      line-height: 1.6;
+    }
+    .sc-action {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+    }
+    .action-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      min-height: 38px;
+    }
+    .data-input-box:focus-visible,
+    .drawer-tabs button:focus-visible,
+    .close-drawer-btn:focus-visible,
+    .drop-target:focus-visible,
+    .preset-btn:focus-visible,
+    .action-btn:focus-visible,
+    .showcase-card:focus-visible {
+      outline: 3px solid color-mix(in srgb, var(--sw-focus) 30%, transparent);
+      outline-offset: 2px;
     }
     .drawer-tabs button,
     .file-info-line > span,
@@ -1397,6 +1530,10 @@ import { SwIconComponent } from '../../shared/components/sw-icon.component';
       .showcase-grid {
         grid-template-columns: 1fr 1fr;
       }
+      .step-badges {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+      }
     }
     @media (max-width: 560px) {
       .trial-container {
@@ -1404,6 +1541,9 @@ import { SwIconComponent } from '../../shared/components/sw-icon.component';
       }
       .brand-badge {
         gap: 10px;
+      }
+      .brand-hero {
+        padding: 18px;
       }
       .brand-text h1 {
         font-size: 22px;
@@ -1433,6 +1573,24 @@ import { SwIconComponent } from '../../shared/components/sw-icon.component';
       .drawer-tabs button,
       .header-actions button {
         flex: 1;
+      }
+      .data-input-box {
+        height: auto;
+        min-height: 48px;
+        flex-wrap: wrap;
+        padding-block: 8px;
+      }
+      .data-summary-text {
+        flex-basis: calc(100% - 30px);
+      }
+      .edit-badge {
+        margin-left: 26px;
+      }
+      .step-badges {
+        grid-template-columns: 1fr;
+      }
+      .sc-copy {
+        min-height: 0;
       }
     }
   `,
@@ -1598,6 +1756,9 @@ export class QuickTrialPage implements OnInit, AfterViewInit, OnDestroy {
     }
     return `${fileLabel} (${this.selectedTimeCol()} ➔ ${this.selectedValueCol()} · 分析 ${ctxCount}点)`;
   });
+  readonly selectedTaskName = computed(
+    () => this.scenarios.find((item) => item.id === this.selectedTaskId())?.name ?? '试用任务',
+  );
 
   ngOnInit(): void {
     // Resolve the platform-owned demo by its stable application identity.

@@ -9,6 +9,7 @@ import { Observable, finalize, map } from 'rxjs';
 
 import { AuthService } from '../../core/services/auth.service';
 import { NotificationService } from '../../core/services/notification.service';
+import { SwIconComponent } from '../../shared/components/sw-icon.component';
 
 @Component({
   selector: 'app-login-dialog',
@@ -18,14 +19,18 @@ import { NotificationService } from '../../core/services/notification.service';
     MatDialogModule,
     MatFormFieldModule,
     MatInputModule,
+    SwIconComponent,
   ],
   template: `
     <div class="dialog-shell">
-      <div class="logo">SW</div>
-      <div>
-        <h2>登录智慧水务平台</h2>
-        <p>登录后可以上传数据、运行分析并查看个人工作流。</p>
-      </div>
+      <header class="dialog-heading">
+        <div class="logo"><app-sw-icon name="droplet" [size]="22" /></div>
+        <div>
+          <span class="eyebrow">账号验证</span>
+          <h2>登录智慧水务平台</h2>
+          <p>登录后可以上传数据、运行分析并查看个人工作流。</p>
+        </div>
+      </header>
       <form [formGroup]="form" (ngSubmit)="submit()">
         <mat-form-field appearance="outline">
           <mat-label>用户名</mat-label>
@@ -49,8 +54,12 @@ import { NotificationService } from '../../core/services/notification.service';
             color="primary"
             type="submit"
             [disabled]="form.invalid || loading()"
+            [attr.aria-busy]="loading()"
           >
-            {{ loading() ? '正在登录…' : '登录并继续' }}
+            @if (!loading()) {
+              <app-sw-icon name="login" [size]="17" />
+            }
+            {{ loading() ? '正在验证账号…' : '登录并继续' }}
           </button>
         </div>
       </form>
@@ -58,25 +67,44 @@ import { NotificationService } from '../../core/services/notification.service';
   `,
   styles: `
     .dialog-shell {
-      width: min(390px, calc(100vw - 48px));
-      padding: 26px;
+      width: min(430px, calc(100vw - 32px));
+      padding: 28px;
       display: grid;
+      gap: 22px;
+      box-sizing: border-box;
+      color: var(--sw-text-primary);
+      background: var(--sw-surface);
+    }
+    .dialog-heading {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr);
+      align-items: start;
       gap: 14px;
     }
     .logo {
-      width: 42px;
-      height: 42px;
+      width: 44px;
+      height: 44px;
       display: grid;
       place-items: center;
-      border-radius: 12px;
-      background: var(--sw-color-primary);
-      color: white;
-      font-weight: 800;
+      border: 1px solid color-mix(in srgb, var(--sw-color-primary) 26%, var(--sw-border));
+      border-radius: var(--sw-radius-md);
+      background: var(--sw-color-primary-soft);
+      color: var(--sw-color-primary-strong);
+    }
+    .eyebrow {
+      display: block;
+      margin: 1px 0 3px;
+      color: var(--sw-color-primary);
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
     }
     h2 {
-      margin: 0 0 6px;
+      margin: 0 0 5px;
       color: var(--sw-text-primary);
-      font-size: 21px;
+      font-size: 22px;
+      line-height: 1.3;
     }
     p {
       margin: 0;
@@ -85,7 +113,7 @@ import { NotificationService } from '../../core/services/notification.service';
     }
     form {
       display: grid;
-      gap: 4px;
+      gap: 6px;
     }
     mat-form-field {
       width: 100%;
@@ -94,6 +122,26 @@ import { NotificationService } from '../../core/services/notification.service';
       display: flex;
       justify-content: flex-end;
       gap: 8px;
+      padding-top: 2px;
+    }
+    .actions button {
+      min-height: 42px;
+    }
+    .actions app-sw-icon {
+      margin-right: 6px;
+      vertical-align: -3px;
+    }
+    @media (max-width: 520px) {
+      .dialog-shell {
+        padding: 22px 20px;
+      }
+      .actions {
+        align-items: stretch;
+        flex-direction: column-reverse;
+      }
+      .actions button {
+        width: 100%;
+      }
     }
   `,
 })

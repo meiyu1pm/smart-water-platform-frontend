@@ -36,28 +36,35 @@ import { QuickTrialPage } from './quick-trial.page';
       overflow: hidden;
       border: 1px solid var(--sw-border);
       border-radius: var(--sw-radius-lg);
-      background: var(--sw-surface);
+      background: var(--sw-page-bg);
       box-shadow: var(--sw-shadow-sm);
     }
     :host ::ng-deep .trial-tabs > .mat-mdc-tab-header {
       position: relative;
       z-index: 2;
-      padding: 10px 18px 0;
+      padding: 10px 18px;
       border-bottom: 1px solid var(--sw-border);
-      background: color-mix(in srgb, var(--sw-surface) 92%, var(--sw-color-primary-soft));
+      background: var(--sw-surface);
     }
     :host ::ng-deep .trial-tabs .mat-mdc-tab {
       min-width: min(320px, 42vw);
-      height: 52px;
-      border-radius: var(--sw-radius-sm) var(--sw-radius-sm) 0 0;
+      height: 44px;
+      border: 1px solid transparent;
+      border-radius: var(--sw-radius-sm);
       font-weight: 700;
     }
     :host ::ng-deep .trial-tabs .mat-mdc-tab.mdc-tab--active {
+      border-color: color-mix(in srgb, var(--sw-color-primary) 24%, var(--sw-border));
       background: var(--sw-color-primary-faint);
     }
     :host ::ng-deep .trial-tabs .mdc-tab-indicator__content--underline {
-      border-top-width: 3px;
-      border-color: var(--sw-color-primary);
+      display: none;
+    }
+    :host ::ng-deep .trial-tabs .mdc-tab__text-label {
+      color: var(--sw-text-secondary);
+    }
+    :host ::ng-deep .trial-tabs .mat-mdc-tab.mdc-tab--active .mdc-tab__text-label {
+      color: var(--sw-color-primary-strong);
     }
     @media (max-width: 720px) {
       .trial-hub {
@@ -65,7 +72,7 @@ import { QuickTrialPage } from './quick-trial.page';
         border-radius: var(--sw-radius-md);
       }
       :host ::ng-deep .trial-tabs > .mat-mdc-tab-header {
-        padding-inline: 4px;
+        padding: 7px;
       }
       :host ::ng-deep .trial-tabs .mat-mdc-tab {
         min-width: 0;

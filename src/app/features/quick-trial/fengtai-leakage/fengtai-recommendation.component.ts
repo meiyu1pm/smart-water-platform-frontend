@@ -17,26 +17,27 @@ import { CommonModule } from '@angular/common';
   `,
   styles: `
     .card {
-      border-left: 4px solid #0f766e;
+      border: 1px solid color-mix(in srgb, var(--sw-color-secondary) 30%, var(--sw-border));
+      border-left: 4px solid var(--sw-color-secondary);
       padding: 16px 18px;
-      border-radius: 8px;
-      background: #f0fdfa;
+      border-radius: var(--sw-radius-md);
+      background: var(--sw-color-secondary-soft);
       display: grid;
       gap: 11px;
     }
     .eyebrow {
-      color: #0f766e;
+      color: var(--sw-color-secondary-strong);
       font-weight: 700;
       font-size: 12px;
     }
     h3 {
       margin: 3px 0 0;
       font-size: 16px;
-      color: #134e4a;
+      color: var(--sw-text-primary);
     }
     p {
       margin: 5px 0 0;
-      color: #365a57;
+      color: var(--sw-text-secondary);
       font-size: 13px;
       line-height: 1.6;
     }

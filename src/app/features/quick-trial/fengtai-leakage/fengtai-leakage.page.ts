@@ -62,50 +62,68 @@ import { SwIconComponent } from '../../../shared/components/sw-icon.component';
           <h1>{{ manifest()?.community || '丰泰风光苑' }}漏损闭环</h1>
           <p>数据质量、日内变化、水量平衡与重点管段分析。</p>
         </div>
+        <div class="hero-context" aria-label="闭环分析能力">
+          <span><app-sw-icon name="workflow" [size]="16" />8 步分析闭环</span>
+          <span><app-sw-icon name="scene" [size]="16" />管网拓扑联动</span>
+        </div>
       </section>
 
       <section class="toolbar" aria-label="分析策略与窗口选择">
-        <mat-form-field appearance="outline"
-          ><mat-label>分析策略</mat-label
-          ><mat-select [(ngModel)]="preset">
-            @for (item of presets(); track item.id) {
-              <mat-option [value]="item.id">{{ item.label }}</mat-option>
-            }
-          </mat-select></mat-form-field
-        >
-        <label>开始日期<input type="date" [(ngModel)]="startDate" /></label>
-        <label>结束日期<input type="date" [(ngModel)]="endDate" /></label>
-        <button
-          mat-flat-button
-          color="primary"
-          type="button"
-          [disabled]="analyzing()"
-          (click)="runAnalysis()"
-        >
-          <app-sw-icon name="play" [size]="17" />{{ analyzing() ? '正在分析…' : '运行分析' }}
-        </button>
+        <div class="toolbar-heading">
+          <strong>分析窗口</strong>
+          <span>选择策略和日期范围后运行</span>
+        </div>
+        <div class="toolbar-fields">
+          <mat-form-field appearance="outline"
+            ><mat-label>分析策略</mat-label
+            ><mat-select [(ngModel)]="preset">
+              @for (item of presets(); track item.id) {
+                <mat-option [value]="item.id">{{ item.label }}</mat-option>
+              }
+            </mat-select></mat-form-field
+          >
+          <label>开始日期<input type="date" [(ngModel)]="startDate" /></label>
+          <label>结束日期<input type="date" [(ngModel)]="endDate" /></label>
+          <button
+            mat-flat-button
+            color="primary"
+            type="button"
+            [disabled]="analyzing()"
+            [attr.aria-busy]="analyzing()"
+            (click)="runAnalysis()"
+          >
+            <app-sw-icon name="play" [size]="17" />{{
+              analyzing() ? '正在分析…' : '运行分析'
+            }}
+          </button>
+        </div>
       </section>
       @if (analyzing()) {
-        <section class="running">
+        <section class="running" role="status" aria-live="polite">
           <div><strong>正在分析</strong><span>正在处理所选时间范围的数据。</span></div>
           <mat-progress-bar mode="indeterminate"></mat-progress-bar>
         </section>
       }
       @if (error()) {
-        <div class="error">
+        <div class="error" role="alert">
           <app-sw-icon name="info" [size]="18" /><span>{{ error() }}</span
           ><button mat-button type="button" (click)="loadInitial()">重试</button>
         </div>
       }
 
       @if (initialLoading()) {
-        <section class="loading">
-          <mat-spinner diameter="30"></mat-spinner><span>正在加载分析数据…</span>
+        <section class="loading" role="status" aria-live="polite">
+          <mat-spinner diameter="30"></mat-spinner>
+          <div class="loading-copy">
+            <strong>正在准备漏损闭环</strong>
+            <span>加载试用范围与管网概览…</span>
+          </div>
         </section>
       } @else {
         <section class="flow">
           <div>
             <h2>闭环过程</h2>
+            <p>选择步骤查看对应的分析结果</p>
           </div>
           <app-fengtai-process-rail
             [stages]="stages()"
@@ -126,11 +144,19 @@ import { SwIconComponent } from '../../../shared/components/sw-icon.component';
           <section class="empty">
             <div>
               <strong>选择分析窗口并运行</strong>
+              <span>分析完成后将展示质量、异常、水量平衡与重点管段结果。</span>
             </div>
           </section>
         }
 
         <section class="stage-workspace">
+          <header class="workspace-heading">
+            <div>
+              <span>当前步骤</span>
+              <h2>{{ selectedStageTitle() }}</h2>
+            </div>
+            <span class="stage-position">{{ selectedStagePosition() }} / {{ stages().length }}</span>
+          </header>
           <app-fengtai-stage-result
             [selectedCode]="selectedStageCode()"
             [analysis]="analysis()"
@@ -236,6 +262,7 @@ import { SwIconComponent } from '../../../shared/components/sw-icon.component';
     }
     .hero {
       display: flex;
+      align-items: center;
       justify-content: space-between;
       gap: 24px;
       padding: 22px 24px;
@@ -270,15 +297,49 @@ import { SwIconComponent } from '../../../shared/components/sw-icon.component';
       font-size: 14px;
       line-height: 1.65;
     }
+    .hero-context {
+      min-width: 180px;
+      display: grid;
+      gap: 7px;
+      padding-left: 20px;
+      border-left: 1px solid rgb(216 245 239 / 35%);
+    }
+    .hero-context span {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      color: #d8f5ef;
+      font-size: 12px;
+      font-weight: 650;
+    }
     .toolbar {
-      display: flex;
-      gap: 12px;
+      display: grid;
+      grid-template-columns: 155px minmax(0, 1fr);
+      gap: 16px;
       align-items: center;
       padding: 14px 16px;
       border: 1px solid var(--sw-border);
       border-radius: var(--sw-radius-md);
       background: var(--sw-surface);
       box-shadow: var(--sw-shadow-sm);
+    }
+    .toolbar-heading {
+      display: grid;
+      gap: 3px;
+    }
+    .toolbar-heading strong {
+      font-size: 14px;
+    }
+    .toolbar-heading span {
+      color: var(--sw-text-muted);
+      font-size: 11px;
+    }
+    .toolbar-fields {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 10px;
+      min-width: 0;
     }
     mat-form-field {
       min-width: 185px;
@@ -346,6 +407,17 @@ import { SwIconComponent } from '../../../shared/components/sw-icon.component';
       background: var(--sw-surface-muted);
       font-size: 13px;
     }
+    .loading-copy {
+      display: grid;
+      gap: 3px;
+    }
+    .loading-copy strong {
+      color: var(--sw-text-primary);
+    }
+    .loading-copy span {
+      color: var(--sw-text-muted);
+      font-size: 12px;
+    }
     .empty {
       justify-content: flex-start;
       padding: 0 28px;
@@ -384,12 +456,14 @@ import { SwIconComponent } from '../../../shared/components/sw-icon.component';
       gap: 10px;
     }
     .kpis article {
-      padding: 13px;
+      min-height: 76px;
+      padding: 13px 14px;
       border: 1px solid var(--sw-border);
       border-radius: var(--sw-radius-md);
       background: var(--sw-surface);
       box-shadow: var(--sw-shadow-sm);
       display: grid;
+      align-content: center;
       gap: 5px;
     }
     .kpis span {
@@ -407,6 +481,34 @@ import { SwIconComponent } from '../../../shared/components/sw-icon.component';
       padding: 16px;
       background: var(--sw-surface);
       box-shadow: var(--sw-shadow-sm);
+    }
+    .workspace-heading {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding-bottom: 12px;
+      margin-bottom: 14px;
+      border-bottom: 1px solid var(--sw-border);
+    }
+    .workspace-heading > div {
+      display: grid;
+      gap: 3px;
+    }
+    .workspace-heading > div > span {
+      color: var(--sw-text-muted);
+      font-size: 11px;
+      font-weight: 650;
+      letter-spacing: 0.05em;
+    }
+    .stage-position {
+      padding: 4px 9px;
+      border: 1px solid var(--sw-border);
+      border-radius: 999px;
+      color: var(--sw-text-muted);
+      background: var(--sw-surface-muted);
+      font-size: 11px;
+      font-variant-numeric: tabular-nums;
     }
     .topology-layout {
       display: grid;
@@ -470,9 +572,18 @@ import { SwIconComponent } from '../../../shared/components/sw-icon.component';
     }
     @media (max-width: 900px) {
       .hero,
-      .toolbar {
+      .toolbar-fields {
         align-items: stretch;
         flex-direction: column;
+      }
+      .hero-context {
+        min-width: 0;
+        padding: 12px 0 0;
+        border-top: 1px solid rgb(216 245 239 / 35%);
+        border-left: 0;
+      }
+      .toolbar {
+        grid-template-columns: 1fr;
       }
       .topology-layout.detail-open {
         grid-template-columns: 1fr;
@@ -493,6 +604,11 @@ import { SwIconComponent } from '../../../shared/components/sw-icon.component';
       }
       mat-form-field {
         width: 100%;
+      }
+      .hero,
+      .stage-workspace,
+      .flow {
+        padding: 14px;
       }
     }
   `,
@@ -666,6 +782,16 @@ export class FengtaiLeakagePage implements OnInit {
   selectStage(code: string): void {
     this.selectedStageCode.set(code);
   }
+  selectedStageTitle(): string {
+    const selected = this.selectedStageCode();
+    const stage = this.stages().find((item, index) => this.stageCode(item, index) === selected);
+    return stage?.title || stage?.name || '分析结果';
+  }
+  selectedStagePosition(): number {
+    const selected = this.selectedStageCode();
+    const index = this.stages().findIndex((item, itemIndex) => this.stageCode(item, itemIndex) === selected);
+    return index >= 0 ? index + 1 : 1;
+  }
   selectTimestamp(timestamp: string): void {
     if (this.networkFrames()?.timestamps.includes(timestamp)) this.activeTimestamp.set(timestamp);
   }
@@ -824,5 +950,8 @@ export class FengtaiLeakagePage implements OnInit {
   }
   private dateValue(value: unknown): string | undefined {
     return typeof value === 'string' ? value : undefined;
+  }
+  private stageCode(stage: FengtaiStage, index: number): string {
+    return String(stage.code ?? stage.id ?? stage.name ?? stage.title ?? `stage-${index}`);
   }
 }
