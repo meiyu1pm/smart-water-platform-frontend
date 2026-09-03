@@ -30,7 +30,7 @@ import {
 import { AuthService } from '../../core/services/auth.service';
 import { DataFileService } from '../../core/services/data-file.service';
 import { NotificationService } from '../../core/services/notification.service';
-import { DataFilePreviewDialogComponent } from './data-file-preview-dialog.component';
+import { DataFileInspectorDialogComponent } from './data-file-inspector-dialog.component';
 
 type ExplorerEntry = DataFileExplorerItem & {
   file?: DataFileSummary | null;
@@ -53,7 +53,7 @@ type EditingResource =
     CdkDrag,
     CdkDropList,
     CdkDropListGroup,
-    DataFilePreviewDialogComponent,
+    DataFileInspectorDialogComponent,
   ],
   template: `
     <header class="page-head">
@@ -516,7 +516,12 @@ type EditingResource =
                                 />
                               }
                               <span class="dataset-file-icon" aria-hidden="true">表</span>
-                              <strong>{{ file.name }}</strong>
+                              <span class="dataset-file-copy">
+                                <strong>{{ file.name }}</strong>
+                                <small>
+                                  {{ fileVersionLabel(file) }} · {{ fileAnalysisLabel(file) }}
+                                </small>
+                              </span>
                             </div>
                             <span role="cell">{{ formatBytes(file.size_bytes) }}</span>
                             <span role="cell">{{ formatRelativeTime(file.updated_at) }}</span>
@@ -532,10 +537,19 @@ type EditingResource =
                                   编辑
                                 </button>
                               }
+                              @if (!managementMode() && canGovernFile(file)) {
+                                <button
+                                  mat-button
+                                  type="button"
+                                  (click)="$event.stopPropagation(); inspectFile(file, true)"
+                                >
+                                  治理
+                                </button>
+                              }
                               <button
                                 mat-stroked-button
                                 type="button"
-                                (click)="$event.stopPropagation(); previewFile.set(file)"
+                                (click)="$event.stopPropagation(); inspectFile(file)"
                               >
                                 查看详情
                               </button>
@@ -631,6 +645,13 @@ type EditingResource =
                   @if (selectedIds().size) {
                     <button type="button" (click)="clearSelection()">取消选择</button>
                   }
+                  @if (
+                    selectedIds().size === 1 && selectedFile() && canGovernFile(selectedFile()!)
+                  ) {
+                    <button type="button" (click)="inspectFile(selectedFile()!, true)">
+                      数据治理
+                    </button>
+                  }
                   @if (canUploadFile() && currentParentId() !== null) {
                     <label class="upload-button"
                       >上传文件<input type="file" (change)="uploadIntoCurrent($event)"
@@ -705,6 +726,16 @@ type EditingResource =
                         >{{ (entry.file?.format || entry.format || '未知').toUpperCase() }} ·
                         {{ formatBytes(entry.file?.size_bytes ?? entry.size_bytes ?? 0) }}</small
                       >
+                      @if (entry.file; as file) {
+                        <span
+                          class="file-quality"
+                          [attr.data-grade]="
+                            file.current_version?.quality_grade || file.quality_grade || ''
+                          "
+                        >
+                          {{ fileVersionLabel(file) }} · {{ fileAnalysisLabel(file) }}
+                        </span>
+                      }
                     }
                     <ng-template cdkDragPreview
                       ><span class="drag-preview">{{ dragPreviewLabel(entry) }}</span></ng-template
@@ -749,7 +780,10 @@ type EditingResource =
           </button>
         }
         @if (menuState.entry && !isFolder(menuState.entry)) {
-          <button type="button" (click)="activateEntry(menuState.entry)">预览文件</button>
+          <button type="button" (click)="activateEntry(menuState.entry)">查看详情</button>
+          @if (canGovernFile(fileFromMenuEntry(menuState.entry))) {
+            <button type="button" (click)="inspectMenuFile(menuState.entry)">数据治理</button>
+          }
         }
         @if (menuState.entry && selectedIds().size && canCopyEntry(menuState.entry)) {
           <button type="button" (click)="copySelectionToClipboard()">复制</button>
@@ -788,7 +822,12 @@ type EditingResource =
       </div>
     }
     @if (previewFile(); as file) {
-      <app-data-file-preview-dialog [file]="file" (close)="previewFile.set(null)" />
+      <app-data-file-inspector-dialog
+        [file]="file"
+        [openGovernanceOnLoad]="inspectGovernance()"
+        (changed)="inspectorChanged()"
+        (close)="closeInspector()"
+      />
     }
   `,
   styles: `
@@ -1079,6 +1118,15 @@ type EditingResource =
       align-items: center;
       gap: 10px;
       min-width: 0;
+    }
+    .dataset-file-copy {
+      display: grid;
+      min-width: 0;
+      gap: 2px;
+    }
+    .dataset-file-copy small {
+      color: #64748b;
+      font-size: 11px;
     }
     .dataset-file-name strong {
       overflow: hidden;
@@ -1516,6 +1564,25 @@ type EditingResource =
       text-overflow: ellipsis;
       white-space: nowrap;
     }
+    .file-quality {
+      align-self: flex-start;
+      padding: 3px 7px;
+      border-radius: 999px;
+      background: #f1f5f9;
+      color: #475569;
+      font-size: 10px;
+      font-weight: 700;
+    }
+    .file-quality[data-grade='A'],
+    .file-quality[data-grade='B'] {
+      background: #dcfce7;
+      color: #047857;
+    }
+    .file-quality[data-grade='C'],
+    .file-quality[data-grade='D'] {
+      background: #fef3c7;
+      color: #b45309;
+    }
     .file-tile small {
       color: #64748b;
       font-size: 11px;
@@ -1712,6 +1779,7 @@ export class DataCollectionsPage {
   readonly selectedIds = signal<Set<number>>(new Set());
   readonly clipboard = signal<number[]>([]);
   readonly previewFile = signal<DataFileSummary | null>(null);
+  readonly inspectGovernance = signal(false);
   readonly menu = signal<MenuState | null>(null);
   readonly search = signal('');
   readonly page = signal(1);
@@ -1914,7 +1982,7 @@ export class DataCollectionsPage {
     if (this.isFolder(entry)) this.navigate(entry.id);
     else {
       const file = this.fileFromEntry(entry);
-      if (file) this.previewFile.set(file);
+      if (file) this.inspectFile(file);
     }
   }
   isSelected(entry: ExplorerEntry): boolean {
@@ -1949,6 +2017,59 @@ export class DataCollectionsPage {
     if (value < 1024 * 1024) return `${Math.ceil(value / 1024)} KB`;
     if (value < 1024 * 1024 * 1024) return `${(value / 1024 / 1024).toFixed(1)} MB`;
     return `${(value / 1024 / 1024 / 1024).toFixed(1)} GB`;
+  }
+  fileVersionLabel(file: DataFileSummary): string {
+    const versionNo = file.current_version?.version_no;
+    return versionNo
+      ? `V${versionNo}`
+      : file.version_count
+        ? `${file.version_count} 个版本`
+        : '待生成版本';
+  }
+  fileAnalysisLabel(file: DataFileSummary): string {
+    const profileStatus = file.current_version?.profile_status || file.profile_status || '';
+    const normalizationStatus =
+      file.current_version?.normalization?.status || file.normalization?.status || '';
+    const timeProfile = file.current_version?.time_profile || file.time_profile;
+    if (profileStatus === 'pending' || profileStatus === 'running') return '正在分析';
+    if (profileStatus === 'failed') return '分析失败';
+    if (profileStatus === 'unsupported') return '不支持自动分析';
+    if (normalizationStatus === 'needs_confirmation' || timeProfile?.requires_confirmation)
+      return '待确认时间列';
+    const grade = file.current_version?.quality_grade || file.quality_grade;
+    const score = file.current_version?.quality_score ?? file.quality_score;
+    if (grade && score != null) return `${grade} · ${score.toFixed(1)} 分`;
+    return profileStatus === 'ready' ? '待评分' : '等待分析';
+  }
+  canGovernFile(file: DataFileSummary | null): boolean {
+    if (
+      !file ||
+      file.code === 'builtin_demo_water_month' ||
+      !this.canWriteFiles() ||
+      file.can_write === false
+    )
+      return false;
+    const status = file.current_version?.profile_status || file.profile_status;
+    return !!(file.current_version_id || file.current_version?.id) && status === 'ready';
+  }
+  inspectFile(file: DataFileSummary, governance = false): void {
+    this.menu.set(null);
+    this.inspectGovernance.set(governance);
+    this.previewFile.set(file);
+  }
+  closeInspector(): void {
+    this.previewFile.set(null);
+    this.inspectGovernance.set(false);
+  }
+  inspectorChanged(): void {
+    this.loadExplorer(this.currentParentId(), true);
+  }
+  fileFromMenuEntry(entry: ExplorerEntry): DataFileSummary | null {
+    return this.fileFromEntry(entry);
+  }
+  inspectMenuFile(entry: ExplorerEntry): void {
+    const file = this.fileFromEntry(entry);
+    if (file) this.inspectFile(file, true);
   }
   isDatasetExpanded(datasetId: number): boolean {
     return this.expandedDatasetIds().has(datasetId);
@@ -2172,7 +2293,7 @@ export class DataCollectionsPage {
       )
     );
   }
-  private loadDatasetFiles(datasetId: number): void {
+  private loadDatasetFiles(datasetId: number, quiet = false): void {
     const listFiles = (
       this.service as unknown as {
         listFiles?: (collectionId: number) => Observable<DataFileSummary[]>;
@@ -2185,12 +2306,14 @@ export class DataCollectionsPage {
       return;
     }
 
-    const loading = new Set(this.expandedFileLoading());
-    loading.add(datasetId);
-    this.expandedFileLoading.set(loading);
-    const errors = new Map(this.expandedFileErrors());
-    errors.delete(datasetId);
-    this.expandedFileErrors.set(errors);
+    if (!quiet) {
+      const loading = new Set(this.expandedFileLoading());
+      loading.add(datasetId);
+      this.expandedFileLoading.set(loading);
+      const errors = new Map(this.expandedFileErrors());
+      errors.delete(datasetId);
+      this.expandedFileErrors.set(errors);
+    }
     this.subscriptions.add(
       listFiles.call(this.service, datasetId).subscribe({
         next: (files) => {
@@ -2202,17 +2325,21 @@ export class DataCollectionsPage {
             for (const file of files || []) selectedTables.add(file.id);
             this.selectedTableIds.set(selectedTables);
           }
-          const nextLoading = new Set(this.expandedFileLoading());
-          nextLoading.delete(datasetId);
-          this.expandedFileLoading.set(nextLoading);
+          if (!quiet) {
+            const nextLoading = new Set(this.expandedFileLoading());
+            nextLoading.delete(datasetId);
+            this.expandedFileLoading.set(nextLoading);
+          }
         },
         error: () => {
-          const nextLoading = new Set(this.expandedFileLoading());
-          nextLoading.delete(datasetId);
-          this.expandedFileLoading.set(nextLoading);
-          const nextErrors = new Map(this.expandedFileErrors());
-          nextErrors.set(datasetId, '无法读取数据表，请稍后重试。');
-          this.expandedFileErrors.set(nextErrors);
+          if (!quiet) {
+            const nextLoading = new Set(this.expandedFileLoading());
+            nextLoading.delete(datasetId);
+            this.expandedFileLoading.set(nextLoading);
+            const nextErrors = new Map(this.expandedFileErrors());
+            nextErrors.set(datasetId, '无法读取数据表，请稍后重试。');
+            this.expandedFileErrors.set(nextErrors);
+          }
         },
       }),
     );
@@ -2829,6 +2956,11 @@ export class DataCollectionsPage {
       if (!entries.some((entry) => this.isFolder(entry) && entry.id === folder.id))
         entries.push({ id: folder.id, name: folder.name, kind: 'folder', collection: folder });
     this.explorerItems.set(entries);
+    if (this.selectedIds().size === 1) {
+      const selectedId = [...this.selectedIds()][0];
+      const selectedEntry = entries.find((entry) => this.entryFileId(entry) === selectedId);
+      this.selectedFile.set(selectedEntry ? this.fileFromEntry(selectedEntry) : null);
+    }
     this.breadcrumbs.set(
       response.breadcrumbs?.length
         ? response.breadcrumbs.map((crumb) => ({
@@ -2887,6 +3019,9 @@ export class DataCollectionsPage {
     const parentId = this.currentParentId();
     if (!listExplorer) return EMPTY;
     this.loadExplorer(parentId, true);
+    if (parentId === null) {
+      for (const datasetId of this.expandedDatasetIds()) this.loadDatasetFiles(datasetId, true);
+    }
     return of(null);
   }
   private loadLegacyCollections(): void {
@@ -2939,6 +3074,7 @@ export class DataCollectionsPage {
     if (item.kind === 'file' || item.type === 'file' || item.resource_type === 'file') {
       return {
         id: item.file_id ?? item.id ?? 0,
+        code: item.code,
         name: item.name,
         file_kind: (item.file_kind || 'other') as DataFileSummary['file_kind'],
         format: item.format || '',
@@ -2947,9 +3083,18 @@ export class DataCollectionsPage {
         current_version_id: item.current_version_id ?? item.current_version?.id ?? null,
         current_version: item.current_version,
         profile_status: item.profile_status as DataFileSummary['profile_status'],
+        quality_score: item.quality_score,
+        quality_grade: item.quality_grade,
+        time_profile: item.time_profile,
+        normalization: item.normalization,
         row_count: item.row_count,
         size_bytes: item.size_bytes || 0,
         parse_issue_count: item.parse_issue_count,
+        can_read: item.can_read,
+        can_write: item.can_write,
+        can_move: item.can_move,
+        can_copy: item.can_copy,
+        can_delete: item.can_delete,
         created_at: item.created_at || '',
         updated_at: item.updated_at || '',
       };

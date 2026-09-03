@@ -4,6 +4,10 @@ import { Observable, map } from 'rxjs';
 import {
   DataCollectionSummary,
   DataFilePreview,
+  DataFileGovernanceOperation,
+  DataFileGovernanceRunResult,
+  DataFileLineage,
+  DataFileQualityReport,
   DataFileSummary,
   DataFileUploadResult,
   DataFileVersionSummary,
@@ -189,6 +193,45 @@ export class DataFileService {
 
   getFileVersion(versionId: number): Observable<DataFileVersionSummary> {
     return this.api.get<DataFileVersionSummary>(`/api/v1/data-file-versions/${versionId}`);
+  }
+
+  getFileLineage(fileId: number): Observable<DataFileLineage> {
+    return this.api.get<DataFileLineage>(`/api/v1/data-files/${fileId}/lineage`);
+  }
+
+  listQualityReports(versionId: number): Observable<DataFileQualityReport[]> {
+    return this.api.get<DataFileQualityReport[]>(
+      `/api/v1/data-file-versions/${versionId}/quality-reports`,
+    );
+  }
+
+  runGovernance(
+    versionId: number,
+    operations: DataFileGovernanceOperation[],
+    makeCurrent = true,
+  ): Observable<DataFileGovernanceRunResult> {
+    return this.api.post<
+      DataFileGovernanceRunResult,
+      { operations: DataFileGovernanceOperation[]; make_current: boolean; request_id: string }
+    >(`/api/v1/data-file-versions/${versionId}/governance-runs`, {
+      operations,
+      make_current: makeCurrent,
+      request_id: this.requestId(),
+    });
+  }
+
+  setCurrentVersion(
+    fileId: number,
+    versionId: number,
+  ): Observable<{
+    file_id: number;
+    current_version_id: number;
+    current_version: DataFileVersionSummary;
+  }> {
+    return this.api.put<
+      { file_id: number; current_version_id: number; current_version: DataFileVersionSummary },
+      { version_id: number }
+    >(`/api/v1/data-files/${fileId}/current-version`, { version_id: versionId });
   }
 
   uploadFile(

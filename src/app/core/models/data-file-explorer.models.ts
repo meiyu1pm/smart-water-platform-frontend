@@ -1,4 +1,9 @@
-import { DataCollectionSummary, DataFileSummary } from './api.models';
+import {
+  DataCollectionSummary,
+  DataFileNormalizationSummary,
+  DataFileSummary,
+  DataFileTimeProfile,
+} from './api.models';
 
 /** A navigation entry returned by the file explorer API. */
 export interface DataFileExplorerFolder extends DataCollectionSummary {
@@ -36,6 +41,10 @@ export interface DataFileExplorerItem {
   created_at?: string;
   row_count?: number | null;
   parse_issue_count?: number;
+  quality_score?: number | null;
+  quality_grade?: string | null;
+  time_profile?: DataFileTimeProfile | null;
+  normalization?: DataFileNormalizationSummary | null;
   file_count?: number;
 }
 

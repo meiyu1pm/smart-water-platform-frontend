@@ -570,6 +570,49 @@ export type DataFileKind =
   | 'other'
   | string;
 
+export interface DataFileTimeProfile {
+  time_column?: string | null;
+  candidate_columns?: Array<Record<string, unknown>>;
+  selected_column?: string | null;
+  candidates?: Array<Record<string, unknown>>;
+  parse_success_rate?: number | null;
+  parse_ratio?: number | null;
+  parse_rule?: string | null;
+  confidence?: number | null;
+  timezone?: string | null;
+  timezone_assumption?: string | null;
+  time_start?: string | null;
+  time_end?: string | null;
+  start_time?: string | null;
+  end_time?: string | null;
+  interval_seconds?: number | null;
+  dominant_interval_seconds?: number | null;
+  interval_minutes?: number | null;
+  sampling_interval?: string | null;
+  irregular_ratio?: number | null;
+  duplicate_count?: number | null;
+  missing_count?: number | null;
+  duplicate_timestamp_count?: number | null;
+  missing_interval_count?: number | null;
+  irregular_interval_count?: number | null;
+  monotonic?: boolean;
+  ambiguity_reasons?: string[];
+  requires_confirmation?: boolean;
+  [key: string]: unknown;
+}
+
+export interface DataFileNormalizationSummary {
+  status?: 'pending' | 'running' | 'ready' | 'needs_confirmation' | 'failed' | string;
+  timestamp_format?: string | null;
+  timezone?: string | null;
+  normalized?: boolean;
+  format?: string | null;
+  time_column?: string | null;
+  parse_rule?: string | null;
+  normalized_sha256?: string | null;
+  [key: string]: unknown;
+}
+
 export interface DataFileVersionSummary {
   id: number;
   file_id: number;
@@ -582,11 +625,19 @@ export interface DataFileVersionSummary {
   size_bytes: number;
   row_count: number | null;
   profile_status?: 'pending' | 'running' | 'ready' | 'failed' | string;
+  version_kind?: 'original' | 'derived' | 'copy' | string;
+  normalized_sha256?: string | null;
+  normalization?: DataFileNormalizationSummary | null;
+  time_profile?: DataFileTimeProfile | null;
+  quality_score?: number | null;
+  quality_grade?: 'A' | 'B' | 'C' | 'D' | string | null;
+  created_by_task_id?: string | null;
   created_at: string;
 }
 
 export interface DataFileSummary {
   id: number;
+  code?: string;
   name: string;
   file_kind: DataFileKind;
   format: string;
@@ -595,9 +646,18 @@ export interface DataFileSummary {
   current_version_id: number | null;
   current_version?: DataFileVersionSummary | null;
   profile_status?: 'pending' | 'ready' | 'failed' | 'unsupported' | string | null;
+  normalization?: DataFileNormalizationSummary | null;
+  time_profile?: DataFileTimeProfile | null;
+  quality_score?: number | null;
+  quality_grade?: 'A' | 'B' | 'C' | 'D' | string | null;
   row_count?: number | null;
   size_bytes: number;
   parse_issue_count?: number;
+  can_read?: boolean;
+  can_write?: boolean;
+  can_move?: boolean;
+  can_copy?: boolean;
+  can_delete?: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -623,6 +683,72 @@ export interface DataFilePreview {
   total_rows: number | null;
   truncated: boolean;
   preview_limit: number;
+}
+
+export interface DataFileQualityReport {
+  report_id: number;
+  version_id: number;
+  task_id?: string | null;
+  report_kind: string;
+  score: number;
+  grade: 'A' | 'B' | 'C' | 'D' | string;
+  dimensions: Record<string, number>;
+  findings: Array<Record<string, unknown> | string>;
+  recommendations: Array<Record<string, unknown> | string>;
+  created_at: string;
+}
+
+export interface DataFileLineageNode {
+  version_id: number;
+  version_no: number;
+  version_code: string;
+  version_kind: string;
+  original_filename?: string | null;
+  status: string;
+  profile_status?: string | null;
+  row_count?: number | null;
+  quality_score?: number | null;
+  quality_grade?: string | null;
+  time_profile?: DataFileTimeProfile | null;
+  normalization?: DataFileNormalizationSummary | null;
+  created_by_task_id?: string | null;
+  is_current: boolean;
+  created_at: string;
+}
+
+export interface DataFileLineageEdge {
+  parent_version_id: number;
+  child_version_id: number;
+  relation_type: string;
+  metadata?: Record<string, unknown>;
+  created_at?: string;
+}
+
+export interface DataFileLineage {
+  file_id: number;
+  current_version_id: number | null;
+  roots: number[];
+  nodes: DataFileLineageNode[];
+  edges: DataFileLineageEdge[];
+}
+
+export interface DataFileGovernanceOperation {
+  type: 'sort' | 'deduplicate' | 'resample' | 'repair_missing' | 'flag_outliers' | string;
+  [key: string]: unknown;
+}
+
+export interface DataFileGovernanceRunRequest {
+  operations: DataFileGovernanceOperation[];
+  make_current: boolean;
+  request_id?: string;
+}
+
+export interface DataFileGovernanceRunResult {
+  request_id: string;
+  task_id: string;
+  status: 'queued' | string;
+  parent_version_id: number;
+  make_current: boolean;
 }
 
 export type DataFileViewOutputMode = 'table' | 'timeseries';
