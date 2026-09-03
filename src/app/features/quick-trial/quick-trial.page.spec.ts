@@ -143,7 +143,7 @@ describe('QuickTrialPage', () => {
   it('initializes with default task timeseries-forecast and auto algorithm', () => {
     expect(component.selectedTaskId()).toBe('timeseries-forecast');
     expect(component.selectedAlgorithm()).toBe('auto');
-    expect(fixture.nativeElement.textContent).toContain('智能水务');
+    expect(fixture.nativeElement.textContent).toContain('智慧水务');
     expect(fixture.nativeElement.textContent).toContain('时序预测');
   });
 
