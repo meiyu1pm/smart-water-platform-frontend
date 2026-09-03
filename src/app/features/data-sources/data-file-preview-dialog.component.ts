@@ -110,43 +110,49 @@ import { DataFileService } from '../../core/services/data-file.service';
       width: 100%;
       height: 100%;
       padding: 20px;
-      background: rgb(15 23 42 / 48%);
+      background: color-mix(in srgb, var(--sw-text-primary) 48%, transparent);
+      backdrop-filter: blur(3px);
     }
     .dialog {
       display: grid;
-      gap: 14px;
+      gap: 0;
       width: min(960px, 100%);
       max-height: min(760px, 92vh);
       overflow: hidden;
-      padding: 20px;
-      border-radius: 14px;
-      background: #fff;
-      box-shadow: 0 24px 70px rgb(15 23 42 / 24%);
+      border: 1px solid var(--sw-border);
+      border-radius: var(--sw-radius-xl);
+      background: var(--sw-surface-raised);
+      box-shadow: var(--sw-shadow-lg);
     }
     .dialog-header {
       display: flex;
       align-items: flex-start;
       justify-content: space-between;
       gap: 12px;
+      padding: 18px 20px 14px;
+      border-bottom: 1px solid var(--sw-border);
+      background: linear-gradient(120deg, var(--sw-surface-raised), var(--sw-color-primary-faint));
     }
     .eyebrow {
       margin: 0 0 3px;
-      color: #0369a1;
+      color: var(--sw-color-primary);
       font-size: 11px;
       font-weight: 800;
     }
     h2 {
       margin: 0;
-      color: #0f172a;
+      color: var(--sw-text-primary);
       font-size: 19px;
     }
     .close {
-      width: 32px;
-      height: 32px;
+      display: grid;
+      place-items: center;
+      width: 38px;
+      height: 38px;
       border: 0;
-      border-radius: 7px;
-      background: #f1f5f9;
-      color: #334155;
+      border-radius: var(--sw-radius-sm);
+      background: var(--sw-surface-muted);
+      color: var(--sw-text-muted);
       font-size: 24px;
       line-height: 1;
       cursor: pointer;
@@ -158,18 +164,20 @@ import { DataFileService } from '../../core/services/data-file.service';
     }
     .close:hover,
     .close:focus-visible {
-      background: #e2e8f0;
-      outline: 2px solid #93c5fd;
+      background: var(--sw-color-primary-soft);
+      color: var(--sw-color-primary-strong);
+      outline: 2px solid var(--sw-focus);
+      outline-offset: 2px;
     }
     .metadata {
       display: flex;
       flex-wrap: wrap;
-      gap: 8px 20px;
+      gap: 8px 24px;
       margin: 0;
-      padding: 10px 12px;
-      border-radius: 8px;
-      background: #f8fafc;
-      color: #475569;
+      padding: 12px 20px;
+      border-bottom: 1px solid var(--sw-border);
+      background: var(--sw-surface-muted);
+      color: var(--sw-text-secondary);
       font-size: 12px;
     }
     .metadata div {
@@ -178,11 +186,11 @@ import { DataFileService } from '../../core/services/data-file.service';
       min-width: 110px;
     }
     dt {
-      color: #64748b;
+      color: var(--sw-text-muted);
     }
     dd {
       margin: 0;
-      color: #1e293b;
+      color: var(--sw-text-primary);
       font-weight: 600;
       overflow-wrap: anywhere;
     }
@@ -194,8 +202,11 @@ import { DataFileService } from '../../core/services/data-file.service';
       overflow-x: scroll;
       overflow-y: auto;
       scrollbar-gutter: stable;
-      border: 1px solid #cbd5e1;
-      border-radius: 8px;
+      margin: 16px 20px 0;
+      border: 1px solid var(--sw-border);
+      border-radius: var(--sw-radius-md);
+      background: var(--sw-surface);
+      box-shadow: var(--sw-shadow-sm);
     }
     .table-wrap::-webkit-scrollbar {
       width: 10px;
@@ -203,15 +214,15 @@ import { DataFileService } from '../../core/services/data-file.service';
     }
     .table-wrap::-webkit-scrollbar-track {
       border-radius: 8px;
-      background: #f1f5f9;
+      background: var(--sw-surface-muted);
     }
     .table-wrap::-webkit-scrollbar-thumb {
-      border: 2px solid #f1f5f9;
+      border: 2px solid var(--sw-surface-muted);
       border-radius: 8px;
-      background: #94a3b8;
+      background: var(--sw-border-strong);
     }
     .table-wrap::-webkit-scrollbar-thumb:hover {
-      background: #64748b;
+      background: var(--sw-text-muted);
     }
     table {
       width: max-content;
@@ -225,9 +236,9 @@ import { DataFileService } from '../../core/services/data-file.service';
       top: 0;
       z-index: 1;
       padding: 8px;
-      border-bottom: 2px solid #cbd5e1;
-      background: #f8fafc;
-      color: #0f172a;
+      border-bottom: 2px solid var(--sw-border-strong);
+      background: var(--sw-surface-muted);
+      color: var(--sw-text-primary);
       text-align: left;
       white-space: nowrap;
       min-width: 140px;
@@ -235,27 +246,37 @@ import { DataFileService } from '../../core/services/data-file.service';
     td {
       max-width: 260px;
       padding: 7px 8px;
-      border-bottom: 1px solid #f1f5f9;
-      color: #334155;
+      border-bottom: 1px solid var(--sw-border);
+      color: var(--sw-text-secondary);
+      font-variant-numeric: tabular-nums;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
     }
     tbody tr:nth-child(even) {
-      background: #fafafa;
+      background: var(--sw-surface-sunken);
+    }
+    tbody tr:hover {
+      background: var(--sw-color-primary-faint);
     }
     .empty,
     .state {
-      padding: 22px;
-      color: #64748b;
+      margin: 16px 20px;
+      padding: 32px 22px;
+      border: 1px dashed var(--sw-border-strong);
+      border-radius: var(--sw-radius-md);
+      background: var(--sw-surface-sunken);
+      color: var(--sw-text-muted);
       text-align: center;
     }
     .state.error {
-      color: #b91c1c;
+      border-color: color-mix(in srgb, var(--sw-color-danger) 25%, var(--sw-border));
+      background: var(--sw-color-danger-soft);
+      color: var(--sw-color-danger);
     }
     .hint {
-      margin: 0;
-      color: #64748b;
+      margin: 10px 20px 16px;
+      color: var(--sw-text-muted);
       font-size: 11px;
     }
     @media (max-width: 600px) {
@@ -263,11 +284,21 @@ import { DataFileService } from '../../core/services/data-file.service';
         padding: 8px;
       }
       .dialog {
-        padding: 14px;
         max-height: 96vh;
+        border-radius: var(--sw-radius-md);
       }
       .metadata {
         gap: 6px 12px;
+        padding-inline: 14px;
+      }
+      .dialog-header {
+        padding-inline: 14px;
+      }
+      .table-wrap {
+        margin-inline: 14px;
+      }
+      .hint {
+        margin-inline: 14px;
       }
     }
   `,

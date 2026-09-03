@@ -416,7 +416,7 @@ type EditingResource =
                         (change)="toggleCollectionSelection(dataset.id)"
                       />
                     }
-                    <span class="dataset-type-icon" aria-hidden="true">▰</span>
+                    <span class="dataset-type-icon folder-glyph" aria-hidden="true"></span>
                     <span class="dataset-table-copy">
                       <strong>{{ dataset.name }}</strong>
                       @if (dataset.description?.trim()) {
@@ -459,9 +459,11 @@ type EditingResource =
                     >
                       新增数据表
                     </button>
-                    <span class="dataset-expand-indicator" aria-hidden="true">
-                      {{ isDatasetExpanded(dataset.id) ? '⌃' : '⌄' }}
-                    </span>
+                    <span
+                      class="dataset-expand-indicator"
+                      [class.expanded]="isDatasetExpanded(dataset.id)"
+                      aria-hidden="true"
+                    ></span>
                   </span>
                 </div>
                 @if (isDatasetExpanded(dataset.id)) {
@@ -515,7 +517,7 @@ type EditingResource =
                                   (change)="toggleTableSelection(file.id)"
                                 />
                               }
-                              <span class="dataset-file-icon" aria-hidden="true">表</span>
+                              <span class="dataset-file-icon file-glyph" aria-hidden="true"></span>
                               <span class="dataset-file-copy">
                                 <strong>{{ file.name }}</strong>
                                 <small>
@@ -564,7 +566,7 @@ type EditingResource =
                 }
               } @empty {
                 <div class="dataset-table-empty">
-                  <span>⌁</span>
+                  <span class="empty-symbol" aria-hidden="true"></span>
                   <strong>{{ search().trim() ? '没有找到匹配的数据集' : '暂无数据集' }}</strong>
                   <small>{{
                     search().trim() ? '请尝试其他搜索词。' : '点击上方“新建数据集”开始使用。'
@@ -607,7 +609,8 @@ type EditingResource =
                 (cdkDropListDropped)="dropToFolder($event, folder.id)"
                 (click)="navigate(folder.id)"
               >
-                <span class="folder-icon">▰</span><span>{{ folder.name }}</span
+                <span class="folder-icon folder-glyph" aria-hidden="true"></span
+                ><span>{{ folder.name }}</span
                 ><small>{{ folder.file_count }}</small>
               </button>
             }
@@ -714,7 +717,11 @@ type EditingResource =
                     (contextmenu)="openEntryMenu($event, entry)"
                   >
                     <div class="tile-icon" aria-hidden="true">
-                      {{ isFolder(entry) ? '▰' : fileIcon(entry) }}
+                      @if (isFolder(entry)) {
+                        <span class="folder-glyph"></span>
+                      } @else {
+                        <span class="file-glyph"></span>
+                      }
                     </div>
                     <strong>{{ entry.name }}</strong>
                     @if (isFolder(entry)) {
@@ -743,7 +750,7 @@ type EditingResource =
                   </article>
                 } @empty {
                   <div class="blank-state">
-                    <span>⌁</span>
+                    <span class="empty-symbol" aria-hidden="true"></span>
                     <p>此目录为空</p>
                     <small>可将文件拖入这里，或在空白处右键粘贴。</small>
                   </div>
@@ -1657,6 +1664,208 @@ type EditingResource =
       color: #94a3b8;
       font-size: 12px;
     }
+
+    /* Stable hierarchy and state feedback for the file-manager workspace. */
+    .stat-card {
+      position: relative;
+      overflow: hidden;
+      background: linear-gradient(145deg, var(--sw-surface) 58%, var(--sw-color-primary-faint));
+    }
+    .stat-card::before,
+    .dataset-table-row.expanded::before {
+      position: absolute;
+      inset: 0 auto 0 0;
+      width: 3px;
+      background: var(--sw-color-secondary);
+      content: '';
+    }
+    .dataset-table-row {
+      position: relative;
+    }
+    .dataset-table-row.expanded::before {
+      background: var(--sw-color-primary);
+    }
+    .folder-glyph {
+      position: relative;
+      display: inline-block;
+      width: 20px;
+      height: 14px;
+      border-radius: 3px;
+      background: currentColor;
+    }
+    .folder-glyph::before {
+      position: absolute;
+      top: -4px;
+      left: 2px;
+      width: 8px;
+      height: 5px;
+      border-radius: 3px 3px 0 0;
+      background: currentColor;
+      content: '';
+    }
+    .dataset-type-icon.folder-glyph {
+      width: 42px;
+      height: 42px;
+      border-radius: var(--sw-radius-md);
+      background: var(--sw-color-primary-soft);
+    }
+    .dataset-type-icon.folder-glyph::before {
+      top: 13px;
+      left: 11px;
+      width: 20px;
+      height: 14px;
+      border-radius: 3px;
+      background: var(--sw-color-primary);
+      box-shadow: 0 -4px 0 -1px var(--sw-color-primary);
+    }
+    .file-glyph {
+      position: relative;
+      display: inline-block;
+      width: 15px;
+      height: 19px;
+      border: 1.5px solid currentColor;
+      border-radius: 3px;
+    }
+    .file-glyph::before,
+    .file-glyph::after {
+      position: absolute;
+      right: 3px;
+      left: 3px;
+      height: 1.5px;
+      background: currentColor;
+      content: '';
+    }
+    .file-glyph::before {
+      top: 7px;
+    }
+    .file-glyph::after {
+      top: 11px;
+    }
+    .dataset-file-icon.file-glyph {
+      width: 30px;
+      height: 30px;
+      border: 0;
+    }
+    .dataset-file-icon.file-glyph::before {
+      top: 7px;
+      right: 8px;
+      left: 8px;
+      height: 16px;
+      border: 1.5px solid var(--sw-color-primary);
+      border-radius: 3px;
+      background: transparent;
+    }
+    .dataset-file-icon.file-glyph::after {
+      top: 12px;
+      right: 11px;
+      left: 11px;
+      box-shadow: 0 4px 0 var(--sw-color-primary);
+    }
+    .dataset-expand-indicator {
+      position: relative;
+      width: 30px;
+      height: 30px;
+      border-radius: 50%;
+      background: var(--sw-surface-muted);
+    }
+    .dataset-expand-indicator::before {
+      position: absolute;
+      top: 10px;
+      left: 11px;
+      width: 6px;
+      height: 6px;
+      border-right: 1.5px solid var(--sw-text-secondary);
+      border-bottom: 1.5px solid var(--sw-text-secondary);
+      transform: rotate(45deg);
+      content: '';
+    }
+    .dataset-expand-indicator.expanded::before {
+      top: 12px;
+      transform: rotate(225deg);
+    }
+    .empty-symbol {
+      display: block;
+      width: 52px;
+      height: 38px;
+      margin: 0 auto 12px;
+      border: 2px solid var(--sw-border-strong);
+      border-radius: var(--sw-radius-sm);
+      background: linear-gradient(
+        var(--sw-surface) 30%,
+        var(--sw-color-primary-soft) 31% 35%,
+        var(--sw-surface) 36% 62%,
+        var(--sw-color-primary-soft) 63% 67%,
+        var(--sw-surface) 68%
+      );
+    }
+    .dialog-backdrop {
+      backdrop-filter: blur(3px);
+    }
+    .create-dialog,
+    .context-menu {
+      border-color: var(--sw-border);
+      background: var(--sw-surface-raised);
+      box-shadow: var(--sw-shadow-lg);
+    }
+    .explorer-layout {
+      border: 1px solid var(--sw-border);
+      border-radius: var(--sw-radius-md);
+      overflow: hidden;
+    }
+    .side-nav {
+      padding: 14px 10px;
+      background: var(--sw-surface-sunken);
+    }
+    .nav-entry {
+      min-height: 40px;
+      border: 1px solid transparent;
+    }
+    .nav-entry.active {
+      border-color: color-mix(in srgb, var(--sw-color-primary) 28%, var(--sw-border));
+      background: var(--sw-color-primary-soft);
+    }
+    .file-pane {
+      padding: 16px 18px 18px;
+    }
+    .file-tile {
+      position: relative;
+      min-height: 128px;
+      padding: 14px;
+      border-radius: var(--sw-radius-md);
+    }
+    .file-tile.selected {
+      border-color: var(--sw-color-accent);
+      background: var(--sw-color-accent-soft);
+      box-shadow: 0 0 0 1px var(--sw-color-accent);
+    }
+    .file-tile.selected::after {
+      position: absolute;
+      top: 9px;
+      right: 9px;
+      width: 8px;
+      height: 8px;
+      border: 2px solid var(--sw-surface);
+      border-radius: 50%;
+      background: var(--sw-color-accent);
+      content: '';
+    }
+    .file-grid.cdk-drop-list-dragging,
+    .nav-entry.cdk-drop-list-receiving {
+      background: var(--sw-color-primary-faint);
+      box-shadow: inset 0 0 0 2px var(--sw-color-primary);
+    }
+    .dialog-close:focus-visible,
+    .choice-card:focus-visible,
+    .context-menu button:focus-visible,
+    .pagination button:focus-visible,
+    .selection-actions button:focus-visible,
+    .upload-button:focus-within,
+    .breadcrumbs button:focus-visible,
+    .nav-entry:focus-visible,
+    .file-tile:focus-visible {
+      outline: 2px solid var(--sw-focus);
+      outline-offset: 2px;
+    }
     @media (max-width: 760px) {
       .explorer-layout {
         grid-template-columns: 1fr;
@@ -1667,7 +1876,7 @@ type EditingResource =
         overflow-x: auto;
         padding: 10px 0;
         border-right: 0;
-        border-bottom: 1px solid #e2e8f0;
+        border-bottom: 1px solid var(--sw-border);
       }
       .nav-caption,
       .nav-empty {
@@ -1682,7 +1891,7 @@ type EditingResource =
         display: none;
       }
       .file-pane {
-        padding-left: 0;
+        padding: 14px;
       }
     }
     @media (max-width: 560px) {
