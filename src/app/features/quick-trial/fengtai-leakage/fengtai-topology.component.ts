@@ -24,7 +24,7 @@ import {
   selector: 'app-fengtai-topology',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
-  template: `<div #host class="host" aria-label="丰泰风光苑管网拓扑图"></div>`,
+  template: `<div #host class="host" aria-label="管网拓扑图"></div>`,
   styles: `
     .host {
       width: 100%;
@@ -265,9 +265,15 @@ export class FengtaiTopologyComponent implements AfterViewInit, OnChanges, OnDes
 
   private layerKindLabel(kind: FengtaiNetworkLayer['value_kind']): string {
     return (
-      ({ observed: '实测', cleaned: '清洗后实测', estimated: '估算', derived: '推导' } as const)[
-        kind
-      ] ?? kind
+      (
+        {
+          observed: '实测',
+          cleaned: '清洗后实测',
+          estimated: '估算',
+          derived: '推导',
+          synthetic: '合成',
+        } as const
+      )[kind] ?? kind
     );
   }
 }

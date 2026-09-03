@@ -17,7 +17,20 @@ export interface FengtaiPreset {
 }
 
 export interface FengtaiLeakageManifest {
+  scenario_id?: string;
+  scenario_name?: string;
   community?: string;
+  source_label?: string;
+  scenario?: { id: string; name: string; type?: string; dataset_name?: string };
+  data_sources?: Array<{
+    code: string;
+    name: string;
+    interval_minutes?: number;
+    provenance?: { kind?: string; [key: string]: unknown };
+    [key: string]: unknown;
+  }>;
+  import_summary?: Record<string, unknown>;
+  mapping_summary?: Record<string, unknown>;
   default_window?: { start?: string; end?: string; start_date?: string; end_date?: string };
   date_ranges?:
     | Record<
@@ -45,6 +58,7 @@ export interface FengtaiTopologyNode {
   type?: 'valve' | 'hydrant' | 'meter' | 'junction' | string;
   x: number;
   y: number;
+  elevation_m?: number;
   [key: string]: unknown;
 }
 
@@ -65,7 +79,7 @@ export interface FengtaiTopology {
 }
 
 export type FengtaiLayerAssetType = 'node' | 'pipe' | 'valve';
-export type FengtaiLayerValueKind = 'observed' | 'cleaned' | 'estimated' | 'derived';
+export type FengtaiLayerValueKind = 'observed' | 'cleaned' | 'estimated' | 'derived' | 'synthetic';
 
 export interface FengtaiNetworkTimeline {
   interval_minutes: number;
@@ -84,6 +98,9 @@ export interface FengtaiNetworkLayer {
   values: Array<Array<number | null>>;
   min: number | null;
   max: number | null;
+  available_after_stage?: string | number;
+  availability_reason?: string;
+  provenance?: string | Record<string, unknown>;
 }
 
 export interface FengtaiNetworkFrames {

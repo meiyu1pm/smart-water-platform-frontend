@@ -30,7 +30,7 @@ import {
 import { FengtaiLeakageService } from './fengtai-leakage.service';
 import { FengtaiProcessRailComponent } from './fengtai-process-rail.component';
 import { FengtaiStageResultComponent } from './fengtai-stage-result.component';
-import { FengtaiTopologyComponent } from './fengtai-topology.component';
+import { LeakageNetwork3dComponent } from './leakage-network-3d.component';
 import { FengtaiTimelineControlComponent } from './fengtai-timeline-control.component';
 import { fengtaiLabel, fengtaiMetricValue } from './fengtai-labels';
 import { SwIconComponent } from '../../../shared/components/sw-icon.component';
@@ -48,7 +48,7 @@ import { SwIconComponent } from '../../../shared/components/sw-icon.component';
     MatSelectModule,
     FengtaiProcessRailComponent,
     FengtaiStageResultComponent,
-    FengtaiTopologyComponent,
+    LeakageNetwork3dComponent,
     FengtaiAssetDetailComponent,
     FengtaiTimelineControlComponent,
     SwIconComponent,
@@ -59,12 +59,12 @@ import { SwIconComponent } from '../../../shared/components/sw-icon.component';
       <section class="hero">
         <div>
           <span class="eyebrow">专项快速试用</span>
-          <h1>{{ manifest()?.community || '丰泰风光苑' }}漏损闭环</h1>
-          <p>数据质量、日内变化、水量平衡与重点管段分析。</p>
+          <h1>管网漏损闭环研判</h1>
+          <p>从数据解析到异常定位，在同一管网时空视图中追踪每一步分析证据。</p>
         </div>
         <div class="hero-context" aria-label="闭环分析能力">
           <span><app-sw-icon name="workflow" [size]="16" />8 步分析闭环</span>
-          <span><app-sw-icon name="scene" [size]="16" />管网拓扑联动</span>
+          <span><app-sw-icon name="scene" [size]="16" />{{ sceneName() }}</span>
         </div>
       </section>
 
@@ -92,9 +92,7 @@ import { SwIconComponent } from '../../../shared/components/sw-icon.component';
             [attr.aria-busy]="analyzing()"
             (click)="runAnalysis()"
           >
-            <app-sw-icon name="play" [size]="17" />{{
-              analyzing() ? '正在分析…' : '运行分析'
-            }}
+            <app-sw-icon name="play" [size]="17" />{{ analyzing() ? '正在分析…' : '运行分析' }}
           </button>
         </div>
       </section>
@@ -120,6 +118,138 @@ import { SwIconComponent } from '../../../shared/components/sw-icon.component';
           </div>
         </section>
       } @else {
+        <section class="data-context" aria-labelledby="data-context-title">
+          <header>
+            <div>
+              <span class="section-kicker">当前数据场景</span>
+              <h2 id="data-context-title">{{ sceneName() }}</h2>
+              <p>{{ sourceLabel() }}</p>
+            </div>
+            <button mat-stroked-button type="button" (click)="reloadScene()">
+              <app-sw-icon name="recycle" [size]="16" />重新载入
+            </button>
+          </header>
+          <div class="parse-summary" aria-label="数据解析摘要">
+            @for (entry of importSummaryEntries(); track entry.label) {
+              <article>
+                <span>{{ entry.label }}</span>
+                <strong>{{ entry.value }}</strong>
+                <small>{{ entry.detail }}</small>
+              </article>
+            }
+          </div>
+        </section>
+
+        <section id="leakage-network-workbench" class="network-workbench">
+          <header class="network-heading">
+            <div>
+              <span class="section-kicker">全管网时空态势</span>
+              <h2>管网运行总览</h2>
+              <p>选择节点或管段查看详情；时间与图层会同步更新场景及资产检查器。</p>
+            </div>
+            @if (activeLayer(); as layer) {
+              <span class="active-layer-badge"
+                >{{ layer.name }} · {{ layerKindLabel(layer.value_kind) }}</span
+              >
+            } @else {
+              <span class="active-layer-badge neutral">基础拓扑</span>
+            }
+          </header>
+          <div class="topology-layout" [class.detail-open]="!!selectedAsset()">
+            <section class="topology-panel" aria-label="管网三维场景">
+              @if (topologyLoading()) {
+                <div class="topology-status" role="status">
+                  <mat-spinner diameter="24"></mat-spinner><span>正在解析管网拓扑…</span>
+                </div>
+              } @else if (topologyError()) {
+                <div class="topology-status topology-warning">
+                  <span>{{ topologyError() }}</span>
+                  <button mat-button type="button" (click)="loadTopology()">重新加载</button>
+                </div>
+              } @else {
+                <div class="scene-controls">
+                  <mat-form-field appearance="outline">
+                    <mat-label>分析图层</mat-label>
+                    <mat-select
+                      [ngModel]="selectedLayerCode()"
+                      (ngModelChange)="selectLayer($event)"
+                      [disabled]="!networkFrames()"
+                    >
+                      @if (!networkFrames()) {
+                        <mat-option value="">基础拓扑（分析后开放图层）</mat-option>
+                      }
+                      @for (layer of networkFrames()?.layers ?? []; track layer.code) {
+                        <mat-option [value]="layer.code" [disabled]="!isLayerAvailable(layer)">
+                          {{ layer.name }}（{{ layer.unit }}）{{
+                            isLayerAvailable(layer) ? '' : ' · 待分析'
+                          }}
+                        </mat-option>
+                      }
+                    </mat-select>
+                  </mat-form-field>
+                  @if (activeLayer()) {
+                    <p class="layer-legend">
+                      <span class="legend-swatch"></span>
+                      {{
+                        activeLayer()!.asset_type === 'pipe'
+                          ? '管段'
+                          : activeLayer()!.asset_type === 'valve'
+                            ? '阀门'
+                            : '节点'
+                      }}
+                      · 数值由低至高
+                    </p>
+                  } @else {
+                    <p class="layer-legend">
+                      基础拓扑可直接浏览，运行分析后将逐步开放质量、压力与风险图层。
+                    </p>
+                  }
+                </div>
+                <app-leakage-network-3d
+                  [topology]="topology() ?? undefined"
+                  [activeLayer]="activeLayer()"
+                  [activeFrameValues]="activeFrameValues()"
+                  [selectedAsset]="selectedAsset()"
+                  [lockedLayerCodes]="lockedLayerCodes()"
+                  (assetSelected)="openAsset($event)"
+                  (assetSelectionCleared)="closeAsset()"
+                ></app-leakage-network-3d>
+                <div class="timeline-region" [attr.aria-busy]="framesLoading()">
+                  @if (framesLoading()) {
+                    <div class="timeline-message" role="status">
+                      <mat-spinner diameter="18"></mat-spinner><span>正在读取分析时间帧…</span>
+                    </div>
+                  } @else if (framesError()) {
+                    <div class="timeline-message warning">
+                      <span>{{ framesError() }}</span>
+                      <button mat-button type="button" (click)="reloadFrames()">重试</button>
+                    </div>
+                  } @else {
+                    <app-fengtai-timeline-control
+                      [timestamps]="networkFrames()?.timestamps ?? []"
+                      [activeTimestamp]="activeTimestamp()"
+                      [intervalMinutes]="networkFrames()?.interval_minutes ?? null"
+                      (activeTimestampChange)="selectTimestamp($event)"
+                    ></app-fengtai-timeline-control>
+                  }
+                </div>
+              }
+            </section>
+            @if (selectedAsset()) {
+              <app-fengtai-asset-detail
+                [selection]="selectedAsset()"
+                [detail]="assetDetail()"
+                [candidate]="selectedCandidate()"
+                [loading]="assetLoading()"
+                [error]="assetError()"
+                [activeTimestamp]="activeTimestamp()"
+                (closed)="closeAsset()"
+                (retry)="reloadAsset()"
+              ></app-fengtai-asset-detail>
+            }
+          </div>
+        </section>
+
         <section class="flow">
           <div>
             <h2>闭环过程</h2>
@@ -128,6 +258,7 @@ import { SwIconComponent } from '../../../shared/components/sw-icon.component';
           <app-fengtai-process-rail
             [stages]="stages()"
             [selectedCode]="selectedStageCode()"
+            [availableCodes]="availableStageCodes()"
             (selectedCodeChange)="selectStage($event)"
           ></app-fengtai-process-rail>
         </section>
@@ -155,95 +286,18 @@ import { SwIconComponent } from '../../../shared/components/sw-icon.component';
               <span>当前步骤</span>
               <h2>{{ selectedStageTitle() }}</h2>
             </div>
-            <span class="stage-position">{{ selectedStagePosition() }} / {{ stages().length }}</span>
+            <span class="stage-position"
+              >{{ selectedStagePosition() }} / {{ stages().length }}</span
+            >
           </header>
           <app-fengtai-stage-result
             [selectedCode]="selectedStageCode()"
+            [selectedTitle]="selectedStageTitle()"
+            [available]="isStageAvailable(selectedStageCode())"
             [analysis]="analysis()"
             [manifest]="manifest()"
             (candidateSelected)="jumpToCandidate($event)"
           ></app-fengtai-stage-result>
-          @if (selectedStageCode() === 'network_candidates') {
-            <div class="topology-layout" [class.detail-open]="!!selectedAsset()">
-              <section id="fengtai-topology" class="topology-panel">
-                @if (topologyLoading()) {
-                  <div class="topology-status">
-                    <mat-spinner diameter="24"></mat-spinner><span>正在加载管网概览…</span>
-                  </div>
-                } @else if (topologyError()) {
-                  <div class="topology-status topology-warning">
-                    <span>{{ topologyError() }}</span>
-                    <button mat-button type="button" (click)="loadTopology()">重新加载</button>
-                  </div>
-                } @else {
-                  @if (framesLoading()) {
-                    <div class="topology-status">
-                      <mat-spinner diameter="22"></mat-spinner><span>正在加载管网时间帧…</span>
-                    </div>
-                  } @else if (framesError()) {
-                    <div class="topology-status topology-warning">
-                      <span>{{ framesError() }}</span
-                      ><button mat-button type="button" (click)="reloadFrames()">重新加载</button>
-                    </div>
-                  } @else if (networkFrames()) {
-                    <div class="topology-controls">
-                      <app-fengtai-timeline-control
-                        [timestamps]="networkFrames()!.timestamps"
-                        [activeTimestamp]="activeTimestamp()"
-                        (activeTimestampChange)="selectTimestamp($event)"
-                      ></app-fengtai-timeline-control>
-                      <mat-form-field appearance="outline">
-                        <mat-label>拓扑图层</mat-label>
-                        <mat-select
-                          [ngModel]="selectedLayerCode()"
-                          (ngModelChange)="selectLayer($event)"
-                        >
-                          @for (layer of networkFrames()!.layers; track layer.code) {
-                            <mat-option [value]="layer.code"
-                              >{{ layer.name }}（{{ layer.unit }}）</mat-option
-                            >
-                          }
-                        </mat-select>
-                      </mat-form-field>
-                      @if (activeLayer()) {
-                        <p class="layer-legend">
-                          <span class="legend-swatch"></span
-                          >{{ layerKindLabel(activeLayer()!.value_kind) }} ·
-                          {{
-                            activeLayer()!.asset_type === 'pipe'
-                              ? '管段'
-                              : activeLayer()!.asset_type === 'valve'
-                                ? '阀门'
-                                : '节点'
-                          }}值由绿至红表示低至高
-                        </p>
-                      }
-                    </div>
-                  }
-                  <app-fengtai-topology
-                    [topology]="topology() ?? undefined"
-                    [candidates]="analysis()?.candidates ?? []"
-                    [activeLayer]="activeLayer()"
-                    [activeFrameValues]="activeFrameValues()"
-                    [selectedAsset]="selectedAsset()"
-                    (assetSelected)="openAsset($event)"
-                  ></app-fengtai-topology>
-                }
-              </section>
-              @if (selectedAsset()) {
-                <app-fengtai-asset-detail
-                  [selection]="selectedAsset()"
-                  [detail]="assetDetail()"
-                  [candidate]="selectedCandidate()"
-                  [loading]="assetLoading()"
-                  [error]="assetError()"
-                  [activeTimestamp]="activeTimestamp()"
-                  (closed)="closeAsset()"
-                  (retry)="reloadAsset()"
-                ></app-fengtai-asset-detail>
-              }
-            </div>
-          }
         </section>
       }
     </main>
@@ -432,6 +486,86 @@ import { SwIconComponent } from '../../../shared/components/sw-icon.component';
     .empty span {
       font-size: 12px;
     }
+    .data-context,
+    .network-workbench {
+      border: 1px solid var(--sw-border);
+      border-radius: var(--sw-radius-md);
+      background: var(--sw-surface);
+      box-shadow: var(--sw-shadow-sm);
+    }
+    .data-context {
+      padding: 16px;
+    }
+    .data-context > header,
+    .network-heading {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+    .data-context h2,
+    .network-heading h2 {
+      margin: 3px 0 0;
+      font-size: 17px;
+    }
+    .data-context p,
+    .network-heading p {
+      margin: 4px 0 0;
+      color: var(--sw-text-muted);
+      font-size: 12px;
+      line-height: 1.55;
+    }
+    .section-kicker {
+      color: var(--sw-color-secondary-strong);
+      font-size: 11px;
+      font-weight: 750;
+      letter-spacing: 0.05em;
+    }
+    .parse-summary {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 8px;
+      margin-top: 14px;
+    }
+    .parse-summary article {
+      min-width: 0;
+      padding: 10px 12px;
+      display: grid;
+      gap: 3px;
+      border: 1px solid var(--sw-border);
+      border-radius: var(--sw-radius-sm);
+      background: var(--sw-surface-muted);
+    }
+    .parse-summary span,
+    .parse-summary small {
+      color: var(--sw-text-muted);
+      font-size: 11px;
+    }
+    .parse-summary strong {
+      color: var(--sw-text-primary);
+      font-size: 14px;
+      font-variant-numeric: tabular-nums;
+    }
+    .network-workbench {
+      overflow: hidden;
+    }
+    .network-heading {
+      padding: 15px 16px;
+      border-bottom: 1px solid var(--sw-border);
+    }
+    .active-layer-badge {
+      flex: 0 0 auto;
+      padding: 5px 10px;
+      border-radius: 999px;
+      background: var(--sw-color-secondary-soft);
+      color: var(--sw-color-secondary-strong);
+      font-size: 11px;
+      font-weight: 700;
+    }
+    .active-layer-badge.neutral {
+      background: var(--sw-surface-muted);
+      color: var(--sw-text-secondary);
+    }
     .flow {
       display: grid;
       gap: 12px;
@@ -514,18 +648,30 @@ import { SwIconComponent } from '../../../shared/components/sw-icon.component';
       display: grid;
       grid-template-columns: minmax(0, 1fr);
       gap: 14px;
+      padding: 14px;
     }
     .topology-layout.detail-open {
       grid-template-columns: minmax(0, 1fr) minmax(320px, 420px);
       align-items: start;
     }
     .topology-panel {
-      min-height: 326px;
+      min-height: 520px;
       min-width: 0;
       padding: 12px;
       border: 1px solid var(--sw-border);
       border-radius: var(--sw-radius-md);
       background: var(--sw-canvas-bg);
+    }
+    .scene-controls {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 10px;
+    }
+    .scene-controls mat-form-field {
+      width: min(310px, 100%);
+      margin: 0;
     }
     .topology-controls {
       display: grid;
@@ -538,8 +684,7 @@ import { SwIconComponent } from '../../../shared/components/sw-icon.component';
       margin: 0;
     }
     .layer-legend {
-      grid-column: 1 / -1;
-      margin: -2px 0 2px;
+      margin: 0;
       color: var(--sw-text-muted);
       font-size: 12px;
     }
@@ -558,7 +703,7 @@ import { SwIconComponent } from '../../../shared/components/sw-icon.component';
       vertical-align: middle;
     }
     .topology-status {
-      min-height: 300px;
+      min-height: 480px;
       display: flex;
       align-items: center;
       justify-content: center;
@@ -568,6 +713,25 @@ import { SwIconComponent } from '../../../shared/components/sw-icon.component';
     }
     .topology-warning {
       flex-direction: column;
+      color: var(--sw-color-warning);
+    }
+    .timeline-region {
+      min-height: 88px;
+      margin-top: 10px;
+    }
+    .timeline-message {
+      min-height: 82px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 9px;
+      border: 1px solid var(--sw-border);
+      border-radius: var(--sw-radius-sm);
+      background: var(--sw-surface-muted);
+      color: var(--sw-text-muted);
+      font-size: 12px;
+    }
+    .timeline-message.warning {
       color: var(--sw-color-warning);
     }
     @media (max-width: 900px) {
@@ -591,6 +755,14 @@ import { SwIconComponent } from '../../../shared/components/sw-icon.component';
       .topology-controls {
         grid-template-columns: 1fr;
       }
+      .parse-summary {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+      .scene-controls,
+      .network-heading {
+        align-items: flex-start;
+        flex-direction: column;
+      }
     }
     @media (max-width: 600px) {
       .page {
@@ -609,6 +781,20 @@ import { SwIconComponent } from '../../../shared/components/sw-icon.component';
       .stage-workspace,
       .flow {
         padding: 14px;
+      }
+      .data-context > header {
+        align-items: flex-start;
+        flex-direction: column;
+      }
+      .parse-summary {
+        grid-template-columns: 1fr 1fr;
+      }
+      .topology-layout {
+        padding: 8px;
+      }
+      .topology-panel {
+        min-height: 440px;
+        padding: 8px;
       }
     }
   `,
@@ -671,9 +857,10 @@ export class FengtaiLeakagePage implements OnInit {
           { id: 'sensitive', label: '敏感筛查' },
         ];
   });
-  readonly stages = computed<FengtaiStage[]>(
-    () =>
-      this.analysis()?.stages ?? [
+  readonly stages = computed<FengtaiStage[]>(() => {
+    const analysis = this.analysis();
+    return (
+      analysis?.stages ?? [
         { code: 'data_intake', title: '数据接入', status: 'pending' },
         { code: 'quality_score', title: '质量检查', status: 'pending' },
         { code: 'data_governance', title: '数据治理', status: 'pending' },
@@ -690,8 +877,80 @@ export class FengtaiLeakagePage implements OnInit {
         },
         { code: 'network_candidates', title: '候选管段', status: 'pending' },
         { code: 'response_advice', title: '处置建议', status: 'pending' },
-      ],
-  );
+      ]
+    ).map((stage) => (analysis && !analysis.stages ? { ...stage, status: 'complete' } : stage));
+  });
+  readonly availableStageCodes = computed<ReadonlySet<string>>(() => {
+    const available = new Set<string>();
+    if (this.manifest() && this.topology() && !this.topologyLoading()) available.add('data_intake');
+    this.stages().forEach((stage, index) => {
+      if (this.stageComplete(stage)) available.add(this.stageCode(stage, index));
+    });
+    return available;
+  });
+  readonly importSummaryEntries = computed(() => {
+    const manifest = this.manifest();
+    const topology = this.topology();
+    const imported = manifest?.import_summary ?? {};
+    const importedTopology = this.recordValue(imported['topology']);
+    const nodes =
+      (typeof importedTopology['nodes'] === 'number' ? importedTopology['nodes'] : null) ??
+      this.metricCount('nodes', 'node_count') ??
+      topology?.nodes?.filter((node) => node.type !== 'valve' && node.type !== 'hydrant').length;
+    const pipes =
+      (typeof importedTopology['pipes'] === 'number' ? importedTopology['pipes'] : null) ??
+      this.metricCount('pipes', 'pipe_count') ??
+      (topology?.pipes ?? topology?.links)?.length;
+    const records = this.metricCount(
+      'full_resolution_points',
+      'time_series_rows',
+      'master_meter_rows',
+      'records',
+    );
+    const mapping = {
+      ...this.recordValue(imported['measurement_mapping']),
+      ...(manifest?.mapping_summary ?? {}),
+    };
+    const coverageValue =
+      mapping['coverage_percent'] ??
+      mapping['mapping_coverage_percent'] ??
+      manifest?.topology_summary?.['mapping_coverage_percent'];
+    const coverage =
+      typeof coverageValue === 'number'
+        ? coverageValue
+        : typeof mapping['mapped_nodes'] === 'number' &&
+            typeof mapping['topology_nodes'] === 'number' &&
+            mapping['topology_nodes'] > 0
+          ? (mapping['mapped_nodes'] / mapping['topology_nodes']) * 100
+          : null;
+    return [
+      {
+        label: '拓扑结构',
+        value: this.topologyLoading()
+          ? '解析中'
+          : `${nodes ?? importedTopology['nodes'] ?? '—'} 节点 · ${pipes ?? importedTopology['pipes'] ?? '—'} 管段`,
+        detail: this.topologyLoading() ? '正在读取坐标与连接关系' : '坐标、连接与高程已建立',
+      },
+      {
+        label: '时序数据',
+        value:
+          records || typeof mapping['records'] === 'number'
+            ? `${Number(records ?? mapping['records']).toLocaleString('zh-CN')} 条`
+            : '可用窗口',
+        detail: manifest?.default_window ? '时间范围与采样间隔已识别' : '等待读取时间范围',
+      },
+      {
+        label: '对象映射',
+        value: coverage !== null ? `${coverage.toFixed(1)}%` : '已建立',
+        detail: '测点、节点与管段对照关系',
+      },
+      {
+        label: '数据状态',
+        value: this.topologyError() ? '部分可用' : '可研判',
+        detail: manifest?.source_label ?? manifest?.community ?? '平台示例数据',
+      },
+    ];
+  });
   readonly selectedCandidate = computed<FengtaiCandidate | null>(() => {
     const selected = this.selectedAsset();
     if (!selected || selected.type !== 'pipe') return null;
@@ -703,8 +962,14 @@ export class FengtaiLeakagePage implements OnInit {
     const frames = this.networkFrames();
     if (!frames) return null;
     const selected = this.selectedLayerCode() ?? frames.default_layer;
-    return frames.layers.find((layer) => layer.code === selected) ?? frames.layers[0] ?? null;
+    const layers = frames.layers.filter((layer) => this.isLayerAvailable(layer));
+    return layers.find((layer) => layer.code === selected) ?? layers[0] ?? null;
   });
+  readonly lockedLayerCodes = computed(() =>
+    (this.networkFrames()?.layers ?? [])
+      .filter((layer) => !this.isLayerAvailable(layer))
+      .map((layer) => layer.code),
+  );
   readonly activeFrameValues = computed<Record<string, number | null>>(() => {
     const frames = this.networkFrames();
     const layer = this.activeLayer();
@@ -744,6 +1009,13 @@ export class FengtaiLeakagePage implements OnInit {
       },
     });
   }
+  reloadScene(): void {
+    this.closeAsset();
+    this.analysis.set(null);
+    this.selectedStageCode.set('data_intake');
+    this.clearFrames();
+    this.loadInitial();
+  }
   loadTopology(): void {
     this.topologyLoading.set(true);
     this.topologyError.set('');
@@ -760,7 +1032,10 @@ export class FengtaiLeakagePage implements OnInit {
   }
   runAnalysis(): void {
     if (!this.requireAuthenticated()) return;
-    this.closeAsset();
+    this.assetRequestSequence += 1;
+    this.assetDetail.set(null);
+    this.assetLoading.set(false);
+    this.assetError.set('');
     this.analyzing.set(true);
     this.error.set('');
     this.clearFrames();
@@ -772,6 +1047,7 @@ export class FengtaiLeakagePage implements OnInit {
           this.analysis.set(analysis);
           this.selectedStageCode.set('persistent_residual_ewma_cusum');
           this.loadFrames(analysis);
+          this.reloadAsset();
         },
         error: () => {
           this.analyzing.set(false);
@@ -781,6 +1057,10 @@ export class FengtaiLeakagePage implements OnInit {
   }
   selectStage(code: string): void {
     this.selectedStageCode.set(code);
+    const stageLayer = (this.networkFrames()?.layers ?? []).find(
+      (layer) => String(layer.available_after_stage ?? '') === code && this.isLayerAvailable(layer),
+    );
+    if (stageLayer) this.selectedLayerCode.set(stageLayer.code);
   }
   selectedStageTitle(): string {
     const selected = this.selectedStageCode();
@@ -789,15 +1069,17 @@ export class FengtaiLeakagePage implements OnInit {
   }
   selectedStagePosition(): number {
     const selected = this.selectedStageCode();
-    const index = this.stages().findIndex((item, itemIndex) => this.stageCode(item, itemIndex) === selected);
+    const index = this.stages().findIndex(
+      (item, itemIndex) => this.stageCode(item, itemIndex) === selected,
+    );
     return index >= 0 ? index + 1 : 1;
   }
   selectTimestamp(timestamp: string): void {
     if (this.networkFrames()?.timestamps.includes(timestamp)) this.activeTimestamp.set(timestamp);
   }
   selectLayer(code: string): void {
-    if (this.networkFrames()?.layers.some((layer) => layer.code === code))
-      this.selectedLayerCode.set(code);
+    const layer = this.networkFrames()?.layers.find((item) => item.code === code);
+    if (layer && this.isLayerAvailable(layer)) this.selectedLayerCode.set(code);
   }
   openAsset(selection: AssetSelection): void {
     this.selectedAsset.set(selection);
@@ -805,15 +1087,17 @@ export class FengtaiLeakagePage implements OnInit {
     this.assetError.set('');
     this.assetLoading.set(true);
     const analysisId = this.analysis()?.analysis_id;
-    if (!analysisId) {
-      this.assetLoading.set(false);
-      this.assetError.set('请先运行分析后查看资产详情。');
-      return;
-    }
     const requestSequence = ++this.assetRequestSequence;
-    this.service
-      .getAssetDetail(analysisId, selection.id, this.startDate, this.endDate, this.preset)
-      .subscribe({
+    const detailRequest = analysisId
+      ? this.service.getAssetDetail(
+          analysisId,
+          selection.id,
+          this.startDate,
+          this.endDate,
+          this.preset,
+        )
+      : this.service.getReferenceAssetDetail(selection.id, this.startDate, this.endDate);
+    detailRequest.subscribe({
         next: (detail) => {
           if (
             requestSequence !== this.assetRequestSequence ||
@@ -858,7 +1142,7 @@ export class FengtaiLeakagePage implements OnInit {
     this.openAsset({ type: 'pipe', id, name: candidate.name ?? id });
     queueMicrotask(() =>
       document
-        .getElementById('fengtai-topology')
+        .getElementById('leakage-network-workbench')
         ?.scrollIntoView({ behavior: 'smooth', block: 'center' }),
     );
   }
@@ -874,10 +1158,49 @@ export class FengtaiLeakagePage implements OnInit {
   }
   layerKindLabel(kind: FengtaiNetworkLayer['value_kind']): string {
     return (
-      ({ observed: '实测', cleaned: '清洗后实测', estimated: '估算', derived: '推导' } as const)[
-        kind
-      ] ?? kind
+      (
+        {
+          observed: '实测',
+          cleaned: '清洗后实测',
+          estimated: '估算',
+          derived: '推导',
+          synthetic: '合成',
+        } as const
+      )[kind] ?? kind
     );
+  }
+  sceneName(): string {
+    return (
+      this.manifest()?.scenario?.name ??
+      this.manifest()?.scenario_name ??
+      this.manifest()?.community ??
+      '平台示例管网'
+    );
+  }
+  sourceLabel(): string {
+    const sources =
+      this.manifest()
+        ?.data_sources?.map((item) => item.name)
+        .slice(0, 3) ?? [];
+    return (
+      this.manifest()?.source_label ??
+      (sources.length
+        ? `平台示例数据 · ${sources.join('、')}`
+        : '平台示例数据 · 拓扑、时序与对象对照关系')
+    );
+  }
+  isStageAvailable(code: string): boolean {
+    return this.availableStageCodes().has(code);
+  }
+  isLayerAvailable(layer: FengtaiNetworkLayer): boolean {
+    const requirement = layer.available_after_stage;
+    if (requirement === undefined || requirement === null || requirement === '') return true;
+    if (typeof requirement === 'number') {
+      return this.stages()
+        .slice(0, requirement)
+        .every((stage) => this.stageComplete(stage));
+    }
+    return this.availableStageCodes().has(String(requirement));
   }
   private requireAuthenticated(): boolean {
     if (this.auth.isAuthenticated()) return true;
@@ -950,6 +1273,24 @@ export class FengtaiLeakagePage implements OnInit {
   }
   private dateValue(value: unknown): string | undefined {
     return typeof value === 'string' ? value : undefined;
+  }
+  private metricCount(...keys: string[]): number | null {
+    const counts = this.manifest()?.counts ?? {};
+    for (const key of keys) {
+      const value = counts[key];
+      if (typeof value === 'number' && Number.isFinite(value)) return value;
+    }
+    return null;
+  }
+  private recordValue(value: unknown): Record<string, unknown> {
+    return value && typeof value === 'object' && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : {};
+  }
+  private stageComplete(stage: FengtaiStage): boolean {
+    return ['complete', 'completed', 'done', 'success'].includes(
+      String(stage.status ?? '').toLowerCase(),
+    );
   }
   private stageCode(stage: FengtaiStage, index: number): string {
     return String(stage.code ?? stage.id ?? stage.name ?? stage.title ?? `stage-${index}`);

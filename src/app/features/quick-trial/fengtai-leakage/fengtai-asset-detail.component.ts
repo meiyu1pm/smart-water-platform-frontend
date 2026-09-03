@@ -21,72 +21,107 @@ import { SwIconComponent } from '../../../shared/components/sw-icon.component';
   standalone: true,
   imports: [CommonModule, SwIconComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
-  template: `<aside class="panel" role="dialog" aria-label="资产详情">
+  template: `<aside class="panel" aria-label="资产检查器">
     <header>
       <div>
-        <p class="eyebrow">资产详情</p>
+        <p class="eyebrow">资产检查器</p>
         <h2>{{ detail?.asset?.name || selection?.name || '资产' }}</h2>
       </div>
       <button type="button" (click)="closed.emit()" aria-label="关闭资产详情">
         <app-sw-icon name="close" [size]="18" />
       </button>
     </header>
-    @if (loading) {
-      <p class="state">正在加载资产详情…</p>
-    } @else if (error) {
-      <p class="state error">{{ error }}</p>
-      <button type="button" class="retry" (click)="retry.emit()">重试</button>
-    } @else if (detail) {
-      <dl class="facts">
-        @for (entry of facts(); track entry[0]) {
-          <div>
-            <dt>{{ entry[0] }}</dt>
-            <dd>{{ entry[1] }}</dd>
-          </div>
-        }
-      </dl>
-      @if (candidate && candidate.score !== undefined) {
-        <div class="risk">
-          <span>综合评分</span><strong>{{ candidate.score.toFixed(2) }} 分</strong>
-        </div>
-      }
-      @if (detail.calculation; as calculation) {
-        <span
-          class="scope"
-          [class.reference]="calculation.evidence_scope !== 'node_history_aggregate'"
-          >{{ scopeLabel(calculation.evidence_scope) }}</span
+    <nav class="tabs" role="tablist" aria-label="资产信息分类">
+      @for (tab of tabs; track tab.id) {
+        <button
+          type="button"
+          role="tab"
+          [class.active]="activeTab === tab.id"
+          [attr.aria-selected]="activeTab === tab.id"
+          (click)="selectTab(tab.id)"
         >
-        <p class="scope-note">
-          计算方法：{{ calculation.method }} · 置信度
-          {{ (calculation.confidence * 100).toFixed(0) }}%
-        </p>
-      } @else if (detail.measurement; as measurement) {
-        <span class="scope" [class.reference]="measurement.scope === 'community_reference'">{{
-          measurement.scope === 'community_reference' ? '小区级参考' : '直接测量'
-        }}</span>
-        <p class="scope-note">数据来源：{{ measurement.source_label }}</p>
+          {{ tab.label }}
+        </button>
       }
-      @if (stateEntries().length) {
-        <h3>当前时刻状态</h3>
-        <dl class="state-facts">
-          @for (entry of stateEntries(); track entry.label) {
-            <div>
-              <dt>{{ entry.label }}</dt>
-              <dd>{{ entry.value }}</dd>
+    </nav>
+    <section class="tab-body" role="tabpanel">
+      @if (loading) {
+        <p class="state">正在加载资产详情…</p>
+      } @else if (error) {
+        <p class="state error">{{ error }}</p>
+        <button type="button" class="retry" (click)="retry.emit()">重试</button>
+      } @else if (activeTab === 'overview') {
+        @if (detail) {
+          <dl class="facts">
+            @for (entry of facts(); track entry[0]) {
+              <div>
+                <dt>{{ entry[0] }}</dt>
+                <dd>{{ entry[1] }}</dd>
+              </div>
+            }
+          </dl>
+          @if (candidate && candidate.score !== undefined) {
+            <div class="risk">
+              <span>综合评分</span><strong>{{ candidate.score.toFixed(2) }} 分</strong>
             </div>
           }
-        </dl>
-      }
-      <div #chartHost class="chart" aria-label="分析窗口流量压力曲线"></div>
-      <h3>邻接关系</h3>
-      <div class="adjacent">
-        @for (connection of connections(); track connection) {
-          <span>{{ connection }}</span>
-        } @empty {
-          <span>暂无邻接资产</span>
+        } @else {
+          <div class="selection-overview">
+            <span>{{ assetTypeLabel(selection?.type) }}</span>
+            <strong>{{ selection?.id }}</strong>
+            <p>基础拓扑已载入。运行分析后可继续查看时序、证据和相邻对象。</p>
+          </div>
         }
-      </div>
-    }
+      } @else if (activeTab === 'series') {
+        @if (hasSeries()) {
+          @if (stateEntries().length) {
+            <h3>当前时刻状态</h3>
+            <dl class="state-facts">
+              @for (entry of stateEntries(); track entry.label) {
+                <div>
+                  <dt>{{ entry.label }}</dt>
+                  <dd>{{ entry.value }}</dd>
+                </div>
+              }
+            </dl>
+          }
+          <div #chartHost class="chart" aria-label="分析窗口流量压力曲线"></div>
+        } @else {
+          <p class="tab-empty">完成分析后可查看该资产在当前时间窗口内的时序变化。</p>
+        }
+      } @else if (activeTab === 'evidence') {
+        @if (detail?.calculation; as calculation) {
+          <span
+            class="scope"
+            [class.reference]="calculation.evidence_scope !== 'node_history_aggregate'"
+            >{{ scopeLabel(calculation.evidence_scope) }}</span
+          >
+          <p class="scope-note">
+            计算方法：{{ calculation.method }} · 置信度
+            {{ (calculation.confidence * 100).toFixed(0) }}%
+          </p>
+        } @else if (detail?.measurement; as measurement) {
+          <span class="scope" [class.reference]="measurement.scope === 'community_reference'">{{
+            measurement.scope === 'community_reference' ? '小区级参考' : '直接测量'
+          }}</span>
+          <p class="scope-note">数据来源：{{ measurement.source_label }}</p>
+        } @else {
+          <p class="tab-empty">当前资产尚未生成可追溯的分析证据。</p>
+        }
+        @if (candidate?.reason) {
+          <p class="evidence-reason">{{ candidate?.reason }}</p>
+        }
+      } @else {
+        <h3>邻接关系</h3>
+        <div class="adjacent">
+          @for (connection of connections(); track connection) {
+            <span>{{ connection }}</span>
+          } @empty {
+            <span>{{ detail ? '暂无邻接资产' : '完成分析后加载邻接关系' }}</span>
+          }
+        </div>
+      }
+    </section>
   </aside>`,
   styles: `
     .panel {
@@ -128,6 +163,71 @@ import { SwIconComponent } from '../../../shared/components/sw-icon.component';
     .panel header button:hover {
       color: var(--sw-text-primary);
       background: var(--sw-surface-muted);
+    }
+    .tabs {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 4px;
+      margin: 14px 0;
+      padding: 4px;
+      border-radius: var(--sw-radius-sm);
+      background: var(--sw-surface-muted);
+    }
+    .tabs button {
+      min-height: 32px;
+      padding: 0 5px;
+      border: 0;
+      border-radius: var(--sw-radius-xs);
+      background: transparent;
+      color: var(--sw-text-muted);
+      font: inherit;
+      font-size: 11px;
+      cursor: pointer;
+    }
+    .tabs button.active {
+      background: var(--sw-surface);
+      color: var(--sw-color-primary-strong);
+      box-shadow: var(--sw-shadow-sm);
+      font-weight: 700;
+    }
+    .tabs button:focus-visible {
+      outline: 3px solid color-mix(in srgb, var(--sw-focus) 28%, transparent);
+      outline-offset: 1px;
+    }
+    .tab-body {
+      min-height: 180px;
+    }
+    .selection-overview,
+    .tab-empty {
+      padding: 14px;
+      border: 1px dashed var(--sw-border-strong);
+      border-radius: var(--sw-radius-sm);
+      background: var(--sw-surface-muted);
+    }
+    .selection-overview {
+      display: grid;
+      gap: 5px;
+    }
+    .selection-overview span,
+    .selection-overview p,
+    .tab-empty {
+      color: var(--sw-text-muted);
+      font-size: 12px;
+      line-height: 1.6;
+    }
+    .selection-overview strong {
+      color: var(--sw-text-primary);
+      font-variant-numeric: tabular-nums;
+    }
+    .selection-overview p,
+    .tab-empty {
+      margin: 0;
+    }
+    .evidence-reason {
+      margin-top: 10px;
+      color: var(--sw-text-secondary);
+      font-size: 12px;
+      line-height: 1.6;
     }
     .facts {
       display: grid;
@@ -250,6 +350,13 @@ export class FengtaiAssetDetailComponent implements AfterViewInit, OnChanges, On
   @Input() activeTimestamp: string | null = null;
   @Output() readonly closed = new EventEmitter<void>();
   @Output() readonly retry = new EventEmitter<void>();
+  readonly tabs = [
+    { id: 'overview', label: '概览' },
+    { id: 'series', label: '时序' },
+    { id: 'evidence', label: '证据' },
+    { id: 'adjacent', label: '相邻对象' },
+  ] as const;
+  activeTab: (typeof this.tabs)[number]['id'] = 'overview';
   private host?: ElementRef<HTMLDivElement>;
   private chart: echarts.ECharts | null = null;
   private resizeObserver: ResizeObserver | null = null;
@@ -269,7 +376,8 @@ export class FengtaiAssetDetailComponent implements AfterViewInit, OnChanges, On
   ngAfterViewInit(): void {
     this.renderChart();
   }
-  ngOnChanges(_: SimpleChanges): void {
+  ngOnChanges(changes: SimpleChanges): void {
+    if (changes['selection'] && !changes['selection'].firstChange) this.activeTab = 'overview';
     this.renderChart();
   }
   ngOnDestroy(): void {
@@ -277,11 +385,12 @@ export class FengtaiAssetDetailComponent implements AfterViewInit, OnChanges, On
     this.chart?.dispose();
   }
   facts(): [string, string][] {
-    const a = this.detail?.asset ?? {};
+    const a: Record<string, unknown> = this.detail?.asset ?? {};
     return Object.entries(a)
       .filter(
         ([k, v]) =>
           !['name', 'type', 'id'].includes(k) &&
+          !(k === 'elevation' && a['elevation_m'] !== null && a['elevation_m'] !== undefined) &&
           v !== null &&
           v !== undefined &&
           typeof v !== 'object',
@@ -296,6 +405,26 @@ export class FengtaiAssetDetailComponent implements AfterViewInit, OnChanges, On
       ...this.detail.connections.pipe_ids.map((id) => `管段 ${id}`),
     ];
   }
+  selectTab(tab: (typeof this.tabs)[number]['id']): void {
+    this.activeTab = tab;
+    queueMicrotask(() => this.renderChart());
+  }
+  hasSeries(): boolean {
+    return !!(
+      this.detail?.measurement?.series?.timestamps?.length ||
+      this.detail?.state_series?.timestamps?.length
+    );
+  }
+  assetTypeLabel(type: AssetSelection['type'] | undefined): string {
+    return (
+      (
+        { node: '节点', pipe: '管段', valve: '阀门', hydrant: '消火栓', meter: '测点' } as Record<
+          string,
+          string
+        >
+      )[type ?? ''] ?? '管网资产'
+    );
+  }
   stateEntries(): Array<{ label: string; value: string }> {
     const state = this.detail?.state_series;
     if (!state?.timestamps.length || !this.activeTimestamp) return [];
@@ -307,7 +436,13 @@ export class FengtaiAssetDetailComponent implements AfterViewInit, OnChanges, On
         if (value === null || value === undefined) return null;
         const kind =
           (
-            { observed: '实测', cleaned: '清洗后实测', estimated: '估算', derived: '推导' } as const
+            {
+              observed: '实测',
+              cleaned: '清洗后实测',
+              estimated: '估算',
+              derived: '推导',
+              synthetic: '合成',
+            } as const
           )[metric.value_kind] ?? metric.value_kind;
         return {
           label: `${metric.name}（${kind}）`,
@@ -365,6 +500,10 @@ export class FengtaiAssetDetailComponent implements AfterViewInit, OnChanges, On
     return String(value);
   }
   private renderChart(): void {
+    if (this.activeTab !== 'series') {
+      this.chart?.clear();
+      return;
+    }
     const measurement = this.detail?.measurement?.series;
     const state = this.detail?.state_series;
     const timestamps = measurement?.timestamps ?? state?.timestamps ?? [];

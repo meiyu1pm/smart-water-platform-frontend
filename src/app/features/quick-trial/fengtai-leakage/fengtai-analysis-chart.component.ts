@@ -161,7 +161,7 @@ export class FengtaiAnalysisChartComponent implements AfterViewInit, OnChanges, 
         animation: false,
         title: {
           text: this.chartTitle(),
-          subtext: '数据来源：丰泰风光苑入口总表（小区边界）',
+          subtext: '数据来源：当前场景入口总表（区域边界）',
           left: 0,
           textStyle: { color: '#1e293b', fontSize: 14, fontWeight: 'normal' },
           subtextStyle: { color: '#64748b', fontSize: 11 },
