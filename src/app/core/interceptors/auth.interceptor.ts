@@ -7,12 +7,14 @@ import { NotificationService } from '../services/notification.service';
 
 const authPath = (url: string) =>
   url.includes('/api/v1/auth/login') || url.includes('/api/v1/auth/refresh');
+const publicPath = (url: string) => url.includes('/api/v1/public/');
 
 export const authInterceptor: HttpInterceptorFn = (request, next) => {
   const auth = inject(AuthService);
   const notifications = inject(NotificationService);
 
-  if (authPath(request.url)) {
+  // Public read facades must not carry a stale identity or start refresh work.
+  if (authPath(request.url) || publicPath(request.url)) {
     return next(request);
   }
 

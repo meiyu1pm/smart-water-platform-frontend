@@ -1,9 +1,7 @@
 import {
   ChangeDetectionStrategy,
   Component,
-  EventEmitter,
   OnInit,
-  Output,
   computed,
   inject,
   signal,
@@ -17,6 +15,7 @@ import { MatProgressBarModule } from '@angular/material/progress-bar';
 import { MatSelectModule } from '@angular/material/select';
 
 import { AuthService } from '../../../core/services/auth.service';
+import { LoginDialogService } from '../../login/login-dialog.component';
 import { FengtaiAssetDetailComponent } from './fengtai-asset-detail.component';
 import {
   AssetSelection,
@@ -92,7 +91,9 @@ import { SwIconComponent } from '../../../shared/components/sw-icon.component';
             [attr.aria-busy]="analyzing()"
             (click)="runAnalysis()"
           >
-            <app-sw-icon name="play" [size]="17" />{{ analyzing() ? '正在分析…' : '运行分析' }}
+            <app-sw-icon name="play" [size]="17" />{{
+              analyzing() ? '正在分析…' : auth.isAuthenticated() ? '运行分析' : '登录并运行'
+            }}
           </button>
         </div>
       </section>
@@ -801,8 +802,8 @@ import { SwIconComponent } from '../../../shared/components/sw-icon.component';
 })
 export class FengtaiLeakagePage implements OnInit {
   private readonly service = inject(FengtaiLeakageService);
-  private readonly auth = inject(AuthService);
-  @Output() readonly requiresLogin = new EventEmitter<void>();
+  readonly auth = inject(AuthService);
+  private readonly loginDialog = inject(LoginDialogService);
 
   readonly manifest = signal<FengtaiLeakageManifest | null>(null);
   readonly topology = signal<import('./fengtai-leakage.models').FengtaiTopology | null>(null);
@@ -1098,26 +1099,26 @@ export class FengtaiLeakagePage implements OnInit {
         )
       : this.service.getReferenceAssetDetail(selection.id, this.startDate, this.endDate);
     detailRequest.subscribe({
-        next: (detail) => {
-          if (
-            requestSequence !== this.assetRequestSequence ||
-            this.selectedAsset()?.id !== selection.id ||
-            this.selectedAsset()?.type !== selection.type
-          )
-            return;
-          this.assetDetail.set(detail);
-          this.assetLoading.set(false);
-        },
-        error: () => {
-          if (
-            requestSequence !== this.assetRequestSequence ||
-            this.selectedAsset()?.id !== selection.id
-          )
-            return;
-          this.assetLoading.set(false);
-          this.assetError.set('资产详情加载失败。');
-        },
-      });
+      next: (detail) => {
+        if (
+          requestSequence !== this.assetRequestSequence ||
+          this.selectedAsset()?.id !== selection.id ||
+          this.selectedAsset()?.type !== selection.type
+        )
+          return;
+        this.assetDetail.set(detail);
+        this.assetLoading.set(false);
+      },
+      error: () => {
+        if (
+          requestSequence !== this.assetRequestSequence ||
+          this.selectedAsset()?.id !== selection.id
+        )
+          return;
+        this.assetLoading.set(false);
+        this.assetError.set('资产详情加载失败。');
+      },
+    });
   }
   reloadAsset(): void {
     const selection = this.selectedAsset();
@@ -1204,8 +1205,15 @@ export class FengtaiLeakagePage implements OnInit {
   }
   private requireAuthenticated(): boolean {
     if (this.auth.isAuthenticated()) return true;
-    this.error.set('请先登录后再运行分析。');
-    this.requiresLogin.emit();
+    this.loginDialog
+      .requireLogin({
+        title: '登录并运行漏损分析',
+        description: '登录后将保留当前策略和日期范围，并自动执行一次漏损闭环分析。',
+        reason: 'leakage-run',
+      })
+      .subscribe((ready) => {
+        if (ready) this.runAnalysis();
+      });
     return false;
   }
   private loadFrames(analysis: import('./fengtai-leakage.models').FengtaiAnalysis): void {

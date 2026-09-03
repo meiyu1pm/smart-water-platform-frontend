@@ -9,6 +9,7 @@ import { QuickTrialPage } from './quick-trial.page';
 import { QuickTrialService } from './quick-trial.service';
 import { DataFileService } from '../../core/services/data-file.service';
 import { AuthService } from '../../core/services/auth.service';
+import { LoginDialogService } from '../login/login-dialog.component';
 
 describe('QuickTrialPage', () => {
   let component: QuickTrialPage;
@@ -81,7 +82,7 @@ describe('QuickTrialPage', () => {
     dataFileSpy = {
       listCollections: vi.fn().mockReturnValue(of([])),
       listFiles: vi.fn().mockReturnValue(of([])),
-      getBuiltinDemo: vi.fn().mockReturnValue(
+      getPublicQuickTrialDemo: vi.fn().mockReturnValue(
         of({
           file: {
             id: 9,
@@ -96,8 +97,37 @@ describe('QuickTrialPage', () => {
             updated_at: '',
           },
           version: { id: 3 },
+          preview: {
+            file_format: 'csv',
+            schema: [
+              {
+                name: 'record_time',
+                inferred_type: 'datetime',
+                nullable: false,
+                sample_values: [],
+                warnings: [],
+              },
+              {
+                name: 'inlet_flow',
+                inferred_type: 'number',
+                nullable: false,
+                sample_values: [],
+                warnings: [],
+              },
+            ],
+            sample_rows: [
+              { record_time: '2026-01-01 00:00:00', inlet_flow: 21.2 },
+              { record_time: '2026-01-01 00:15:00', inlet_flow: 21.8 },
+            ],
+            truncated: false,
+            row_count: 50,
+          },
+          content_url: '/api/v1/public/quick-trial/demo-file/content',
         }),
       ),
+      downloadPublicQuickTrialDemo: vi
+        .fn()
+        .mockReturnValue(of(new Blob(['record_time,inlet_flow\n2026-01-01 00:00:00,21.2\n']))),
       getPreview: vi.fn().mockReturnValue(
         of({
           file_version_id: 3,
@@ -134,6 +164,10 @@ describe('QuickTrialPage', () => {
         { provide: QuickTrialService, useValue: quickTrialSpy },
         { provide: DataFileService, useValue: dataFileSpy },
         { provide: AuthService, useValue: { isAuthenticated: () => true } },
+        {
+          provide: LoginDialogService,
+          useValue: { requireLogin: vi.fn().mockReturnValue(of(true)) },
+        },
       ],
     }).compileComponents();
 
@@ -149,13 +183,21 @@ describe('QuickTrialPage', () => {
     expect(fixture.nativeElement.textContent).toContain('时序预测');
   });
 
-  it('toggles data selection drawer and displays preview panel', () => {
+  it('loads platform demo metadata, preview, and content through the public facade', () => {
+    expect(dataFileSpy.getPublicQuickTrialDemo).toHaveBeenCalledOnce();
+    expect(dataFileSpy.downloadPublicQuickTrialDemo).toHaveBeenCalledWith(
+      '/api/v1/public/quick-trial/demo-file/content',
+    );
+    expect(component.demoSampleRows()).toHaveLength(2);
+  });
+
+  it('toggles the data drawer while keeping demo preview public', () => {
     expect(component.drawerOpen()).toBe(false);
     component.toggleDataDrawer();
     expect(component.drawerOpen()).toBe(true);
     fixture.detectChanges();
     expect(fixture.nativeElement.querySelector('.data-drawer-panel')).not.toBeNull();
-    expect(fixture.nativeElement.querySelector('app-data-file-preview-panel')).not.toBeNull();
+    expect(component.demoSampleRows()).toHaveLength(2);
   });
 
   it('updates selected columns and allows tuning horizon steps', () => {
@@ -196,5 +238,16 @@ describe('QuickTrialPage', () => {
     expect(fixture.nativeElement.querySelector('.result-dashboard')).not.toBeNull();
     expect(fixture.nativeElement.textContent).toContain('时序预测 结果');
     vi.useRealTimers();
+  });
+
+  it('resumes the requested run exactly once after contextual login', () => {
+    const authenticated = vi.fn().mockReturnValueOnce(false).mockReturnValue(true);
+    (TestBed.inject(AuthService) as unknown as { isAuthenticated: () => boolean }).isAuthenticated =
+      authenticated;
+
+    component.runQuickTrial();
+
+    expect(TestBed.inject(LoginDialogService).requireLogin).toHaveBeenCalledOnce();
+    expect(quickTrialSpy.executeEphemeralWorkflow).toHaveBeenCalledOnce();
   });
 });

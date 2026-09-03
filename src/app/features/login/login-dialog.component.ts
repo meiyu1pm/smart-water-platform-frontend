@@ -1,7 +1,12 @@
 import { Component, Injectable, inject, signal } from '@angular/core';
 import { NonNullableFormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
-import { MatDialog, MatDialogModule, MatDialogRef } from '@angular/material/dialog';
+import {
+  MAT_DIALOG_DATA,
+  MatDialog,
+  MatDialogModule,
+  MatDialogRef,
+} from '@angular/material/dialog';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 import { Router } from '@angular/router';
@@ -10,6 +15,17 @@ import { Observable, finalize, map } from 'rxjs';
 import { AuthService } from '../../core/services/auth.service';
 import { NotificationService } from '../../core/services/notification.service';
 import { SwIconComponent } from '../../shared/components/sw-icon.component';
+
+export interface LoginDialogContext {
+  title?: string;
+  description?: string;
+  reason?: string;
+  redirectUrl?: string;
+}
+
+export function safeInternalRedirect(url: string | undefined): string | undefined {
+  return url && /^\/(?!\/)/.test(url) ? url : undefined;
+}
 
 @Component({
   selector: 'app-login-dialog',
@@ -27,11 +43,14 @@ import { SwIconComponent } from '../../shared/components/sw-icon.component';
         <div class="logo"><app-sw-icon name="droplet" [size]="22" /></div>
         <div>
           <span class="eyebrow">账号验证</span>
-          <h2>登录智慧水务平台</h2>
-          <p>登录后可以上传数据、运行分析并查看个人工作流。</p>
+          <h2>{{ context.title || '登录智慧水务平台' }}</h2>
+          <p>{{ context.description || '登录后可以上传数据、运行分析并查看个人工作流。' }}</p>
         </div>
       </header>
       <form [formGroup]="form" (ngSubmit)="submit()">
+        @if (errorMessage()) {
+          <div class="login-error" role="alert" aria-live="assertive">{{ errorMessage() }}</div>
+        }
         <mat-form-field appearance="outline">
           <mat-label>用户名</mat-label>
           <input matInput formControlName="username" autocomplete="username" />
@@ -115,6 +134,15 @@ import { SwIconComponent } from '../../shared/components/sw-icon.component';
       display: grid;
       gap: 6px;
     }
+    .login-error {
+      padding: 9px 11px;
+      border: 1px solid color-mix(in srgb, var(--sw-color-danger) 36%, var(--sw-border));
+      border-radius: var(--sw-radius-sm);
+      background: color-mix(in srgb, var(--sw-color-danger) 8%, var(--sw-surface));
+      color: var(--sw-color-danger);
+      font-size: 13px;
+      line-height: 1.5;
+    }
     mat-form-field {
       width: 100%;
     }
@@ -147,10 +175,12 @@ import { SwIconComponent } from '../../shared/components/sw-icon.component';
 })
 export class LoginDialogComponent {
   readonly dialog = inject(MatDialogRef<LoginDialogComponent, boolean>);
+  readonly context = inject<LoginDialogContext>(MAT_DIALOG_DATA, { optional: true }) ?? {};
   private readonly fb = inject(NonNullableFormBuilder);
   private readonly auth = inject(AuthService);
   private readonly notifications = inject(NotificationService);
   readonly loading = signal(false);
+  readonly errorMessage = signal('');
   readonly form = this.fb.group({
     username: ['', [Validators.required, Validators.minLength(3)]],
     password: ['', Validators.required],
@@ -158,6 +188,7 @@ export class LoginDialogComponent {
 
   submit(): void {
     if (this.form.invalid || this.loading()) return;
+    this.errorMessage.set('');
     this.loading.set(true);
     const { username, password } = this.form.getRawValue();
     this.auth
@@ -165,7 +196,10 @@ export class LoginDialogComponent {
       .pipe(finalize(() => this.loading.set(false)))
       .subscribe({
         next: () => this.dialog.close(true),
-        error: (error: unknown) => this.notifications.error(error, '登录失败，请检查账号和密码。'),
+        error: (error: unknown) => {
+          this.errorMessage.set('登录失败，请检查账号和密码后重试。');
+          this.notifications.error(error, '登录失败，请检查账号和密码。');
+        },
       });
   }
 }
@@ -176,7 +210,8 @@ export class LoginDialogService {
   private readonly router = inject(Router);
   private readonly auth = inject(AuthService);
 
-  requireLogin(redirectUrl?: string): Observable<boolean> {
+  requireLogin(request: LoginDialogContext | string = {}): Observable<boolean> {
+    const context = typeof request === 'string' ? { redirectUrl: request } : request;
     if (this.auth.isAuthenticated()) {
       return new Observable<boolean>((subscriber) => {
         subscriber.next(true);
@@ -184,11 +219,17 @@ export class LoginDialogService {
       });
     }
     return this.dialogs
-      .open(LoginDialogComponent, { autoFocus: 'first-tabbable', restoreFocus: true })
+      .open(LoginDialogComponent, {
+        autoFocus: 'first-tabbable',
+        restoreFocus: true,
+        data: context,
+        ariaLabel: context.title || '登录智慧水务平台',
+      })
       .afterClosed()
       .pipe(
         map((authenticated) => {
           const ready = authenticated === true;
+          const redirectUrl = safeInternalRedirect(context.redirectUrl);
           if (ready && redirectUrl) void this.router.navigateByUrl(redirectUrl);
           return ready;
         }),

@@ -1,17 +1,20 @@
 import { inject } from '@angular/core';
-import { CanActivateChildFn, CanActivateFn, Router } from '@angular/router';
+import { ActivatedRouteSnapshot, CanActivateChildFn, CanActivateFn, Router } from '@angular/router';
 
+import { policyForRoute } from '../routing/route-access-policy';
 import { AuthService } from '../services/auth.service';
 
-const requireAuthentication = (_route: unknown, state: { url: string }) => {
+const requireAuthentication = (route: ActivatedRouteSnapshot, state: { url: string }) => {
   const auth = inject(AuthService);
   const router = inject(Router);
-  if (state.url.startsWith('/quick-trial')) return true;
-  return auth.isAuthenticated()
+  const policy = policyForRoute(route);
+  if (policy.access === 'public') return true;
+  if (!auth.isAuthenticated()) {
+    return router.createUrlTree(['/quick-trial'], { queryParams: { redirect: state.url } });
+  }
+  return !policy.permission || auth.hasPermission(policy.permission)
     ? true
-    : router.createUrlTree(['/quick-trial'], {
-        queryParams: { login: '1', redirect: state.url },
-      });
+    : router.createUrlTree(['/dashboard'], { queryParams: { forbidden: '1' } });
 };
 
 export const authGuard: CanActivateFn = requireAuthentication;
