@@ -390,6 +390,7 @@ export class FengtaiAssetDetailComponent implements AfterViewInit, OnChanges, On
       .filter(
         ([k, v]) =>
           !['name', 'type', 'id'].includes(k) &&
+          !(k === 'elevation' && a['elevation_m'] !== null && a['elevation_m'] !== undefined) &&
           v !== null &&
           v !== undefined &&
           typeof v !== 'object',
