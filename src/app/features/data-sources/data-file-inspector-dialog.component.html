@@ -1,0 +1,290 @@
+<div class="backdrop" role="presentation" (click)="close.emit()">
+  <section
+    class="dialog"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="data-file-inspector-title"
+    (click)="$event.stopPropagation()"
+  >
+    <header class="dialog-header">
+      <div>
+        <p class="eyebrow">数据文件</p>
+        <h2 id="data-file-inspector-title">{{ file?.name || '文件详情' }}</h2>
+        @if (file; as currentFile) {
+          <p class="file-meta">
+            {{ (currentFile.format || '未知').toUpperCase() }} ·
+            {{ formatBytes(currentFile.size_bytes) }} · {{ versionLabel(currentFile) }}
+          </p>
+        }
+      </div>
+      <div class="dialog-actions">
+        @if (canGovern()) {
+          <button class="governance-button" type="button" (click)="openGovernance()">
+            数据治理
+          </button>
+        }
+        <button type="button" class="close-button" aria-label="关闭详情" (click)="close.emit()">
+          ×
+        </button>
+      </div>
+    </header>
+
+    <nav class="tabs" aria-label="文件详情栏目">
+      @for (tab of tabs; track tab.id) {
+        <button
+          type="button"
+          [class.active]="activeTab() === tab.id"
+          [attr.aria-current]="activeTab() === tab.id ? 'page' : null"
+          (click)="selectTab(tab.id)"
+        >
+          {{ tab.label }}
+        </button>
+      }
+    </nav>
+
+    <div class="content">
+      @if (activeTab() === 'preview') {
+        @if (previewLoading()) {
+          <p class="state">正在读取前 50 行…</p>
+        } @else if (previewError()) {
+          <p class="state error" role="alert">{{ previewError() }}</p>
+        } @else if (blockedPreviewMessage(); as message) {
+          <p class="state">{{ message }}</p>
+        } @else if (preview(); as value) {
+          <div class="table-wrap" aria-label="文件数据预览">
+            <table>
+              <thead>
+                <tr>
+                  @for (column of value.columns; track column.name) {
+                    <th>
+                      {{ column.name }}<small>{{ column.inferred_type }}</small>
+                    </th>
+                  }
+                </tr>
+              </thead>
+              <tbody>
+                @for (row of value.rows; track $index) {
+                  <tr>
+                    @for (column of value.columns; track column.name) {
+                      <td>{{ displayValue(row[column.name]) }}</td>
+                    }
+                  </tr>
+                } @empty {
+                  <tr>
+                    <td class="empty">没有可预览的数据行。</td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+          <p class="hint">{{ previewSummary(value) }}</p>
+        }
+      }
+
+      @if (activeTab() === 'quality') {
+        @if (qualityLoading()) {
+          <p class="state">正在读取质量报告…</p>
+        } @else if (qualityError()) {
+          <p class="state error" role="alert">{{ qualityError() }}</p>
+        } @else if (qualityReport(); as report) {
+          <section class="quality-overview">
+            <span class="grade" [attr.data-grade]="report.grade">{{ report.grade }}</span>
+            <div>
+              <strong>{{ report.score.toFixed(1) }} 分</strong><small>综合质量评分</small>
+            </div>
+            <time>{{ formatDateTime(report.created_at) }}</time>
+          </section>
+          <div class="dimension-grid">
+            @for (dimension of entries(report.dimensions); track dimension[0]) {
+              <article>
+                <span>{{ metricLabel(dimension[0]) }}</span>
+                <strong>{{ formatMetric(dimension[1]) }}</strong>
+              </article>
+            }
+          </div>
+          <div class="quality-columns">
+            <section>
+              <h3>发现的问题</h3>
+              <ul>
+                @for (finding of report.findings; track $index) {
+                  <li>{{ describeItem(finding) }}</li>
+                } @empty {
+                  <li class="muted">未发现需要处理的问题。</li>
+                }
+              </ul>
+            </section>
+            <section>
+              <h3>治理建议</h3>
+              <ul>
+                @for (recommendation of report.recommendations; track $index) {
+                  <li>{{ describeItem(recommendation) }}</li>
+                } @empty {
+                  <li class="muted">当前版本没有治理建议。</li>
+                }
+              </ul>
+            </section>
+          </div>
+        } @else {
+          <p class="state">当前版本尚未生成质量报告。</p>
+        }
+      }
+
+      @if (activeTab() === 'time') {
+        @if (timeProfile(); as profile) {
+          <section class="time-summary">
+            <article>
+              <span>时间列</span
+              ><strong>{{ profile.selected_column || profile.time_column || '未识别' }}</strong>
+            </article>
+            <article>
+              <span>解析成功率</span
+              ><strong>{{ formatRate(profile.parse_ratio ?? profile.parse_success_rate) }}</strong>
+            </article>
+            <article>
+              <span>主要采样间隔</span><strong>{{ intervalLabel(profile) }}</strong>
+            </article>
+            <article>
+              <span>时区</span
+              ><strong>{{ profile.timezone_assumption || profile.timezone || '未声明' }}</strong>
+            </article>
+            <article>
+              <span>起始时间</span
+              ><strong>{{ profile.start_time || profile.time_start || '—' }}</strong>
+            </article>
+            <article>
+              <span>结束时间</span
+              ><strong>{{ profile.end_time || profile.time_end || '—' }}</strong>
+            </article>
+            <article>
+              <span>重复时间点</span
+              ><strong>{{
+                profile.duplicate_timestamp_count ?? profile.duplicate_count ?? '—'
+              }}</strong>
+            </article>
+            <article>
+              <span>缺失时间点</span
+              ><strong>{{ profile.missing_interval_count ?? profile.missing_count ?? '—' }}</strong>
+            </article>
+          </section>
+          @if (profile.requires_confirmation) {
+            <p class="notice">时间列或时间格式存在歧义，需要确认后再执行时序治理。</p>
+          }
+          @if (normalizationStatus()) {
+            <p class="normalization">时间规范化状态：{{ normalizationStatus() }}</p>
+          }
+          @if (preview()?.columns?.length) {
+            <h3 class="fields-title">字段结构</h3>
+            <div class="field-list">
+              @for (column of preview()!.columns; track column.name) {
+                <span
+                  ><strong>{{ column.name }}</strong
+                  ><small
+                    >{{ column.inferred_type }}{{ column.nullable ? ' · 含空值' : '' }}</small
+                  ></span
+                >
+              }
+            </div>
+          }
+        } @else {
+          <p class="state">当前文件未识别出时间列；非时序文件不会因此降低质量评分。</p>
+        }
+      }
+
+      @if (activeTab() === 'versions') {
+        @if (lineageLoading()) {
+          <p class="state">正在读取版本血缘…</p>
+        } @else if (lineageError()) {
+          <p class="state error" role="alert">{{ lineageError() }}</p>
+        } @else if (lineageChart(); as chart) {
+          <app-dataset-lineage-tree
+            [tree]="chart"
+            [selectedVersionId]="selectedVersionId()"
+            (versionSelected)="selectVersion($event)"
+          />
+          <div class="version-actions">
+            <label>
+              查看版本
+              <select [value]="selectedVersionId()" (change)="versionChanged($event)">
+                @for (version of versions(); track version.id) {
+                  <option [value]="version.id">
+                    V{{ version.version_no
+                    }}{{ version.id === file?.current_version_id ? ' · 当前' : '' }}
+                  </option>
+                }
+              </select>
+            </label>
+            @if (selectedVersionId() !== file?.current_version_id && canManageVersions()) {
+              <button type="button" [disabled]="settingCurrent()" (click)="makeSelectedCurrent()">
+                {{ settingCurrent() ? '切换中…' : '设为当前版本' }}
+              </button>
+            }
+          </div>
+        } @else {
+          <p class="state">当前文件还没有可展示的版本血缘。</p>
+        }
+      }
+    </div>
+
+    @if (governanceOpen()) {
+      <div class="governance-backdrop" role="presentation" (click)="closeGovernance()">
+        <section
+          class="governance-panel"
+          role="dialog"
+          aria-modal="true"
+          (click)="$event.stopPropagation()"
+        >
+          <header>
+            <div>
+              <p class="eyebrow">生成新版本</p>
+              <h3>选择数据治理操作</h3>
+            </div>
+            <button type="button" aria-label="关闭治理向导" (click)="closeGovernance()">×</button>
+          </header>
+          <p class="governance-copy">操作按下列顺序执行；原始版本保持不变。</p>
+          <div class="governance-options">
+            @for (option of governanceOptions; track option.id) {
+              <label [class.selected]="selectedOperations().has(option.id)">
+                <input
+                  type="checkbox"
+                  [checked]="selectedOperations().has(option.id)"
+                  (change)="toggleOperation(option.id)"
+                />
+                <span
+                  ><strong>{{ option.label }}</strong
+                  ><small>{{ option.description }}</small></span
+                >
+              </label>
+            }
+          </div>
+          @if (governanceError()) {
+            <p class="governance-error" role="alert">{{ governanceError() }}</p>
+          }
+          @if (governanceMessage()) {
+            <p class="governance-success">{{ governanceMessage() }}</p>
+          }
+          <footer>
+            <label class="current-choice"
+              ><input
+                type="checkbox"
+                [checked]="makeCurrent()"
+                (change)="makeCurrent.set(!makeCurrent())"
+              />
+              完成后作为当前版本</label
+            >
+            <div>
+              <button type="button" (click)="closeGovernance()">取消</button
+              ><button
+                class="primary"
+                type="button"
+                [disabled]="!selectedOperations().size || governanceRunning()"
+                (click)="submitGovernance()"
+              >
+                {{ governanceRunning() ? '正在提交…' : '开始治理' }}
+              </button>
+            </div>
+          </footer>
+        </section>
+      </div>
+    }
+  </section>
+</div>
