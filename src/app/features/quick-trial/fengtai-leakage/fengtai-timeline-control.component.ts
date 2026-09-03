@@ -134,6 +134,8 @@ export class FengtaiTimelineControlComponent implements OnChanges, OnDestroy {
   currentLabel(): string {
     const value = this.timestamps[this.index];
     if (!value) return '等待分析时间帧';
+    const day = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+    if (day) return `${day[1]}年${Number(day[2])}月${Number(day[3])}日`;
     const date = new Date(value);
     return Number.isNaN(date.valueOf()) ? value : date.toLocaleString('zh-CN', { hour12: false });
   }

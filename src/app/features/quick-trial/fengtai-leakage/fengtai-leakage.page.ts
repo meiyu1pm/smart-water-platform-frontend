@@ -703,6 +703,8 @@ export class FengtaiLeakagePage implements OnInit {
     const frames = this.networkFrames();
     if (candidate.peak_at && frames?.timestamps.includes(candidate.peak_at))
       this.activeTimestamp.set(candidate.peak_at);
+    if (frames?.layers.some((layer) => layer.code === 'pipe_leak_risk'))
+      this.selectedLayerCode.set('pipe_leak_risk');
     this.selectedStageCode.set('network_candidates');
     const id = candidate.pipe_id ?? candidate.id;
     if (!id) return;
