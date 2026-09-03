@@ -21,6 +21,20 @@ import {
 } from '../models/data-file-explorer.models';
 import { ApiClient } from './api-client.service';
 
+/** Stable, anonymous quick-trial read model. It deliberately has no storage identifiers. */
+export interface PublicQuickTrialDemo {
+  file: DataFileSummary;
+  version: DataFileVersionSummary;
+  preview: {
+    file_format: string;
+    schema: DataFilePreview['columns'];
+    sample_rows: Array<Record<string, unknown>>;
+    truncated: boolean;
+    row_count: number | null;
+  };
+  content_url: string;
+}
+
 /**
  * 统一封装异构数据集和文件 API。
  * 旧 /datasets 与 /data-sources 接口不经过此服务，保证历史工作流选择器继续使用旧契约。
@@ -157,6 +171,21 @@ export class DataFileService {
     return this.api.get<{ file: DataFileSummary; version: DataFileVersionSummary }>(
       '/api/v1/data-files/builtin-demo',
     );
+  }
+
+  /**
+   * Public facade used by guest quick-trial only. Do not substitute protected
+   * file/version preview endpoints here: guests must never need a token to
+   * inspect the platform-owned sample.
+   */
+  getPublicQuickTrialDemo(): Observable<PublicQuickTrialDemo> {
+    return this.api.get<PublicQuickTrialDemo>('/api/v1/public/quick-trial/demo-file');
+  }
+
+  downloadPublicQuickTrialDemo(
+    contentUrl = '/api/v1/public/quick-trial/demo-file/content',
+  ): Observable<Blob> {
+    return this.api.download(contentUrl);
   }
 
   removeFileFromCollection(

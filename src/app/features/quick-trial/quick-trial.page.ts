@@ -135,7 +135,7 @@ import { SwIconComponent } from '../../shared/components/sw-icon.component';
             <span>计算中...</span>
           } @else {
             <span class="play-icon"><app-sw-icon name="play" [size]="18" /></span>
-            <span>运行</span>
+            <span>{{ auth.isAuthenticated() ? '运行' : '登录并运行' }}</span>
           }
         </button>
       </section>
@@ -188,9 +188,13 @@ import { SwIconComponent } from '../../shared/components/sw-icon.component';
                   <span>正在上传并解析文件结构...</span>
                 </div>
               } @else {
-                <button type="button" class="drop-target" (click)="fileInput.click()">
+                <button type="button" class="drop-target" (click)="requestUpload(fileInput)">
                   <span class="upload-icon"><app-sw-icon name="upload" [size]="28" /></span>
-                  <strong>点击或拖拽上传本地 CSV 时序数据文件</strong>
+                  <strong>{{
+                    auth.isAuthenticated()
+                      ? '点击或拖拽上传本地 CSV 时序数据文件'
+                      : '登录后上传本地 CSV 时序数据文件'
+                  }}</strong>
                   <span class="drop-description"
                     >上传后可在下方交互式预览并点选输入列，运行完成后将自动清理回收该临时文件。</span
                   >
@@ -221,7 +225,7 @@ import { SwIconComponent } from '../../shared/components/sw-icon.component';
           }
 
           <!-- 标准文件预览与列选择面板组件 (DataFilePreviewPanelComponent) -->
-          @if (activeVersionId(); as verId) {
+          @if (dataMode() === 'upload' && activeVersionId(); as verId) {
             <div class="preview-panel-host">
               <app-data-file-preview-panel
                 [fileVersionId]="verId"
@@ -232,6 +236,35 @@ import { SwIconComponent } from '../../shared/components/sw-icon.component';
                 (previewLoaded)="onPreviewLoaded($event)"
               />
             </div>
+          }
+
+          @if (dataMode() === 'demo' && demoSampleRows().length) {
+            <section class="public-demo-preview" aria-label="平台示例数据预览">
+              <header>
+                <strong>平台示例预览</strong>
+                <span>访客可查看示例字段与样本数据</span>
+              </header>
+              <div class="public-demo-table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      @for (column of demoColumns(); track column) {
+                        <th>{{ column }}</th>
+                      }
+                    </tr>
+                  </thead>
+                  <tbody>
+                    @for (row of demoSampleRows().slice(0, 5); track $index) {
+                      <tr>
+                        @for (column of demoColumns(); track column) {
+                          <td>{{ row[column] }}</td>
+                        }
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              </div>
+            </section>
           }
 
           <!-- 即时时序数据预览与预测窗口交互调优卡片 (基于原文件完整数据) -->
@@ -487,10 +520,16 @@ import { SwIconComponent } from '../../shared/components/sw-icon.component';
             <p>选择推荐场景，快速体验水务算法精准分析能力</p>
           </div>
           <div class="showcase-grid">
-            <button type="button" class="showcase-card" (click)="onTaskChange('timeseries-forecast')">
+            <button
+              type="button"
+              class="showcase-card"
+              (click)="onTaskChange('timeseries-forecast')"
+            >
               <span class="sc-icon"><app-sw-icon name="chart" [size]="22" /></span>
               <span class="sc-title">时序预测</span>
-              <span class="sc-copy">供水量外推、水厂进水流量趋势分析，辅助调度决策与峰谷平衡。</span>
+              <span class="sc-copy"
+                >供水量外推、水厂进水流量趋势分析，辅助调度决策与峰谷平衡。</span
+              >
               <span class="sc-action">载入配置 <span aria-hidden="true">→</span></span>
             </button>
 
@@ -822,6 +861,39 @@ import { SwIconComponent } from '../../shared/components/sw-icon.component';
     .preview-panel-host {
       border-top: 1px solid #f1f5f9;
       padding-top: 10px;
+    }
+    .public-demo-preview {
+      padding: 12px;
+      border: 1px solid var(--sw-border);
+      border-radius: var(--sw-radius-md);
+      background: var(--sw-surface-muted);
+    }
+    .public-demo-preview header {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 8px;
+      color: var(--sw-text-primary);
+      font-size: 13px;
+    }
+    .public-demo-preview header span {
+      color: var(--sw-text-muted);
+      font-size: 12px;
+    }
+    .public-demo-table-wrap {
+      overflow-x: auto;
+    }
+    .public-demo-preview table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+    }
+    .public-demo-preview th,
+    .public-demo-preview td {
+      padding: 7px 9px;
+      border-top: 1px solid var(--sw-border);
+      text-align: left;
+      white-space: nowrap;
     }
 
     /* 时序波形即时预览与预测调控卡片 */
@@ -1371,8 +1443,7 @@ import { SwIconComponent } from '../../shared/components/sw-icon.component';
       padding: 18px 20px;
       border-color: color-mix(in srgb, var(--sw-color-primary) 24%, var(--sw-border));
       background:
-        linear-gradient(90deg, var(--sw-color-primary-faint), transparent 62%),
-        var(--sw-surface);
+        linear-gradient(90deg, var(--sw-color-primary-faint), transparent 62%), var(--sw-surface);
     }
     .running-state-card header {
       display: flex;
@@ -1600,7 +1671,7 @@ export class QuickTrialPage implements OnInit, AfterViewInit, OnDestroy {
   private readonly quickTrial = inject(QuickTrialService);
   private readonly dataFiles = inject(DataFileService);
   private readonly notifications = inject(NotificationService);
-  private readonly auth = inject(AuthService);
+  readonly auth = inject(AuthService);
   private readonly loginDialog = inject(LoginDialogService);
 
   readonly scenarios = this.quickTrial.availableScenarios;
@@ -1616,6 +1687,7 @@ export class QuickTrialPage implements OnInit, AfterViewInit, OnDestroy {
   // ids differ between environments and must not be hard-coded in the page.
   readonly demoVersionId = signal<number | null>(null);
   readonly demoFileName = signal('示例小区_2024-01.csv');
+  readonly demoContentUrl = signal('/api/v1/public/quick-trial/demo-file/content');
   readonly customUploadedFile = signal<DataFileSummary | null>(null);
   readonly customCollectionId = signal<number | null>(null);
   readonly customVersionId = signal<number | null>(null);
@@ -1633,6 +1705,7 @@ export class QuickTrialPage implements OnInit, AfterViewInit, OnDestroy {
   readonly selectedValueCol = signal('inlet_flow');
   readonly selectedPointCol = signal<string | undefined>(undefined);
   readonly demoSampleRows = signal<Array<Record<string, unknown>>>([]);
+  readonly demoColumns = computed(() => Object.keys(this.demoSampleRows()[0] ?? {}));
   readonly sampleRows = signal<Array<Record<string, unknown>>>([]);
   readonly fullFileRows = signal<Array<Record<string, unknown>>>([]);
   readonly uploading = signal(false);
@@ -1764,21 +1837,18 @@ export class QuickTrialPage implements OnInit, AfterViewInit, OnDestroy {
     // Resolve the platform-owned demo by its stable application identity.
     // Never choose the first collection/file: a user's upload can change that
     // ordering and must not replace the built-in example.
-    this.dataFiles.getBuiltinDemo().subscribe({
-      next: ({ file, version }) => {
+    this.dataFiles.getPublicQuickTrialDemo().subscribe({
+      next: ({ file, version, preview, content_url }) => {
         const versionId = version.id || file.current_version_id;
         if (!versionId) return;
         this.demoVersionId.set(versionId);
         this.demoFileName.set(file.name || '示例小区_2024-01.csv');
-        this.dataFiles.getPreview(versionId).subscribe({
-          next: (preview) => {
-            const rows = preview.rows || [];
-            this.demoSampleRows.set(rows);
-            this.sampleRows.set(rows);
-            this.applyDemoColumnDefaults(preview.columns.map((column) => column.name));
-          },
-        });
-        this.loadFullFileVersion(versionId);
+        this.demoContentUrl.set(content_url);
+        const rows = preview.sample_rows || [];
+        this.demoSampleRows.set(rows);
+        this.sampleRows.set(rows);
+        this.applyDemoColumnDefaults(preview.schema.map((column) => column.name));
+        this.loadPublicDemoContent(content_url);
       },
       error: () => {
         // The rest of the portal remains usable when the optional demo seed is
@@ -1844,6 +1914,19 @@ export class QuickTrialPage implements OnInit, AfterViewInit, OnDestroy {
     });
   }
 
+  private loadPublicDemoContent(contentUrl: string): void {
+    this.dataFiles.downloadPublicQuickTrialDemo(contentUrl).subscribe({
+      next: (blob) =>
+        void blob.text().then((text) => {
+          const full = parseCsvTextToRows(text);
+          if (full.length > 0) {
+            this.fullFileRows.set(full);
+            setTimeout(() => this.initDrawerChart(), 40);
+          }
+        }),
+    });
+  }
+
   toggleDataDrawer(): void {
     const next = !this.drawerOpen();
     this.drawerOpen.set(next);
@@ -1866,15 +1949,28 @@ export class QuickTrialPage implements OnInit, AfterViewInit, OnDestroy {
     this.dataMode.set('demo');
     this.sampleRows.set(this.demoSampleRows());
     this.applyDemoColumnDefaults(Object.keys(this.demoSampleRows()[0] || {}));
-    const demoVer = this.demoVersionId();
-    if (demoVer) {
-      this.loadFullFileVersion(demoVer);
-    }
+    this.loadPublicDemoContent(this.demoContentUrl());
     setTimeout(() => this.initDrawerChart(), 40);
   }
 
   switchToUploadMode(): void {
     this.dataMode.set('upload');
+  }
+
+  requestUpload(fileInput: HTMLInputElement): void {
+    if (this.auth.isAuthenticated()) {
+      fileInput.click();
+      return;
+    }
+    this.loginDialog
+      .requireLogin({
+        title: '登录后上传数据',
+        description: '登录后可上传本地 CSV，并保留当前试用场景与分析配置。',
+        reason: 'quick-trial-upload',
+      })
+      .subscribe((ready) => {
+        if (ready) fileInput.click();
+      });
   }
 
   onTaskChange(taskId: string): void {
@@ -1900,10 +1996,16 @@ export class QuickTrialPage implements OnInit, AfterViewInit, OnDestroy {
     const file = input.files?.[0];
     if (!file) return;
     if (!this.auth.isAuthenticated()) {
-      this.loginDialog.requireLogin().subscribe((ready) => {
-        if (ready) this.uploadSelectedFile(file);
-        else input.value = '';
-      });
+      this.loginDialog
+        .requireLogin({
+          title: '登录后上传数据',
+          description: '登录后可上传本地 CSV，并保留当前试用场景与分析配置。',
+          reason: 'quick-trial-upload',
+        })
+        .subscribe((ready) => {
+          if (ready) this.uploadSelectedFile(file);
+          else input.value = '';
+        });
       return;
     }
     this.uploadSelectedFile(file);
@@ -2108,9 +2210,15 @@ export class QuickTrialPage implements OnInit, AfterViewInit, OnDestroy {
 
   runQuickTrial(): void {
     if (!this.auth.isAuthenticated()) {
-      this.loginDialog.requireLogin().subscribe((ready) => {
-        if (ready) this.runQuickTrial();
-      });
+      this.loginDialog
+        .requireLogin({
+          title: '登录并运行分析',
+          description: '平台示例可继续浏览；登录后将按当前任务、算法和数据窗口运行一次。',
+          reason: 'quick-trial-run',
+        })
+        .subscribe((ready) => {
+          if (ready) this.runQuickTrial();
+        });
       return;
     }
     this.running.set(true);

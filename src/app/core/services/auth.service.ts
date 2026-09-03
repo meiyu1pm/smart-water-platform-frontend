@@ -12,6 +12,8 @@ interface StoredSession {
   user: AuthUser;
 }
 
+export type AccessState = 'restoring' | 'guest' | 'authenticated';
+
 const sessionKey = 'smart-water.demo.session.v1';
 
 @Injectable({ providedIn: 'root' })
@@ -20,10 +22,16 @@ export class AuthService {
   private readonly api = inject(ApiClient);
   private refreshRequest$: Observable<LoginResponse> | null = null;
   private readonly sessionState = signal<StoredSession | null>(this.loadSession());
+  private readonly restoringState = signal(!!this.sessionState());
 
   readonly session = this.sessionState.asReadonly();
   readonly user = computed(() => this.sessionState()?.user ?? null);
   readonly isAuthenticated = computed(() => !!this.sessionState()?.accessToken);
+  /** Guest is an explicit browser mode; it never manufactures a user or JWT. */
+  readonly accessState = computed<AccessState>(() =>
+    this.restoringState() ? 'restoring' : this.isAuthenticated() ? 'authenticated' : 'guest',
+  );
+  readonly isGuest = computed(() => this.accessState() === 'guest');
 
   login(username: string, password: string): Observable<LoginResponse> {
     return this.http
@@ -54,6 +62,7 @@ export class AuthService {
 
   restoreProfile(): Observable<AuthUser | null> {
     if (!this.isAuthenticated()) {
+      this.restoringState.set(false);
       return of(null);
     }
     return this.api.get<AuthUser>('/api/v1/auth/me').pipe(
@@ -62,6 +71,7 @@ export class AuthService {
         this.clearSession();
         return of(null);
       }),
+      finalize(() => this.restoringState.set(false)),
     );
   }
 
@@ -92,6 +102,7 @@ export class AuthService {
 
   clearSession(): void {
     this.sessionState.set(null);
+    this.restoringState.set(false);
     sessionStorage.removeItem(sessionKey);
   }
 
@@ -111,6 +122,7 @@ export class AuthService {
       user: response.user,
     };
     this.sessionState.set(session);
+    this.restoringState.set(false);
     sessionStorage.setItem(sessionKey, JSON.stringify(session));
   }
 

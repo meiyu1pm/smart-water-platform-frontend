@@ -8,18 +8,14 @@ import { filter } from 'rxjs/operators';
 import { AuthService } from '../core/services/auth.service';
 import { NotificationService } from '../core/services/notification.service';
 import { LoginDialogService } from '../features/login/login-dialog.component';
-import { SwIconComponent, SwIconName } from '../shared/components/sw-icon.component';
+import { navigationItem, PlatformRouteKey } from '../core/routing/route-access-policy';
+import { SwIconComponent } from '../shared/components/sw-icon.component';
 
-interface NavigationItem {
-  label: string;
-  route: string;
-  icon: SwIconName;
-  permission?: string;
-}
+type NavigationItem = ReturnType<typeof navigationItem>;
 
 interface NavigationGroup {
   label: string;
-  items: NavigationItem[];
+  items: PlatformRouteKey[];
 }
 
 @Component({
@@ -51,10 +47,22 @@ interface NavigationGroup {
             <section class="nav-group">
               <p>{{ group.label }}</p>
               @for (item of group.items; track item.route) {
-                <a [routerLink]="item.route" routerLinkActive="active-link" (click)="closeDrawer()">
-                  <app-sw-icon [name]="item.icon" [size]="18" />
-                  <span>{{ item.label }}</span>
-                </a>
+                @if (isLockedForGuest(item)) {
+                  <button type="button" class="locked-link" (click)="requestRouteLogin(item)">
+                    <app-sw-icon [name]="item.icon" [size]="18" />
+                    <span>{{ item.label }}</span
+                    ><small>登录后访问</small>
+                  </button>
+                } @else {
+                  <a
+                    [routerLink]="item.route"
+                    routerLinkActive="active-link"
+                    (click)="closeDrawer()"
+                  >
+                    <app-sw-icon [name]="item.icon" [size]="18" />
+                    <span>{{ item.label }}</span>
+                  </a>
+                }
               }
             </section>
           }
@@ -113,6 +121,7 @@ interface NavigationGroup {
               <app-sw-icon name="logout" [size]="17" />退出
             </button>
           } @else {
+            <span class="guest-label">访客浏览</span>
             <button
               mat-flat-button
               color="primary"
@@ -124,7 +133,12 @@ interface NavigationGroup {
             </button>
           }
         </mat-toolbar>
-        <main id="main-content" class="content" [class.workspace-content]="workspace()" tabindex="-1">
+        <main
+          id="main-content"
+          class="content"
+          [class.workspace-content]="workspace()"
+          tabindex="-1"
+        >
           <router-outlet />
         </main>
       </mat-sidenav-content>
@@ -208,7 +222,8 @@ interface NavigationGroup {
       letter-spacing: 0.12em;
       text-transform: uppercase;
     }
-    .nav-group a {
+    .nav-group a,
+    .locked-link {
       display: flex;
       align-items: center;
       gap: 11px;
@@ -220,12 +235,18 @@ interface NavigationGroup {
       font-size: 13px;
       font-weight: 560;
       text-decoration: none;
+      width: 100%;
+      background: transparent;
+      font-family: inherit;
+      text-align: left;
+      cursor: pointer;
       transition:
         color var(--sw-motion-fast) var(--sw-ease-standard),
         background-color var(--sw-motion-fast) var(--sw-ease-standard),
         border-color var(--sw-motion-fast) var(--sw-ease-standard);
     }
-    .nav-group a:hover {
+    .nav-group a:hover,
+    .locked-link:hover {
       border-color: rgb(255 255 255 / 9%);
       background: rgb(255 255 255 / 7%);
       color: white;
@@ -240,6 +261,20 @@ interface NavigationGroup {
     .nav-support {
       padding-top: 11px;
       border-top: 1px solid rgb(255 255 255 / 8%);
+    }
+    .locked-link small {
+      margin-left: auto;
+      color: var(--sw-nav-muted);
+      font-size: 10px;
+    }
+    .guest-label {
+      margin-right: 10px;
+      padding: 5px 8px;
+      border: 1px solid var(--sw-border);
+      border-radius: 999px;
+      color: var(--sw-text-secondary);
+      font-size: 12px;
+      font-weight: 700;
     }
     .nav-footer {
       display: flex;
@@ -394,58 +429,28 @@ export class AppShellComponent {
   private readonly groups: NavigationGroup[] = [
     {
       label: '开始',
-      items: [
-        { label: '快速试用', route: '/quick-trial', icon: 'flask' },
-        { label: '平台概览', route: '/dashboard', icon: 'dashboard' },
-      ],
+      items: ['quickTrial', 'dashboard'],
     },
     {
       label: '数据与分析',
-      items: [
-        { label: '场景中心', route: '/scenes', icon: 'scene', permission: 'workflow:read' },
-        {
-          label: '数据源与导入',
-          route: '/data-sources',
-          icon: 'database',
-          permission: 'data_source:read',
-        },
-        {
-          label: '数据集管理',
-          route: '/data-collections',
-          icon: 'folder',
-          permission: 'data_source:read',
-        },
-        { label: '算子中心', route: '/operators', icon: 'operators', permission: 'operator:read' },
-      ],
+      items: ['scenes', 'dataSources', 'dataCollections', 'operators'],
     },
     {
       label: '运行与管理',
-      items: [
-        { label: '工作流', route: '/workflows', icon: 'workflow', permission: 'workflow:read' },
-        {
-          label: '运行记录',
-          route: '/workflow-runs',
-          icon: 'history',
-          permission: 'workflow:read',
-        },
-        { label: '任务中心', route: '/tasks', icon: 'tasks', permission: 'task:read' },
-        { label: '用户管理', route: '/users', icon: 'users', permission: 'user:manage' },
-        {
-          label: '资源回收站',
-          route: '/recycle-bin',
-          icon: 'recycle',
-          permission: 'recycle:manage',
-        },
-      ],
+      items: ['workflows', 'workflowRuns', 'tasks', 'users', 'recycleBin'],
     },
   ];
   readonly visibleGroups = computed(() =>
     this.groups
       .map((group) => ({
         ...group,
-        items: group.items.filter(
-          (item) => !item.permission || this.auth.hasPermission(item.permission),
-        ),
+        items: group.items
+          .map(navigationItem)
+          .filter((item) =>
+            this.auth.isGuest()
+              ? item.access === 'public' || item.guestNavigation === 'locked'
+              : !item.permission || this.auth.hasPermission(item.permission),
+          ),
       }))
       .filter((group) => group.items.length > 0),
   );
@@ -458,6 +463,12 @@ export class AppShellComponent {
       .subscribe((event) => {
         this.workspace.set(this.isWorkspaceUrl(event.urlAfterRedirects));
         this.currentPageTitle.set(this.resolvePageTitle(event.urlAfterRedirects));
+        if (this.hasForbiddenNotice(event.urlAfterRedirects)) {
+          this.notifications.error(
+            new Error('当前账号没有访问该页面的权限。请返回可访问的工作区或联系管理员。'),
+          );
+          void this.router.navigate(['/dashboard'], { replaceUrl: true });
+        }
       });
   }
 
@@ -465,10 +476,14 @@ export class AppShellComponent {
     return /\/workflows\/[^/]+\/edit(?:\?|$)/.test(url);
   }
 
+  private hasForbiddenNotice(url: string): boolean {
+    return new URLSearchParams(url.split('?')[1] ?? '').get('forbidden') === '1';
+  }
+
   private resolvePageTitle(url: string): string {
     const path = url.split('?')[0];
     const item = this.groups
-      .flatMap((group) => group.items)
+      .flatMap((group) => group.items.map(navigationItem))
       .find((candidate) => path === candidate.route || path.startsWith(`${candidate.route}/`));
     return item?.label ?? '智慧水务平台';
   }
@@ -489,7 +504,25 @@ export class AppShellComponent {
   }
 
   openLogin(): void {
-    this.loginDialog.requireLogin().subscribe();
+    this.loginDialog.requireLogin({ reason: 'header-login' }).subscribe();
+  }
+
+  isLockedForGuest(item: NavigationItem): boolean {
+    return (
+      this.auth.isGuest() && item.access === 'authenticated' && item.guestNavigation === 'locked'
+    );
+  }
+
+  requestRouteLogin(item: NavigationItem): void {
+    this.closeDrawer();
+    this.loginDialog
+      .requireLogin({
+        title: `登录后访问${item.label}`,
+        description: `登录后将打开${item.label}，快速试用中的选择会保留。`,
+        reason: `navigation:${item.route}`,
+        redirectUrl: item.route,
+      })
+      .subscribe();
   }
 
   cancelAccount(): void {

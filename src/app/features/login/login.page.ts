@@ -9,6 +9,7 @@ import { finalize } from 'rxjs';
 
 import { AuthService } from '../../core/services/auth.service';
 import { NotificationService } from '../../core/services/notification.service';
+import { safeInternalRedirect } from '../../core/routing/route-access-policy';
 import { SwIconComponent } from '../../shared/components/sw-icon.component';
 
 @Component({
@@ -29,11 +30,13 @@ import { SwIconComponent } from '../../shared/components/sw-icon.component';
           <div>
             <span class="eyebrow">SMART WATER PLATFORM</span>
             <h1>{{ registering() ? '注册平台账号' : '欢迎回来' }}</h1>
-            <p>{{
-              registering()
-                ? '注册后即可上传数据并创建分析工作流。'
-                : '登录后继续进行水务数据分析与工作流编排。'
-            }}</p>
+            <p>
+              {{
+                registering()
+                  ? '注册后即可上传数据并创建分析工作流。'
+                  : '登录后继续进行水务数据分析与工作流编排。'
+              }}
+            </p>
           </div>
         </header>
         <form [formGroup]="form" (ngSubmit)="submit()">
@@ -223,7 +226,9 @@ export class LoginPage {
       .pipe(finalize(() => this.loading.set(false)))
       .subscribe({
         next: () => {
-          const redirect = this.route.snapshot.queryParamMap.get('redirect') || '/dashboard';
+          const redirect =
+            safeInternalRedirect(this.route.snapshot.queryParamMap.get('redirect') || undefined) ||
+            '/dashboard';
           void this.router.navigateByUrl(redirect);
         },
         error: (error: unknown) => this.notifications.error(error, '用户名或密码错误。'),

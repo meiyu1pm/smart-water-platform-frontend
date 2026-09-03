@@ -60,6 +60,15 @@ describe('authInterceptor', () => {
     request.flush({ code: 0, message: 'ok', data: {}, trace_id: 'trace-task' });
   });
 
+  it('leaves public facade calls unauthenticated and never starts refresh after a 401', () => {
+    login();
+    client.get('/api/v1/public/quick-trial/demo-file').subscribe({ error: () => undefined });
+    const request = http.expectOne('/api/v1/public/quick-trial/demo-file');
+    expect(request.request.headers.has('Authorization')).toBe(false);
+    request.flush({ detail: 'unavailable' }, { status: 401, statusText: 'Unauthorized' });
+    http.expectNone('/api/v1/auth/refresh');
+  });
+
   it('refreshes once after 401 and retries with the new access token', () => {
     login();
     client.get('/api/v1/tasks/task-1').subscribe();
@@ -79,5 +88,14 @@ describe('authInterceptor', () => {
     expect(retry.request.headers.get('Authorization')).toBe('Bearer access-2');
     expect(retry.request.headers.get('X-Smart-Water-Auth-Retry')).toBe('1');
     retry.flush({ code: 0, message: 'ok', data: {}, trace_id: 'trace-task' });
+  });
+
+  it('does not treat an authenticated 403 as a login recovery', () => {
+    login();
+    client.get('/api/v1/tasks/task-1').subscribe({ error: () => undefined });
+    const request = http.expectOne('/api/v1/tasks/task-1');
+    request.flush({ detail: 'forbidden' }, { status: 403, statusText: 'Forbidden' });
+    http.expectNone('/api/v1/auth/refresh');
+    expect(auth.isAuthenticated()).toBe(true);
   });
 });

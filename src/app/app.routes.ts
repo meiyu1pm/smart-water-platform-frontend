@@ -1,7 +1,7 @@
 import { Routes } from '@angular/router';
 
 import { authChildGuard } from './core/guards/auth.guard';
-import { permissionGuard } from './core/guards/permission.guard';
+import { routeData } from './core/routing/route-access-policy';
 
 export const routes: Routes = [
   {
@@ -15,26 +15,26 @@ export const routes: Routes = [
     children: [
       {
         path: 'quick-trial',
+        ...routeData('quickTrial'),
         loadComponent: () =>
           import('./features/quick-trial/quick-trial-hub.page').then((m) => m.QuickTrialHubPage),
       },
       {
         path: 'dashboard',
+        ...routeData('dashboard'),
         loadComponent: () =>
           import('./features/dashboard/dashboard.page').then((m) => m.DashboardPage),
       },
       {
         path: 'scenes',
         loadComponent: () => import('./features/scenes/scenes.page').then((m) => m.ScenesPage),
-        canActivate: [permissionGuard],
-        data: { permission: 'workflow:read' },
+        ...routeData('scenes'),
       },
       {
         path: 'data-sources',
         loadComponent: () =>
           import('./features/data-sources/data-sources.page').then((m) => m.DataSourcesPage),
-        canActivate: [permissionGuard],
-        data: { permission: 'data_source:read' },
+        ...routeData('dataSources'),
       },
       {
         path: 'data-collections',
@@ -42,78 +42,67 @@ export const routes: Routes = [
           import('./features/data-sources/data-collections.page').then(
             (m) => m.DataCollectionsPage,
           ),
-        canActivate: [permissionGuard],
-        data: { permission: 'data_source:read' },
+        ...routeData('dataCollections'),
       },
       {
         path: 'operators/import',
         loadComponent: () =>
           import('./features/operators/algorithm-package.page').then((m) => m.AlgorithmPackagePage),
-        canActivate: [permissionGuard],
-        data: { permission: 'algorithm:publish' },
+        ...routeData('operatorImport'),
       },
       {
         path: 'operators',
         loadComponent: () =>
           import('./features/operators/operator-center.page').then((m) => m.OperatorCenterPage),
-        canActivate: [permissionGuard],
-        data: { permission: 'operator:read' },
+        ...routeData('operators'),
       },
       { path: 'algorithms', redirectTo: 'operators?kind=algorithm', pathMatch: 'full' },
       {
         path: 'datasets/:datasetId',
         loadComponent: () =>
           import('./features/data-sources/dataset-detail.page').then((m) => m.DatasetDetailPage),
-        canActivate: [permissionGuard],
-        data: { permission: 'dataset:read' },
+        ...routeData('datasetDetail'),
       },
       {
         path: 'tasks',
         loadComponent: () =>
           import('./features/task-detail/task-center.page').then((m) => m.TaskCenterPage),
-        canActivate: [permissionGuard],
-        data: { permission: 'task:read' },
+        ...routeData('tasks'),
       },
       {
         path: 'tasks/:taskId',
         loadComponent: () =>
           import('./features/task-detail/task-detail.page').then((m) => m.TaskDetailPage),
-        canActivate: [permissionGuard],
-        data: { permission: 'task:read' },
+        ...routeData('taskDetail'),
       },
       {
         path: 'results/:taskId',
         loadComponent: () => import('./features/results/result.page').then((m) => m.ResultPage),
-        canActivate: [permissionGuard],
-        data: { permission: 'result:read' },
+        ...routeData('result'),
       },
       {
         path: 's01-leakage',
         loadComponent: () =>
           import('./features/scenes/s01-leakage-scene.page').then((m) => m.S01LeakageScenePage),
-        canActivate: [permissionGuard],
-        data: { permission: 'workflow:edit' },
+        ...routeData('s01Leakage'),
       },
       {
         path: 's01/runs/:runId',
         loadComponent: () =>
           import('./features/scenes/s01-run-result.page').then((m) => m.S01RunResultPage),
-        canActivate: [permissionGuard],
-        data: { permission: 'workflow:read' },
+        ...routeData('s01Run'),
       },
       {
         path: 'workflows',
         loadComponent: () =>
           import('./features/workflows/workflow-library.page').then((m) => m.WorkflowLibraryPage),
-        canActivate: [permissionGuard],
-        data: { permission: 'workflow:read' },
+        ...routeData('workflows'),
       },
       {
         path: 'workflows/new',
         loadComponent: () =>
           import('./features/workflows/workflow-starter.page').then((m) => m.WorkflowStarterPage),
-        canActivate: [permissionGuard],
-        data: { permission: 'workflow:edit' },
+        ...routeData('workflowNew'),
       },
       {
         path: 'workflows/:workflowId/edit',
@@ -121,15 +110,13 @@ export const routes: Routes = [
           import('./features/workflows/workflow-editor-workspace.page').then(
             (m) => m.WorkflowEditorWorkspacePage,
           ),
-        canActivate: [permissionGuard],
-        data: { permission: 'workflow:read', workspace: true },
+        ...routeData('workflowEditor', { workspace: true }),
       },
       {
         path: 'workflow-runs',
         loadComponent: () =>
           import('./features/workflows/workflow-runs.page').then((m) => m.WorkflowRunsPage),
-        canActivate: [permissionGuard],
-        data: { permission: 'workflow:read' },
+        ...routeData('workflowRuns'),
       },
       {
         path: 'workflow-runs/:runId',
@@ -137,21 +124,18 @@ export const routes: Routes = [
           import('./features/workflows/workflow-run-detail.page').then(
             (m) => m.WorkflowRunDetailPage,
           ),
-        canActivate: [permissionGuard],
-        data: { permission: 'workflow:read' },
+        ...routeData('workflowRunDetail'),
       },
       {
         path: 'users',
         loadComponent: () => import('./features/users/users.page').then((m) => m.UsersPage),
-        canActivate: [permissionGuard],
-        data: { permission: 'user:manage' },
+        ...routeData('users'),
       },
       {
         path: 'recycle-bin',
         loadComponent: () =>
           import('./features/recycle-bin/recycle-bin.page').then((m) => m.RecycleBinPage),
-        canActivate: [permissionGuard],
-        data: { permission: 'recycle:manage' },
+        ...routeData('recycleBin'),
       },
       { path: '', pathMatch: 'full', redirectTo: 'quick-trial' },
     ],
