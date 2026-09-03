@@ -891,17 +891,22 @@ export class FengtaiLeakagePage implements OnInit {
   readonly importSummaryEntries = computed(() => {
     const manifest = this.manifest();
     const topology = this.topology();
-    const nodes = topology?.nodes?.length ?? this.metricCount('nodes', 'node_count');
+    const imported = manifest?.import_summary ?? {};
+    const importedTopology = this.recordValue(imported['topology']);
+    const nodes =
+      (typeof importedTopology['nodes'] === 'number' ? importedTopology['nodes'] : null) ??
+      this.metricCount('nodes', 'node_count') ??
+      topology?.nodes?.filter((node) => node.type !== 'valve' && node.type !== 'hydrant').length;
     const pipes =
-      (topology?.pipes ?? topology?.links)?.length ?? this.metricCount('pipes', 'pipe_count');
+      (typeof importedTopology['pipes'] === 'number' ? importedTopology['pipes'] : null) ??
+      this.metricCount('pipes', 'pipe_count') ??
+      (topology?.pipes ?? topology?.links)?.length;
     const records = this.metricCount(
       'full_resolution_points',
       'time_series_rows',
       'master_meter_rows',
       'records',
     );
-    const imported = manifest?.import_summary ?? {};
-    const importedTopology = this.recordValue(imported['topology']);
     const mapping = {
       ...this.recordValue(imported['measurement_mapping']),
       ...(manifest?.mapping_summary ?? {}),

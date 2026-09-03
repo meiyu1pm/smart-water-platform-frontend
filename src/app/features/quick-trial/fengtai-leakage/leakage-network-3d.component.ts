@@ -39,7 +39,7 @@ import {
       <div class="scene-toolbar" aria-label="管网视角工具栏">
         <div class="scene-summary" aria-live="polite">
           <strong>全管网态势</strong>
-          <span>{{ nodeCount }} 个节点 · {{ pipeCount }} 条管段</span>
+          <span>{{ nodeCount }} 个点位 · {{ pipeCount }} 条可连接管段</span>
         </div>
         <div class="view-actions" role="group" aria-label="切换管网视角">
           <button
