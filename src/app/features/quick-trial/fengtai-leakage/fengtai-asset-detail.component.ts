@@ -385,7 +385,7 @@ export class FengtaiAssetDetailComponent implements AfterViewInit, OnChanges, On
     this.chart?.dispose();
   }
   facts(): [string, string][] {
-    const a = this.detail?.asset ?? {};
+    const a: Record<string, unknown> = this.detail?.asset ?? {};
     return Object.entries(a)
       .filter(
         ([k, v]) =>
