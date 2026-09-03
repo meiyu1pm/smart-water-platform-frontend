@@ -2,6 +2,7 @@ import { Component, inject, computed, signal } from '@angular/core';
 import { MatButtonModule } from '@angular/material/button';
 import { Router } from '@angular/router';
 import { AuthService } from '../../core/services/auth.service';
+import { SwIconComponent, SwIconName } from '../../shared/components/sw-icon.component';
 
 interface BusinessScene {
   id: string;
@@ -9,7 +10,7 @@ interface BusinessScene {
   description: string;
   category: string;
   status: 'online' | 'coming';
-  icon: string;
+  icon: SwIconName;
   route?: string;
   queryParams?: Record<string, string>;
 }
@@ -17,7 +18,7 @@ interface BusinessScene {
 @Component({
   selector: 'app-scenes-page',
   standalone: true,
-  imports: [MatButtonModule],
+  imports: [MatButtonModule, SwIconComponent],
   template: `
     <header class="page-head">
       <div>
@@ -65,10 +66,14 @@ interface BusinessScene {
           class="scene-card"
           [class.offline]="scene.status === 'coming'"
           [class.clickable]="scene.status === 'online'"
+          [attr.role]="scene.status === 'online' ? 'button' : null"
+          [attr.tabindex]="scene.status === 'online' ? 0 : null"
           (click)="handleSceneClick(scene)"
+          (keydown.enter)="handleSceneClick(scene)"
+          (keydown.space)="$event.preventDefault(); handleSceneClick(scene)"
         >
           <div class="card-head">
-            <span class="scene-icon">{{ scene.icon }}</span>
+            <span class="scene-icon"><app-sw-icon [name]="scene.icon" [size]="22" /></span>
             <span class="status-tag" [class.online]="scene.status === 'online'">
               {{ scene.status === 'online' ? '已上线' : '即将上线' }}
             </span>
@@ -158,7 +163,12 @@ interface BusinessScene {
     .scene-card.clickable:hover {
       border-color: var(--sw-color-primary);
       box-shadow: var(--sw-shadow-md);
-      transform: translateY(-2px);
+    }
+
+    .scene-card.clickable:focus-visible {
+      border-color: var(--sw-focus);
+      outline: 0;
+      box-shadow: var(--sw-shadow-focus), var(--sw-shadow-md);
     }
 
     .scene-card.offline {
@@ -180,7 +190,7 @@ interface BusinessScene {
       place-items: center;
       border-radius: 10px;
       background: linear-gradient(135deg, var(--sw-color-primary-soft), var(--sw-color-info-soft));
-      font-size: 22px;
+      color: var(--sw-color-primary);
     }
 
     .status-tag {
@@ -261,7 +271,7 @@ export class ScenesPage {
       description: '基于水量平衡与夜间流量分析，智能识别漏损风险时段与候选区域，支撑管网漏损排查。',
       category: '供水',
       status: 'online',
-      icon: '💧',
+      icon: 'droplet',
       route: '/s01-leakage',
     },
     {
@@ -270,7 +280,7 @@ export class ScenesPage {
       description: '基于通用时序异常检测算法，自定义数据与参数，自动识别水质指标突变点。',
       category: '供水',
       status: 'online',
-      icon: '🧪',
+      icon: 'flask',
       route: '/operators',
       queryParams: { kind: 'algorithm' },
     },
@@ -282,7 +292,7 @@ export class ScenesPage {
       description: '结合气象、节假日等多因子，精准预测未来时段区域用水量，辅助调度决策。',
       category: '供水',
       status: 'coming',
-      icon: '📈',
+      icon: 'chart',
     },
     {
       id: 'pressure-optimization',
@@ -290,7 +300,7 @@ export class ScenesPage {
       description: '基于压力监测数据与水力模型，动态优化泵站压力，降低漏损与能耗。',
       category: '供水',
       status: 'coming',
-      icon: '⚙️',
+      icon: 'settings',
     },
     {
       id: 'secondary-water-safety',
@@ -298,7 +308,7 @@ export class ScenesPage {
       description: '多维度监测二次供水水质与设备状态，异常预警保障末端供水安全。',
       category: '供水',
       status: 'coming',
-      icon: '🏢',
+      icon: 'building',
     },
     {
       id: 'pipe-burst-warning',
@@ -306,7 +316,7 @@ export class ScenesPage {
       description: '结合压力、流量时序特征与管网属性，提前预警爆管风险，减少事故影响。',
       category: '供水',
       status: 'coming',
-      icon: '⚠️',
+      icon: 'info',
     },
     {
       id: 'data-quality-governance',
@@ -314,7 +324,7 @@ export class ScenesPage {
       description: '自动化完成缺失值修复、异常值处理、数据对齐，提升水务数据可用率。',
       category: '运营',
       status: 'coming',
-      icon: '🔧',
+      icon: 'settings',
     },
     {
       id: 'pump-energy-optimization',
@@ -322,7 +332,7 @@ export class ScenesPage {
       description: '分析泵站运行工况与能效水平，给出优化建议，降低运行成本。',
       category: '运营',
       status: 'coming',
-      icon: '⚡',
+      icon: 'activity',
     },
     {
       id: 'sewer-sediment-warning',
@@ -330,7 +340,7 @@ export class ScenesPage {
       description: '基于液位、流量数据识别淤积特征，指导管网清疏计划，提升排水能力。',
       category: '排水',
       status: 'coming',
-      icon: '🕳️',
+      icon: 'workflow',
     },
     {
       id: 'sewage-process-optimize',
@@ -338,7 +348,7 @@ export class ScenesPage {
       description: '智能优化曝气、加药等工艺参数，保障出水达标同时降低药耗能耗。',
       category: '排水',
       status: 'coming',
-      icon: '♻️',
+      icon: 'recycle',
     },
     {
       id: 'source-water-forecast',
@@ -346,7 +356,7 @@ export class ScenesPage {
       description: '预测水源地关键水质指标变化趋势，为原水调度与处理工艺调整提供依据。',
       category: '供水',
       status: 'coming',
-      icon: '🌊',
+      icon: 'droplet',
     },
     {
       id: 'pipe-life-assessment',
@@ -354,7 +364,7 @@ export class ScenesPage {
       description: '综合管龄、材质、爆管历史等多维度数据，评估管网剩余寿命与更新优先级。',
       category: '运营',
       status: 'coming',
-      icon: '📅',
+      icon: 'calendar',
     },
   ];
 

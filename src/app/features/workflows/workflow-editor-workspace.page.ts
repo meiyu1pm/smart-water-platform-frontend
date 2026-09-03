@@ -150,7 +150,7 @@ type OptionalWorkspacePanelId = Exclude<WorkspacePanelId, typeof ROOT_CANVAS_PAN
         </div>
         @if (!guideDismissed()) {
           <div class="onboarding-guide">
-            <span class="guide-icon">💡</span>
+            <span class="guide-icon">提示</span>
             <div class="guide-text">
               <strong>快速上手三步法</strong>
               <span

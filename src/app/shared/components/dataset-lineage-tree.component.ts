@@ -393,7 +393,7 @@ export class DatasetLineageTreeComponent implements AfterViewInit, OnChanges, On
                 const node = params.data;
                 if (!node) return '';
                 if (node.isVirtualRoot) {
-                  return '{rootTitle| 📊 原始数据接入源 }\n{meta|包含多个初始导入分支}';
+                  return '{rootTitle|原始数据接入源}\n{meta|包含多个初始导入分支}';
                 }
                 const isDerived = node.versionKind === 'derived';
                 const tag = isDerived

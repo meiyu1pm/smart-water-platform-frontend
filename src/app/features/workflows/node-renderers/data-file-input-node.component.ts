@@ -12,6 +12,7 @@ import {
 import { CommonModule } from '@angular/common';
 import { RefDirective } from 'rete-angular-plugin/21';
 import * as echarts from 'echarts';
+import { SwIconComponent } from '../../../shared/components/sw-icon.component';
 
 /**
  * 数据文件输入节点的专属富媒体卡片渲染器。
@@ -25,7 +26,7 @@ import * as echarts from 'echarts';
 @Component({
   selector: 'app-data-file-input-node',
   standalone: true,
-  imports: [CommonModule, RefDirective],
+  imports: [CommonModule, RefDirective, SwIconComponent],
   host: {
     'data-testid': 'node',
     '[class.selected]': 'data?.selected',
@@ -42,7 +43,7 @@ import * as echarts from 'echarts';
       <header class="node-header">
         <div class="header-main">
           <div class="node-badge">
-            <span class="badge-icon">📄</span>
+            <span class="badge-icon"><app-sw-icon name="file" [size]="18" /></span>
             <span class="badge-title">数据文件输入</span>
           </div>
           <div class="file-name" [title]="fileName() || '未选择文件'">

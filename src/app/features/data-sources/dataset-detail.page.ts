@@ -110,7 +110,7 @@ interface IssueItem {
           <div class="metric-card">
             <div class="metric-header">
               <small>监测通道数</small>
-              <span class="metric-icon">📈</span>
+              <span class="metric-icon">趋势</span>
             </div>
             <div class="metric-val">
               <strong>{{ item.channel_count || channels().length }}</strong>

@@ -860,7 +860,7 @@ type EditingResource =
     }
     .eyebrow {
       margin: 0;
-      color: #0f5f92;
+      color: var(--sw-color-primary);
       font-size: 12px;
       font-weight: 800;
     }
@@ -873,7 +873,7 @@ type EditingResource =
     }
     .page-head p:not(.eyebrow) {
       margin: 0;
-      color: #64748b;
+      color: var(--sw-text-muted);
     }
     .stat-grid {
       display: grid;
@@ -887,19 +887,21 @@ type EditingResource =
       padding: 15px;
     }
     .stat-grid span {
-      color: #64748b;
+      color: var(--sw-text-muted);
       font-size: 12px;
     }
     .stat-grid strong {
-      color: #0f172a;
+      color: var(--sw-text-primary);
       font-size: 22px;
+      font-variant-numeric: tabular-nums;
+      letter-spacing: -0.025em;
     }
     .stat-card small {
-      color: #64748b;
+      color: var(--sw-text-muted);
       font-size: 12px;
     }
     .stat-card small.stat-monthly::first-letter {
-      color: #0f9f6e;
+      color: var(--sw-color-success);
     }
     .explorer-card {
       padding: 18px;
@@ -914,7 +916,7 @@ type EditingResource =
       justify-content: space-between;
       gap: 18px;
       padding-bottom: 16px;
-      border-bottom: 1px solid #e2e8f0;
+      border-bottom: 1px solid var(--sw-border);
     }
     .dataset-table-search {
       width: min(300px, 100%);
@@ -938,28 +940,28 @@ type EditingResource =
     .dataset-table-head {
       min-height: 48px;
       padding: 0 12px;
-      background: #f8fafc;
-      color: #64748b;
+      background: var(--sw-surface-muted);
+      color: var(--sw-text-muted);
       font-size: 12px;
       font-weight: 750;
     }
     .dataset-table-row {
       min-height: 86px;
       padding: 12px;
-      border-top: 1px solid #e2e8f0;
-      color: #334155;
+      border-top: 1px solid var(--sw-border);
+      color: var(--sw-text-secondary);
       font-size: 13px;
       cursor: pointer;
       outline: none;
     }
     .dataset-table-row:hover {
-      background: #f8fbff;
+      background: var(--sw-color-primary-faint);
     }
     .dataset-table-row:focus-visible {
-      box-shadow: inset 0 0 0 2px #93c5fd;
+      box-shadow: inset 0 0 0 2px var(--sw-focus);
     }
     .dataset-table-row.expanded {
-      background: #f8fbff;
+      background: var(--sw-color-primary-faint);
     }
     .dataset-table-name {
       display: flex;
@@ -973,9 +975,9 @@ type EditingResource =
       place-items: center;
       width: 42px;
       height: 42px;
-      border-radius: 10px;
-      background: #e0f2fe;
-      color: #0284c7;
+      border-radius: var(--sw-radius-md);
+      background: var(--sw-color-primary-soft);
+      color: var(--sw-color-primary);
       font-size: 20px;
     }
     .dataset-table-copy {
@@ -985,24 +987,24 @@ type EditingResource =
     }
     .dataset-table-copy strong {
       overflow: hidden;
-      color: #1e3a5f;
+      color: var(--sw-text-primary);
       text-overflow: ellipsis;
       white-space: nowrap;
       font-size: 15px;
     }
     .dataset-table-copy small {
       overflow: hidden;
-      color: #94a3b8;
+      color: var(--sw-text-muted);
       text-overflow: ellipsis;
       white-space: nowrap;
       font-size: 12px;
     }
     .dataset-table-metrics {
-      color: #475569;
+      color: var(--sw-text-secondary);
       font-weight: 650;
     }
     .dataset-table-updated {
-      color: #64748b;
+      color: var(--sw-text-muted);
     }
     .dataset-table-operation {
       display: flex;
@@ -1018,7 +1020,7 @@ type EditingResource =
       width: 16px;
       height: 16px;
       margin: 0;
-      accent-color: #0284c7;
+      accent-color: var(--sw-color-primary);
       cursor: pointer;
     }
     .management-checkbox:disabled {
@@ -1026,15 +1028,15 @@ type EditingResource =
       opacity: 0.45;
     }
     .management-delete-button:not(:disabled) {
-      border-color: #fecaca;
-      color: #b91c1c;
+      border-color: color-mix(in srgb, var(--sw-color-danger) 28%, var(--sw-border));
+      color: var(--sw-color-danger);
     }
     .management-danger-text {
-      color: #b91c1c;
+      color: var(--sw-color-danger);
     }
     .dataset-expand-indicator {
       width: 14px;
-      color: #64748b;
+      color: var(--sw-text-muted);
       font-size: 15px;
       text-align: center;
     }
@@ -1044,18 +1046,18 @@ type EditingResource =
       place-items: center;
       min-height: 260px;
       margin: 0;
-      color: #64748b;
+      color: var(--sw-text-muted);
       text-align: center;
     }
     .dataset-table-empty {
       gap: 8px;
     }
     .dataset-table-empty span {
-      color: #93c5fd;
+      color: var(--sw-color-primary);
       font-size: 42px;
     }
     .dataset-table-empty strong {
-      color: #334155;
+      color: var(--sw-text-primary);
       font-size: 17px;
     }
     .dataset-table-empty small {
@@ -1064,16 +1066,16 @@ type EditingResource =
     .dataset-expanded-panel {
       min-width: 970px;
       padding: 0 0 16px;
-      border-top: 1px solid #dbeafe;
-      background: #f8fbff;
+      border-top: 1px solid var(--sw-border);
+      background: var(--sw-color-primary-faint);
     }
     .dataset-files-table {
       max-height: 260px;
       overflow-x: auto;
       overflow-y: auto;
-      border: 1px solid #dbe4ef;
-      border-radius: 10px;
-      background: #fff;
+      border: 1px solid var(--sw-border);
+      border-radius: var(--sw-radius-md);
+      background: var(--sw-surface);
     }
     .dataset-files-head,
     .dataset-file-row {
@@ -1089,8 +1091,8 @@ type EditingResource =
       z-index: 1;
       min-height: 42px;
       padding: 0 12px;
-      background: #f8fafc;
-      color: #64748b;
+      background: var(--sw-surface-muted);
+      color: var(--sw-text-muted);
       font-size: 12px;
       font-weight: 750;
     }
@@ -1101,7 +1103,7 @@ type EditingResource =
       gap: 8px;
     }
     .table-select-all {
-      color: #0284c7;
+      color: var(--sw-color-primary);
       font-size: 11px;
       font-weight: 650;
       cursor: pointer;
@@ -1109,8 +1111,8 @@ type EditingResource =
     .dataset-file-row {
       min-height: 58px;
       padding: 8px 12px;
-      border-top: 1px solid #eef2f7;
-      color: #475569;
+      border-top: 1px solid var(--sw-border);
+      color: var(--sw-text-secondary);
       font-size: 12px;
     }
     .dataset-file-name {
@@ -1125,12 +1127,12 @@ type EditingResource =
       gap: 2px;
     }
     .dataset-file-copy small {
-      color: #64748b;
+      color: var(--sw-text-muted);
       font-size: 11px;
     }
     .dataset-file-name strong {
       overflow: hidden;
-      color: #334155;
+      color: var(--sw-text-primary);
       text-overflow: ellipsis;
       white-space: nowrap;
     }
@@ -1141,8 +1143,8 @@ type EditingResource =
       width: 30px;
       height: 30px;
       border-radius: 8px;
-      background: #eff6ff;
-      color: #0284c7;
+      background: var(--sw-color-primary-soft);
+      color: var(--sw-color-primary);
       font-size: 12px;
     }
     .dataset-file-preview {
@@ -1154,12 +1156,12 @@ type EditingResource =
     .dataset-expanded-state {
       margin: 0;
       padding: 30px 14px;
-      color: #64748b;
+      color: var(--sw-text-muted);
       font-size: 13px;
       text-align: center;
     }
     .dataset-expanded-state.error {
-      color: #b91c1c;
+      color: var(--sw-color-danger);
     }
 
     .dialog-backdrop {

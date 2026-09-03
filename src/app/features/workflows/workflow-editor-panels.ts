@@ -534,7 +534,7 @@ export class WorkflowCanvasPanelComponent implements AfterViewInit, OnDestroy {
         @if (dataFileNode(); as dataNode) {
           <section class="runtime-binding data-file-binding">
             <header class="section-subhead">
-              <h3>📁 绑定数据文件版本</h3>
+              <h3>绑定数据文件版本</h3>
               <small class="subhead-tip">指定该节点读取的数据集文件版本及输出列视图</small>
             </header>
 
@@ -608,7 +608,7 @@ export class WorkflowCanvasPanelComponent implements AfterViewInit, OnDestroy {
                   <span class="mode-tag">{{ bindingSummary.outputMode }}</span>
                 </div>
                 <div class="card-detail">
-                  <span>📄 {{ bindingSummary.fileName || '数据文件' }} ({{ bindingSummary.version || ('版本 #' + bindingSummary.fileVersionId) }})</span>
+                  <span>{{ bindingSummary.fileName || '数据文件' }} ({{ bindingSummary.version || ('版本 #' + bindingSummary.fileVersionId) }})</span>
                   <small class="view-detail">{{ bindingSummary.viewSummary || '已保存视图' }}</small>
                 </div>
               </div>

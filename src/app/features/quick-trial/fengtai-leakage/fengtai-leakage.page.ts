@@ -12,7 +12,6 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
 import { MatFormFieldModule } from '@angular/material/form-field';
-import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatProgressBarModule } from '@angular/material/progress-bar';
 import { MatSelectModule } from '@angular/material/select';
@@ -34,6 +33,7 @@ import { FengtaiStageResultComponent } from './fengtai-stage-result.component';
 import { FengtaiTopologyComponent } from './fengtai-topology.component';
 import { FengtaiTimelineControlComponent } from './fengtai-timeline-control.component';
 import { fengtaiLabel, fengtaiMetricValue } from './fengtai-labels';
+import { SwIconComponent } from '../../../shared/components/sw-icon.component';
 
 @Component({
   selector: 'app-fengtai-leakage-page',
@@ -43,7 +43,6 @@ import { fengtaiLabel, fengtaiMetricValue } from './fengtai-labels';
     FormsModule,
     MatButtonModule,
     MatFormFieldModule,
-    MatIconModule,
     MatProgressSpinnerModule,
     MatProgressBarModule,
     MatSelectModule,
@@ -52,6 +51,7 @@ import { fengtaiLabel, fengtaiMetricValue } from './fengtai-labels';
     FengtaiTopologyComponent,
     FengtaiAssetDetailComponent,
     FengtaiTimelineControlComponent,
+    SwIconComponent,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
@@ -82,7 +82,7 @@ import { fengtaiLabel, fengtaiMetricValue } from './fengtai-labels';
           [disabled]="analyzing()"
           (click)="runAnalysis()"
         >
-          <mat-icon>play_arrow</mat-icon>{{ analyzing() ? '正在分析…' : '运行分析' }}
+          <app-sw-icon name="play" [size]="17" />{{ analyzing() ? '正在分析…' : '运行分析' }}
         </button>
       </section>
       @if (analyzing()) {
@@ -93,7 +93,7 @@ import { fengtaiLabel, fengtaiMetricValue } from './fengtai-labels';
       }
       @if (error()) {
         <div class="error">
-          <mat-icon>info</mat-icon><span>{{ error() }}</span
+          <app-sw-icon name="info" [size]="18" /><span>{{ error() }}</span
           ><button mat-button type="button" (click)="loadInitial()">重试</button>
         </div>
       }
@@ -227,24 +227,30 @@ import { fengtaiLabel, fengtaiMetricValue } from './fengtai-labels';
       display: block;
     }
     .page {
-      max-width: 1440px;
+      max-width: var(--sw-content-max);
       margin: 0 auto;
       padding: 24px;
       display: grid;
       gap: 18px;
-      color: #1e293b;
+      color: var(--sw-text-primary);
     }
     .hero {
       display: flex;
       justify-content: space-between;
       gap: 24px;
       padding: 22px 24px;
-      border-radius: 12px;
-      background: linear-gradient(115deg, #073b4c, #0f766e);
+      position: relative;
+      overflow: hidden;
+      border: 1px solid color-mix(in srgb, var(--sw-color-secondary) 35%, transparent);
+      border-radius: var(--sw-radius-lg);
+      background:
+        radial-gradient(circle at 88% -20%, rgb(104 229 216 / 26%), transparent 280px),
+        linear-gradient(118deg, #063747, #0b655f 72%, #0f7b72);
       color: white;
+      box-shadow: var(--sw-shadow-md);
     }
     .eyebrow {
-      color: #99f6e4;
+      color: #a7f3e7;
       font-size: 12px;
       font-weight: 700;
       letter-spacing: 0.08em;
@@ -254,10 +260,13 @@ import { fengtaiLabel, fengtaiMetricValue } from './fengtai-labels';
       font-size: 25px;
       letter-spacing: 0.01em;
     }
+    .hero h1 {
+      color: white;
+    }
     .hero p {
       margin: 0;
       max-width: 720px;
-      color: #d5f5ee;
+      color: #d8f5ef;
       font-size: 14px;
       line-height: 1.65;
     }
@@ -266,9 +275,10 @@ import { fengtaiLabel, fengtaiMetricValue } from './fengtai-labels';
       gap: 12px;
       align-items: center;
       padding: 14px 16px;
-      border: 1px solid #dbe4ea;
-      border-radius: 10px;
-      background: #fff;
+      border: 1px solid var(--sw-border);
+      border-radius: var(--sw-radius-md);
+      background: var(--sw-surface);
+      box-shadow: var(--sw-shadow-sm);
     }
     mat-form-field {
       min-width: 185px;
@@ -277,38 +287,39 @@ import { fengtaiLabel, fengtaiMetricValue } from './fengtai-labels';
     label {
       display: grid;
       gap: 4px;
-      color: #64748b;
+      color: var(--sw-text-muted);
       font-size: 11px;
     }
     input {
       height: 34px;
       padding: 0 8px;
-      border: 1px solid #cbd5e1;
-      border-radius: 5px;
-      color: #334155;
+      border: 1px solid var(--sw-border-strong);
+      border-radius: var(--sw-radius-xs);
+      color: var(--sw-text-primary);
+      background: var(--sw-surface);
       font: inherit;
     }
-    button mat-icon {
-      margin-right: 4px;
+    button app-sw-icon {
+      margin-right: 6px;
     }
     .running {
       display: grid;
       gap: 9px;
       padding: 12px 16px;
-      border: 1px solid #bae6fd;
-      border-radius: 9px;
-      background: #f0f9ff;
+      border: 1px solid color-mix(in srgb, var(--sw-color-info) 28%, var(--sw-border));
+      border-radius: var(--sw-radius-sm);
+      background: var(--sw-color-info-soft);
     }
     .running div {
       display: grid;
       gap: 3px;
     }
     .running strong {
-      color: #075985;
+      color: var(--sw-color-primary-strong);
       font-size: 13px;
     }
     .running span {
-      color: #64748b;
+      color: var(--sw-text-secondary);
       font-size: 12px;
     }
     .error {
@@ -316,10 +327,10 @@ import { fengtaiLabel, fengtaiMetricValue } from './fengtai-labels';
       gap: 8px;
       align-items: center;
       padding: 10px 12px;
-      border: 1px solid #fed7aa;
-      background: #fff7ed;
-      color: #9a3412;
-      border-radius: 8px;
+      border: 1px solid color-mix(in srgb, var(--sw-color-warning) 32%, var(--sw-border));
+      background: var(--sw-color-warning-soft);
+      color: var(--sw-color-warning);
+      border-radius: var(--sw-radius-sm);
       font-size: 13px;
     }
     .loading,
@@ -329,9 +340,10 @@ import { fengtaiLabel, fengtaiMetricValue } from './fengtai-labels';
       gap: 12px;
       justify-content: center;
       align-items: center;
-      border: 1px dashed #cbd5e1;
-      border-radius: 10px;
-      color: #64748b;
+      border: 1px dashed var(--sw-border-strong);
+      border-radius: var(--sw-radius-md);
+      color: var(--sw-text-muted);
+      background: var(--sw-surface-muted);
       font-size: 13px;
     }
     .empty {
@@ -343,7 +355,7 @@ import { fengtaiLabel, fengtaiMetricValue } from './fengtai-labels';
       gap: 4px;
     }
     .empty strong {
-      color: #334155;
+      color: var(--sw-text-primary);
     }
     .empty span {
       font-size: 12px;
@@ -352,9 +364,10 @@ import { fengtaiLabel, fengtaiMetricValue } from './fengtai-labels';
       display: grid;
       gap: 12px;
       padding: 16px;
-      border: 1px solid #dbe4ea;
-      border-radius: 10px;
-      background: #fff;
+      border: 1px solid var(--sw-border);
+      border-radius: var(--sw-radius-md);
+      background: var(--sw-surface);
+      box-shadow: var(--sw-shadow-sm);
     }
     h2 {
       font-size: 15px;
@@ -362,7 +375,7 @@ import { fengtaiLabel, fengtaiMetricValue } from './fengtai-labels';
     }
     .flow p {
       margin: 4px 0 0;
-      color: #64748b;
+      color: var(--sw-text-muted);
       font-size: 12px;
     }
     .kpis {
@@ -372,26 +385,28 @@ import { fengtaiLabel, fengtaiMetricValue } from './fengtai-labels';
     }
     .kpis article {
       padding: 13px;
-      border: 1px solid #dbe4ea;
-      border-radius: 8px;
-      background: #fff;
+      border: 1px solid var(--sw-border);
+      border-radius: var(--sw-radius-md);
+      background: var(--sw-surface);
+      box-shadow: var(--sw-shadow-sm);
       display: grid;
       gap: 5px;
     }
     .kpis span {
-      color: #64748b;
+      color: var(--sw-text-muted);
       font-size: 12px;
     }
     .kpis strong {
-      color: #0f766e;
+      color: var(--sw-color-secondary-strong);
       font-size: 18px;
       font-variant-numeric: tabular-nums;
     }
     .stage-workspace {
-      border: 1px solid #dbe4ea;
-      border-radius: 10px;
+      border: 1px solid var(--sw-border);
+      border-radius: var(--sw-radius-md);
       padding: 16px;
-      background: #fff;
+      background: var(--sw-surface);
+      box-shadow: var(--sw-shadow-sm);
     }
     .topology-layout {
       display: grid;
@@ -406,8 +421,9 @@ import { fengtaiLabel, fengtaiMetricValue } from './fengtai-labels';
       min-height: 326px;
       min-width: 0;
       padding: 12px;
-      border: 1px solid #dbe4ea;
-      border-radius: 10px;
+      border: 1px solid var(--sw-border);
+      border-radius: var(--sw-radius-md);
+      background: var(--sw-canvas-bg);
     }
     .topology-controls {
       display: grid;
@@ -422,7 +438,7 @@ import { fengtaiLabel, fengtaiMetricValue } from './fengtai-labels';
     .layer-legend {
       grid-column: 1 / -1;
       margin: -2px 0 2px;
-      color: #64748b;
+      color: var(--sw-text-muted);
       font-size: 12px;
     }
     .legend-swatch {
@@ -431,7 +447,12 @@ import { fengtaiLabel, fengtaiMetricValue } from './fengtai-labels';
       height: 8px;
       margin-right: 6px;
       border-radius: 999px;
-      background: linear-gradient(90deg, #0f766e, #d97706, #dc2626);
+      background: linear-gradient(
+        90deg,
+        var(--sw-color-secondary),
+        var(--sw-color-accent),
+        var(--sw-color-danger)
+      );
       vertical-align: middle;
     }
     .topology-status {
@@ -440,12 +461,12 @@ import { fengtaiLabel, fengtaiMetricValue } from './fengtai-labels';
       align-items: center;
       justify-content: center;
       gap: 10px;
-      color: #64748b;
+      color: var(--sw-text-muted);
       font-size: 13px;
     }
     .topology-warning {
       flex-direction: column;
-      color: #9a3412;
+      color: var(--sw-color-warning);
     }
     @media (max-width: 900px) {
       .hero,

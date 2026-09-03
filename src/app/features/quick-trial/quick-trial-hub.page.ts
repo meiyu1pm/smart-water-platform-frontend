@@ -13,17 +13,64 @@ import { QuickTrialPage } from './quick-trial.page';
   imports: [MatTabsModule, QuickTrialPage, FengtaiLeakagePage],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-    <mat-tab-group animationDuration="0ms" aria-label="快速试用分类">
-      <mat-tab label="单算法试用"
-        ><ng-template matTabContent><app-quick-trial-page></app-quick-trial-page></ng-template
-      ></mat-tab>
-      <mat-tab label="丰泰风光苑漏损闭环"
-        ><ng-template matTabContent
-          ><app-fengtai-leakage-page
-            (requiresLogin)="openLogin()"
-          ></app-fengtai-leakage-page></ng-template
-      ></mat-tab>
-    </mat-tab-group>
+    <div class="trial-hub">
+      <mat-tab-group class="trial-tabs" animationDuration="180ms" aria-label="快速试用分类">
+        <mat-tab label="单算法试用"
+          ><ng-template matTabContent><app-quick-trial-page></app-quick-trial-page></ng-template
+        ></mat-tab>
+        <mat-tab label="丰泰风光苑漏损闭环"
+          ><ng-template matTabContent
+            ><app-fengtai-leakage-page
+              (requiresLogin)="openLogin()"
+            ></app-fengtai-leakage-page></ng-template
+        ></mat-tab>
+      </mat-tab-group>
+    </div>
+  `,
+  styles: `
+    :host {
+      display: block;
+      min-width: 0;
+    }
+    .trial-hub {
+      overflow: hidden;
+      border: 1px solid var(--sw-border);
+      border-radius: var(--sw-radius-lg);
+      background: var(--sw-surface);
+      box-shadow: var(--sw-shadow-sm);
+    }
+    :host ::ng-deep .trial-tabs > .mat-mdc-tab-header {
+      position: relative;
+      z-index: 2;
+      padding: 10px 18px 0;
+      border-bottom: 1px solid var(--sw-border);
+      background: color-mix(in srgb, var(--sw-surface) 92%, var(--sw-color-primary-soft));
+    }
+    :host ::ng-deep .trial-tabs .mat-mdc-tab {
+      min-width: min(320px, 42vw);
+      height: 52px;
+      border-radius: var(--sw-radius-sm) var(--sw-radius-sm) 0 0;
+      font-weight: 700;
+    }
+    :host ::ng-deep .trial-tabs .mat-mdc-tab.mdc-tab--active {
+      background: var(--sw-color-primary-faint);
+    }
+    :host ::ng-deep .trial-tabs .mdc-tab-indicator__content--underline {
+      border-top-width: 3px;
+      border-color: var(--sw-color-primary);
+    }
+    @media (max-width: 720px) {
+      .trial-hub {
+        margin: -2px;
+        border-radius: var(--sw-radius-md);
+      }
+      :host ::ng-deep .trial-tabs > .mat-mdc-tab-header {
+        padding-inline: 4px;
+      }
+      :host ::ng-deep .trial-tabs .mat-mdc-tab {
+        min-width: 0;
+      }
+    }
   `,
 })
 export class QuickTrialHubPage implements OnInit {

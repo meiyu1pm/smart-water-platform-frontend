@@ -148,7 +148,7 @@ interface WorkflowItem {
   styles: `
     :host {
       display: block;
-      color: #172033;
+      color: var(--sw-text-primary);
     }
     .page-header {
       display: flex;
@@ -163,7 +163,8 @@ interface WorkflowItem {
       margin: 0;
     }
     h1 {
-      font-size: 32px;
+      font-size: clamp(27px, 2.4vw, 34px);
+      letter-spacing: -0.025em;
       margin-top: 4px;
     }
     h2 {
@@ -172,47 +173,48 @@ interface WorkflowItem {
       overflow-wrap: anywhere;
     }
     .eyebrow {
-      color: #2563eb;
+      color: var(--sw-color-primary);
       font-size: 11px;
       font-weight: 800;
       letter-spacing: 0.08em;
     }
     .lead,
     .description {
-      color: #667085;
+      color: var(--sw-text-muted);
       font-size: 13px;
       line-height: 1.5;
       margin-top: 7px;
     }
     button {
-      border: 1px solid #d0d5dd;
-      border-radius: 8px;
-      background: #fff;
-      color: #344054;
+      min-height: 38px;
+      border: 1px solid var(--sw-border-strong);
+      border-radius: var(--sw-radius-sm);
+      background: var(--sw-surface);
+      color: var(--sw-text-secondary);
       padding: 9px 13px;
       cursor: pointer;
       font: inherit;
       font-size: 12px;
     }
     button:hover:not(:disabled) {
-      border-color: #84adf7;
-      background: #f8fbff;
+      border-color: var(--sw-color-primary);
+      background: var(--sw-color-primary-faint);
     }
     button:disabled {
       opacity: 0.45;
       cursor: not-allowed;
     }
     button.primary {
-      background: #1769d1;
-      color: #fff;
-      border-color: #1769d1;
+      background: var(--sw-color-primary);
+      color: white;
+      border-color: var(--sw-color-primary);
     }
     button.secondary {
-      background: #fff;
+      background: var(--sw-surface);
     }
     button.danger {
-      color: #b42318;
-      border-color: #f5c2c0;
+      color: var(--sw-color-danger);
+      border-color: color-mix(in srgb, var(--sw-color-danger) 28%, var(--sw-border));
     }
     .toolbar {
       display: flex;
@@ -223,8 +225,10 @@ interface WorkflowItem {
     }
     .toolbar input {
       min-width: 220px;
-      border: 1px solid #d0d5dd;
-      border-radius: 8px;
+      border: 1px solid var(--sw-border-strong);
+      border-radius: var(--sw-radius-sm);
+      background: var(--sw-surface);
+      color: var(--sw-text-primary);
       padding: 9px 11px;
       font: inherit;
       font-size: 12px;
@@ -240,15 +244,16 @@ interface WorkflowItem {
       border-radius: 8px;
     }
     .tabs button.active {
-      background: #eaf2ff;
-      color: #175cd3;
+      background: var(--sw-color-primary-soft);
+      color: var(--sw-color-primary-strong);
       font-weight: 700;
     }
     .message {
       padding: 10px 13px;
       border-radius: 9px;
-      background: #ecfdf3;
-      color: #087443;
+      border: 1px solid color-mix(in srgb, var(--sw-color-success) 22%, var(--sw-border));
+      background: var(--sw-color-success-soft);
+      color: var(--sw-color-success);
       font-size: 13px;
       margin-bottom: 14px;
     }
@@ -259,14 +264,21 @@ interface WorkflowItem {
     }
     .card {
       min-width: 0;
-      background: #fff;
-      border: 1px solid #e4e7ec;
-      border-radius: 13px;
+      background: var(--sw-surface);
+      border: 1px solid var(--sw-border);
+      border-radius: var(--sw-radius-lg);
       padding: 16px;
-      box-shadow: 0 3px 12px #1018280a;
+      box-shadow: var(--sw-shadow-sm);
+      transition:
+        border-color var(--sw-motion-fast) var(--sw-ease-standard),
+        box-shadow var(--sw-motion-fast) var(--sw-ease-standard);
+    }
+    .card:hover {
+      border-color: color-mix(in srgb, var(--sw-color-primary) 32%, var(--sw-border));
+      box-shadow: var(--sw-shadow-md);
     }
     .card.deleted {
-      background: #fafafa;
+      background: var(--sw-surface-muted);
       opacity: 0.85;
     }
     .card-head {
@@ -278,21 +290,21 @@ interface WorkflowItem {
       display: inline-block;
       padding: 4px 8px;
       border-radius: 999px;
-      background: #ecfdf3;
-      color: #087443;
+      background: var(--sw-color-success-soft);
+      color: var(--sw-color-success);
       font-size: 11px;
     }
     .deleted .status {
-      background: #fff1f3;
-      color: #b42318;
+      background: var(--sw-color-danger-soft);
+      color: var(--sw-color-danger);
     }
     code {
-      color: #98a2b3;
+      color: var(--sw-text-muted);
       font-size: 10px;
       overflow-wrap: anywhere;
     }
     .revision {
-      color: #667085;
+      color: var(--sw-text-muted);
       font-size: 11px;
       white-space: nowrap;
     }
@@ -303,9 +315,9 @@ interface WorkflowItem {
       display: flex;
       flex-wrap: wrap;
       gap: 8px 14px;
-      color: #667085;
+      color: var(--sw-text-muted);
       font-size: 11px;
-      border-top: 1px solid #eaecf0;
+      border-top: 1px solid var(--sw-border);
       padding-top: 11px;
       margin-top: 12px;
     }
@@ -320,16 +332,17 @@ interface WorkflowItem {
       min-height: 190px;
       display: grid;
       place-items: center;
-      border: 1px dashed #d0d5dd;
-      border-radius: 13px;
-      color: #98a2b3;
+      border: 1px dashed var(--sw-border-strong);
+      border-radius: var(--sw-radius-lg);
+      color: var(--sw-text-muted);
+      background: var(--sw-surface-muted);
       font-size: 13px;
     }
     .version-panel {
       margin: 18px 0;
-      background: #fff;
-      border: 1px solid #e4e7ec;
-      border-radius: 13px;
+      background: var(--sw-surface);
+      border: 1px solid var(--sw-border);
+      border-radius: var(--sw-radius-lg);
       padding: 14px;
     }
     .version-head,
@@ -344,12 +357,12 @@ interface WorkflowItem {
     }
     .version-row {
       padding: 10px 0;
-      border-top: 1px solid #eaecf0;
-      color: #475467;
+      border-top: 1px solid var(--sw-border);
+      color: var(--sw-text-secondary);
     }
     .version-row small {
       flex: 1;
-      color: #667085;
+      color: var(--sw-text-muted);
     }
     .pager {
       display: flex;
@@ -357,7 +370,7 @@ interface WorkflowItem {
       align-items: center;
       gap: 12px;
       margin: 18px 0;
-      color: #667085;
+      color: var(--sw-text-muted);
       font-size: 12px;
     }
     @media (max-width: 700px) {

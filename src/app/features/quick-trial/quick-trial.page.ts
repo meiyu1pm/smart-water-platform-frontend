@@ -38,11 +38,12 @@ import {
 import { NotificationService } from '../../core/services/notification.service';
 import { AuthService } from '../../core/services/auth.service';
 import { LoginDialogService } from '../login/login-dialog.component';
+import { SwIconComponent } from '../../shared/components/sw-icon.component';
 
 @Component({
   selector: 'app-quick-trial-page',
   standalone: true,
-  imports: [CommonModule, FormsModule, DataFilePreviewPanelComponent],
+  imports: [CommonModule, FormsModule, DataFilePreviewPanelComponent, SwIconComponent],
   template: `
     <div class="trial-container">
       <!-- 居中头部：Logo 与品牌标头 -->
@@ -88,7 +89,7 @@ import { LoginDialogService } from '../login/login-dialog.component';
                 <option [value]="sc.id">{{ sc.name }}</option>
               }
             </select>
-            <span class="select-arrow">▼</span>
+            <span class="select-arrow"><app-sw-icon name="chevron-down" [size]="15" /></span>
           </div>
         </div>
 
@@ -104,7 +105,7 @@ import { LoginDialogService } from '../login/login-dialog.component';
                 <option [value]="algorithm.id">{{ algorithm.name }}</option>
               }
             </select>
-            <span class="select-arrow">▼</span>
+            <span class="select-arrow"><app-sw-icon name="chevron-down" [size]="15" /></span>
           </div>
         </div>
 
@@ -116,7 +117,9 @@ import { LoginDialogService } from '../login/login-dialog.component';
             [class.active]="drawerOpen()"
             title="点击选择输出列、预览时序波形或调整分析窗口"
           >
-            <span class="data-icon">{{ customUploadedFile() ? '📁' : '📊' }}</span>
+            <span class="data-icon"
+              ><app-sw-icon [name]="customUploadedFile() ? 'folder' : 'database'" [size]="18"
+            /></span>
             <span class="data-summary-text">{{ dataInputDisplay() }}</span>
             <span class="edit-badge">{{ drawerOpen() ? '收起配置' : '调整输入与分析窗口' }}</span>
           </div>
@@ -127,7 +130,7 @@ import { LoginDialogService } from '../login/login-dialog.component';
             <span class="spinner"></span>
             <span>计算中...</span>
           } @else {
-            <span class="play-icon">▷</span>
+            <span class="play-icon"><app-sw-icon name="play" [size]="18" /></span>
             <span>运行</span>
           }
         </button>
@@ -143,7 +146,7 @@ import { LoginDialogService } from '../login/login-dialog.component';
                 [class.active]="dataMode() === 'demo'"
                 (click)="switchToDemoMode()"
               >
-                🌟 平台示例数据
+                <app-sw-icon name="flask" [size]="17" />平台示例数据
               </button>
               <button
                 type="button"
@@ -175,7 +178,7 @@ import { LoginDialogService } from '../login/login-dialog.component';
                 </div>
               } @else {
                 <div class="drop-target" (click)="fileInput.click()">
-                  <span class="upload-icon">☁️</span>
+                  <span class="upload-icon"><app-sw-icon name="upload" [size]="28" /></span>
                   <strong>点击或拖拽上传本地 CSV 时序数据文件</strong>
                   <p>上传后可在下方交互式预览并点选输入列，运行完成后将自动清理回收该临时文件。</p>
                 </div>
@@ -187,14 +190,19 @@ import { LoginDialogService } from '../login/login-dialog.component';
             <div class="uploaded-banner">
               <div class="file-info-line">
                 <span
-                  >📄 临时试用文件：<strong>{{ file.name }}</strong></span
+                  ><app-sw-icon name="file" [size]="16" />临时试用文件：<strong>{{
+                    file.name
+                  }}</strong></span
                 >
                 <button type="button" class="remove-file-btn" (click)="clearCustomFile()">
                   移除并恢复示例
                 </button>
               </div>
               <small class="temp-note"
-                >ℹ️ 此文件为临时试用文件，算法运行完成后将自动清理回收。</small
+                ><app-sw-icon
+                  name="info"
+                  [size]="15"
+                />此文件为临时试用文件，算法运行完成后将自动清理回收。</small
               >
             </div>
           }
@@ -218,7 +226,7 @@ import { LoginDialogService } from '../login/login-dialog.component';
             <div class="timeseries-tuner-card">
               <div class="tuner-header">
                 <div class="tuner-title">
-                  <span class="wave-icon">📈</span>
+                  <span class="wave-icon"><app-sw-icon name="chart" [size]="18" /></span>
                   <strong
                     >已选时序波形完整预览与输入区间调优 (原文件全量
                     {{ parsedTimeSeries().length }} 点)</strong
@@ -242,7 +250,7 @@ import { LoginDialogService } from '../login/login-dialog.component';
                 <div #drawerChartHost class="drawer-chart-canvas"></div>
               </div>
               <p class="slider-hint">
-                💡
+                <app-sw-icon name="info" [size]="15" />
                 <strong>滑动上方图表底部的区间滑块</strong
                 >，可自由在大文件全量时序中框选送入算法的历史输入序列（起始位置与时长）。
               </p>
@@ -376,7 +384,7 @@ import { LoginDialogService } from '../login/login-dialog.component';
                 class="action-btn deep-edit-btn"
                 (click)="openInWorkflowEditor()"
               >
-                ⚙️ 在工作流中深度调优
+                <app-sw-icon name="settings" [size]="17" />在工作流中深度调优
               </button>
             </div>
           </header>
@@ -453,26 +461,26 @@ import { LoginDialogService } from '../login/login-dialog.component';
         <!-- 初始场景指引卡片 -->
         <section class="scenario-showcase">
           <div class="showcase-header">
-            <h2>💡 常用试用场景</h2>
+            <h2><app-sw-icon name="flask" [size]="19" />常用试用场景</h2>
             <p>选择推荐场景，快速体验水务算法精准分析能力</p>
           </div>
           <div class="showcase-grid">
             <article class="showcase-card" (click)="onTaskChange('timeseries-forecast')">
-              <span class="sc-icon">📈</span>
+              <span class="sc-icon"><app-sw-icon name="chart" [size]="22" /></span>
               <h3>时序预测</h3>
               <p>供水量外推、水厂进水流量趋势分析，辅助调度决策与峰谷平衡。</p>
               <span class="sc-action">载入配置 ➔</span>
             </article>
 
             <article class="showcase-card" (click)="onTaskChange('anomaly-detection')">
-              <span class="sc-icon">🔍</span>
+              <span class="sc-icon"><app-sw-icon name="search" [size]="22" /></span>
               <h3>异常突变检测</h3>
               <p>水质浊度突升、管网水压突降智能识别，秒级捕捉异常工况。</p>
               <span class="sc-action">载入配置 ➔</span>
             </article>
 
             <article class="showcase-card" (click)="onTaskChange('dma-leakage')">
-              <span class="sc-icon">💧</span>
+              <span class="sc-icon"><app-sw-icon name="droplet" [size]="22" /></span>
               <h3>DMA 夜间流量初筛</h3>
               <p>真实执行最小夜间流量算法，筛选持续高流量日期并提示业务边界。</p>
               <span class="sc-action">载入配置 ➔</span>
@@ -875,6 +883,11 @@ import { LoginDialogService } from '../login/login-dialog.component';
       font-size: 11px;
       color: #64748b;
     }
+    .slider-hint app-sw-icon {
+      margin-right: 4px;
+      color: var(--sw-color-primary);
+      vertical-align: -2px;
+    }
     .horizon-control-bar {
       display: flex;
       justify-content: space-between;
@@ -1150,6 +1163,9 @@ import { LoginDialogService } from '../login/login-dialog.component';
       margin-top: 10px;
     }
     .showcase-header h2 {
+      display: flex;
+      align-items: center;
+      gap: 7px;
       margin: 0;
       font-size: 18px;
       color: #0f172a;
@@ -1201,6 +1217,155 @@ import { LoginDialogService } from '../login/login-dialog.component';
       color: #0284c7;
       margin-top: 6px;
     }
+    /* ui-ux-pro-max：以平台语义 Token 收敛快速试用的主要视觉层级。 */
+    :host {
+      color: var(--sw-text-primary);
+    }
+    .trial-container {
+      max-width: 1180px;
+      padding: 32px 24px 52px;
+      gap: 24px;
+    }
+    .brand-hero {
+      gap: 8px;
+    }
+    .brand-text h1,
+    .task-tag,
+    .showcase-header h2,
+    .showcase-card h3,
+    .drop-target strong,
+    .file-info-line,
+    .metric-val,
+    .tuner-title,
+    .horizon-input-group label {
+      color: var(--sw-text-primary);
+    }
+    .brand-text h1 span,
+    .sub-title,
+    .edit-badge,
+    .upload-loading,
+    .step-item.active,
+    .metric-val.highlight,
+    .sc-action {
+      color: var(--sw-color-primary);
+    }
+    .hero-desc,
+    .input-group label,
+    .drawer-tabs button,
+    .drop-target p,
+    .temp-note,
+    .slider-hint,
+    .unit-tag,
+    .preset-label,
+    .metric-lbl,
+    .showcase-header p,
+    .showcase-card p,
+    .step-badges {
+      color: var(--sw-text-muted);
+    }
+    .quick-run-bar,
+    .data-drawer-panel,
+    .running-state-card,
+    .result-dashboard,
+    .showcase-card {
+      border-color: var(--sw-border);
+      border-radius: var(--sw-radius-lg);
+      background: var(--sw-surface);
+      box-shadow: var(--sw-shadow-sm);
+    }
+    .quick-run-bar {
+      padding: 12px 14px;
+    }
+    .quick-run-bar:focus-within {
+      border-color: var(--sw-focus);
+      box-shadow: var(--sw-shadow-focus), var(--sw-shadow-sm);
+    }
+    .select-wrapper select,
+    .data-input-box,
+    .drawer-tabs button,
+    .uploaded-banner,
+    .timeseries-tuner-card,
+    .metric-card {
+      border-color: var(--sw-border);
+      background: var(--sw-surface-muted);
+      color: var(--sw-text-primary);
+    }
+    .select-wrapper select:hover,
+    .select-wrapper select:focus,
+    .data-input-box:hover,
+    .data-input-box.active {
+      border-color: var(--sw-color-primary);
+      background: var(--sw-surface);
+    }
+    .edit-badge,
+    .drawer-tabs button.active,
+    .tuner-chip.highlight,
+    .window-summary-alert,
+    .deep-edit-btn {
+      border-color: color-mix(in srgb, var(--sw-color-primary) 35%, var(--sw-border));
+      background: var(--sw-color-primary-soft);
+      color: var(--sw-color-primary-strong);
+    }
+    .run-btn {
+      background: var(--sw-color-primary-strong);
+      box-shadow: 0 1px 2px rgb(0 38 54 / 18%);
+    }
+    .run-btn:hover:not(:disabled) {
+      background: var(--sw-color-primary);
+      transform: none;
+      box-shadow: 0 5px 14px rgb(8 119 164 / 20%);
+    }
+    .drop-target {
+      border-color: var(--sw-border-strong);
+      background: var(--sw-surface-muted);
+    }
+    .drop-target:hover {
+      border-color: var(--sw-color-primary);
+      background: var(--sw-color-primary-faint);
+    }
+    .drawer-chart-box,
+    .horizon-control-bar,
+    .tuner-chip,
+    .download-btn {
+      border-color: var(--sw-border);
+      background: var(--sw-surface);
+    }
+    .progress-bar-track {
+      background: var(--sw-surface-sunken);
+    }
+    .progress-bar-fill {
+      background: linear-gradient(90deg, var(--sw-color-primary), var(--sw-color-secondary));
+    }
+    .actual-match-card {
+      border-color: color-mix(in srgb, var(--sw-color-success) 25%, var(--sw-border));
+      background: var(--sw-color-success-soft);
+    }
+    .result-notice {
+      border-left-color: var(--sw-color-accent);
+      background: var(--sw-color-accent-soft);
+      color: var(--sw-color-warning);
+    }
+    .showcase-card:hover {
+      border-color: var(--sw-color-primary);
+      box-shadow: var(--sw-shadow-md);
+      transform: none;
+    }
+    .drawer-tabs button,
+    .file-info-line > span,
+    .temp-note,
+    .deep-edit-btn,
+    .data-icon,
+    .play-icon,
+    .sc-icon {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .data-icon,
+    .sc-icon,
+    .upload-icon {
+      color: var(--sw-color-primary);
+    }
     .spinner {
       display: inline-block;
       width: 14px;
@@ -1231,6 +1396,43 @@ import { LoginDialogService } from '../login/login-dialog.component';
       .metrics-strip,
       .showcase-grid {
         grid-template-columns: 1fr 1fr;
+      }
+    }
+    @media (max-width: 560px) {
+      .trial-container {
+        padding: 26px 20px 42px;
+      }
+      .brand-badge {
+        gap: 10px;
+      }
+      .brand-text h1 {
+        font-size: 22px;
+      }
+      .sub-title {
+        letter-spacing: 0.75px;
+      }
+      .quick-run-bar,
+      .data-drawer-panel,
+      .result-dashboard {
+        padding: 14px;
+      }
+      .metrics-strip,
+      .showcase-grid {
+        grid-template-columns: 1fr;
+      }
+      .drawer-header,
+      .result-header,
+      .file-info-line {
+        align-items: stretch;
+        flex-direction: column;
+      }
+      .drawer-tabs,
+      .header-actions {
+        width: 100%;
+      }
+      .drawer-tabs button,
+      .header-actions button {
+        flex: 1;
       }
     }
   `,

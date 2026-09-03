@@ -7,11 +7,21 @@ import { Component, computed, input } from '@angular/core';
     .status-chip {
       display: inline-flex;
       align-items: center;
+      gap: 6px;
+      border: 1px solid color-mix(in srgb, currentColor 16%, transparent);
       border-radius: 999px;
-      padding: 3px 10px;
-      font-size: 12px;
+      padding: 4px 9px;
+      font-size: 11px;
       font-weight: 700;
       line-height: 1.2;
+      white-space: nowrap;
+    }
+    .status-chip::before {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: currentColor;
+      content: '';
     }
     .status-success,
     .status-ready,
@@ -85,4 +95,3 @@ export class StatusChipComponent {
     return this.labelMap[raw] || this.status();
   });
 }
-

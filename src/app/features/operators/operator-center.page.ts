@@ -20,6 +20,7 @@ import {
   StaticOperatorDocumentService,
 } from '../../core/services/operator-document.service';
 import { AuthService } from '../../core/services/auth.service';
+import { SwIconComponent } from '../../shared/components/sw-icon.component';
 import { DataAssetPickerComponent } from '../../shared/components/data-asset-picker.component';
 import { OperatorParameterFormComponent } from '../../shared/components/operator-parameter-form.component';
 import { DataAssetSelection } from '../../core/models/api.models';
@@ -152,6 +153,7 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
     RouterLink,
     DataAssetPickerComponent,
     OperatorParameterFormComponent,
+    SwIconComponent,
   ],
   template: `
     <header class="page-header">
@@ -453,7 +455,7 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
                       type="button"
                       (click)="openEditDefaults(version)"
                     >
-                      <span>⚙</span> 调整默认参数
+                      <app-sw-icon name="settings" [size]="16" />调整默认参数
                     </button>
                   }
                 </div>
@@ -951,7 +953,7 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
   styles: `
     :host {
       display: block;
-      color: #172033;
+      color: var(--sw-text-primary);
     }
     h1,
     h2,
@@ -960,7 +962,8 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
       margin: 0;
     }
     h1 {
-      font-size: 32px;
+      font-size: clamp(27px, 2.4vw, 34px);
+      letter-spacing: -0.025em;
       margin-top: 4px;
     }
     h2 {
@@ -989,7 +992,7 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
       justify-content: flex-end;
     }
     .eyebrow {
-      color: #2563eb;
+      color: var(--sw-color-primary);
       font-size: 11px;
       font-weight: 800;
       letter-spacing: 0.08em;
@@ -997,7 +1000,7 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
     .lead,
     .description,
     .muted {
-      color: #667085;
+      color: var(--sw-text-muted);
     }
     .tag-row {
       display: flex;
@@ -1007,8 +1010,9 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
     }
     .tag {
       border-radius: 999px;
-      background: #eef5ff;
-      color: #205493;
+      border: 1px solid color-mix(in srgb, var(--sw-color-primary) 15%, var(--sw-border));
+      background: var(--sw-color-primary-soft);
+      color: var(--sw-color-primary-strong);
       padding: 4px 9px;
       font-size: 12px;
     }
@@ -1019,11 +1023,11 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
     input,
     select {
       min-height: 40px;
-      border: 1px solid #d0d5dd;
-      border-radius: 9px;
+      border: 1px solid var(--sw-border-strong);
+      border-radius: var(--sw-radius-sm);
       padding: 0 12px;
-      background: #fff;
-      color: #172033;
+      background: var(--sw-surface);
+      color: var(--sw-text-primary);
     }
     input {
       min-width: 240px;
@@ -1033,7 +1037,7 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
     .primary,
     .secondary {
       border: 0;
-      border-radius: 9px;
+      border-radius: var(--sw-radius-sm);
       padding: 10px 15px;
       cursor: pointer;
       font: inherit;
@@ -1043,17 +1047,17 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
       align-items: center;
     }
     .primary {
-      background: #0f67c9;
-      color: #fff;
+      background: var(--sw-color-primary);
+      color: white;
     }
     .secondary {
-      background: #fff;
-      color: #0f67c9;
-      border: 1px solid #b6c5d9;
+      background: var(--sw-surface);
+      color: var(--sw-color-primary-strong);
+      border: 1px solid var(--sw-border-strong);
     }
     .filter-toggle.active {
-      border-color: #0f67c9;
-      background: #eef5ff;
+      border-color: var(--sw-color-primary);
+      background: var(--sw-color-primary-soft);
     }
     .filter-toggle span {
       min-width: 20px;
@@ -1062,14 +1066,14 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
       display: inline-grid;
       place-items: center;
       margin-left: 6px;
-      background: #0f67c9;
-      color: #fff;
+      background: var(--sw-color-primary);
+      color: white;
       font-size: 11px;
     }
     .text-button {
       padding-inline: 4px;
       background: transparent;
-      color: #0f67c9;
+      color: var(--sw-color-primary);
     }
     .filter-panel {
       display: grid;
@@ -1077,14 +1081,14 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
       gap: 12px;
       padding: 14px;
       margin-bottom: 18px;
-      border: 1px solid #dce6f2;
-      border-radius: 12px;
-      background: #f8fbff;
+      border: 1px solid var(--sw-border);
+      border-radius: var(--sw-radius-md);
+      background: var(--sw-surface-muted);
     }
     .filter-panel label {
       display: grid;
       gap: 6px;
-      color: #475467;
+      color: var(--sw-text-secondary);
       font-size: 12px;
       font-weight: 700;
     }
@@ -1102,8 +1106,9 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
       border-radius: 10px;
       padding: 11px 14px;
       margin-bottom: 16px;
-      background: #fff4d6;
-      color: #8a5b00;
+      border: 1px solid color-mix(in srgb, var(--sw-color-warning) 25%, var(--sw-border));
+      background: var(--sw-color-warning-soft);
+      color: var(--sw-color-warning);
     }
     .content-grid {
       display: grid;
@@ -1114,10 +1119,10 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
     .operator-list,
     .detail-card,
     .starter-section {
-      background: #fff;
-      border: 1px solid #e4e7ec;
-      border-radius: 14px;
-      box-shadow: 0 6px 20px rgba(16, 24, 40, 0.05);
+      background: var(--sw-surface);
+      border: 1px solid var(--sw-border);
+      border-radius: var(--sw-radius-lg);
+      box-shadow: var(--sw-shadow-sm);
     }
     .operator-list {
       padding: 10px;
@@ -1137,7 +1142,7 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
       width: 3px;
       height: 54px;
       border-radius: 999px;
-      background: #c8d3e1;
+      background: var(--sw-border-strong);
       transition:
         height 120ms ease,
         background 120ms ease;
@@ -1145,7 +1150,7 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
     .catalog-resizer:hover span,
     .catalog-resizer:focus-visible span {
       height: 78px;
-      background: #0f67c9;
+      background: var(--sw-color-primary);
     }
     .operator-row {
       width: 100%;
@@ -1154,23 +1159,23 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
       gap: 10px;
       text-align: left;
       padding: 13px 12px;
-      background: #fff;
-      color: #172033;
-      border-bottom: 1px solid #eef1f5;
+      background: var(--sw-surface);
+      color: var(--sw-text-primary);
+      border-bottom: 1px solid var(--sw-border);
     }
     .operator-row:hover,
     .operator-row.selected {
-      background: #eef5ff;
+      background: var(--sw-color-primary-soft);
     }
     .status-dot {
       flex: 0 0 9px;
       width: 9px;
       height: 9px;
       border-radius: 50%;
-      background: #1aa260;
+      background: var(--sw-color-success);
     }
     .status-dot.offline {
-      background: #b8c0cc;
+      background: var(--sw-border-strong);
     }
     .row-copy {
       min-width: 0;
@@ -1185,7 +1190,7 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
     .row-copy small,
     .badge,
     .port small {
-      color: #7b8798;
+      color: var(--sw-text-muted);
       font-size: 11px;
     }
     .badge {
@@ -1200,7 +1205,7 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
       align-items: flex-start;
     }
     code {
-      color: #64748b;
+      color: var(--sw-text-muted);
       font-size: 12px;
       overflow-wrap: anywhere;
     }
@@ -1208,20 +1213,20 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
       white-space: nowrap;
       border-radius: 999px;
       padding: 5px 10px;
-      background: #f1f3f5;
-      color: #667085;
+      background: var(--sw-surface-sunken);
+      color: var(--sw-text-muted);
       font-size: 12px;
     }
     .state.ready {
-      background: #e8f8ef;
-      color: #087443;
+      background: var(--sw-color-success-soft);
+      color: var(--sw-color-success);
     }
     .meta-line {
       flex-wrap: wrap;
-      color: #667085;
+      color: var(--sw-text-muted);
       font-size: 12px;
-      border-top: 1px solid #eef1f5;
-      border-bottom: 1px solid #eef1f5;
+      border-top: 1px solid var(--sw-border);
+      border-bottom: 1px solid var(--sw-border);
       padding: 12px 0;
       margin: 16px 0;
     }
@@ -1229,20 +1234,20 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
       display: flex;
       flex-wrap: wrap;
       gap: 4px;
-      border-bottom: 1px solid #e4e7ec;
+      border-bottom: 1px solid var(--sw-border);
       margin-bottom: 16px;
     }
     .tabs button {
       border-radius: 8px 8px 0 0;
       padding: 9px 12px;
       background: transparent;
-      color: #667085;
+      color: var(--sw-text-muted);
       border-bottom: 2px solid transparent;
     }
     .tabs button.active {
-      color: #0f67c9;
-      border-bottom-color: #0f67c9;
-      background: #f3f7ff;
+      color: var(--sw-color-primary-strong);
+      border-bottom-color: var(--sw-color-primary);
+      background: var(--sw-color-primary-faint);
     }
     .tab-body {
       min-height: 220px;
