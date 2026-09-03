@@ -146,7 +146,7 @@ interface RecentRun {
       color: var(--sw-text-primary);
     }
     .page-head {
-      margin-bottom: 24px;
+      margin-bottom: var(--sw-space-6);
     }
     .back-btn {
       background: none;
@@ -181,13 +181,13 @@ interface RecentRun {
       background: var(--sw-surface);
       border: 1px solid var(--sw-border);
       border-radius: var(--sw-radius-lg);
-      padding: 20px 24px;
-      margin-bottom: 16px;
+      padding: var(--sw-space-5) var(--sw-space-6);
+      margin-bottom: var(--sw-space-4);
       box-shadow: var(--sw-shadow-sm);
     }
     .card h2 {
-      margin: 0 0 16px;
-      font-size: 17px;
+      margin: 0 0 var(--sw-space-4);
+      font-size: 18px;
     }
     .hint {
       margin: -8px 0 16px;
@@ -241,9 +241,9 @@ interface RecentRun {
       font-size: 13px;
     }
     .alert.error {
-      background: #fef2f2;
-      color: #b91c1c;
-      border: 1px solid #fecaca;
+      background: var(--sw-color-danger-soft);
+      color: var(--sw-color-danger);
+      border: 1px solid color-mix(in srgb, var(--sw-color-danger) 30%, var(--sw-border));
     }
     .footer {
       display: flex;
@@ -296,6 +296,7 @@ interface RecentRun {
     }
     .recent-item {
       display: flex;
+      white-space: normal;
       justify-content: space-between;
       align-items: center;
       padding: 12px 16px;
@@ -306,10 +307,13 @@ interface RecentRun {
       text-align: left;
       font: inherit;
       color: inherit;
-      transition: border-color 0.15s;
+      transition:
+        border-color var(--sw-motion-fast) var(--sw-ease-standard),
+        background-color var(--sw-motion-fast) var(--sw-ease-standard);
     }
     .recent-item:hover {
       border-color: var(--sw-color-primary);
+      background: var(--sw-color-primary-faint);
     }
     .recent-main {
       display: flex;
@@ -343,17 +347,17 @@ interface RecentRun {
       color: var(--sw-text-muted);
     }
     .recent-status.rs-success {
-      background: #dcfce7;
-      color: #166534;
+      background: var(--sw-color-success-soft);
+      color: var(--sw-color-success);
     }
     .recent-status.rs-failed {
-      background: #fee2e2;
-      color: #991b1b;
+      background: var(--sw-color-danger-soft);
+      color: var(--sw-color-danger);
     }
     .recent-status.rs-queued,
     .recent-status.rs-running {
-      background: #dbeafe;
-      color: #1e40af;
+      background: var(--sw-color-info-soft);
+      color: var(--sw-color-info);
     }
     @media (max-width: 600px) {
       .param-grid {
@@ -362,6 +366,14 @@ interface RecentRun {
       .footer {
         flex-direction: column;
         align-items: stretch;
+      }
+      .card {
+        padding: var(--sw-space-4);
+      }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .spinner {
+        animation: none;
       }
     }
   `,

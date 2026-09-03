@@ -26,7 +26,15 @@ import { FengtaiStage } from './fengtai-leakage.models';
         >
           <span class="ordinal">{{ index + 1 }}</span>
           <span class="title">{{ stage.title || stage.name || '分析环节' }}</span>
-          <span class="state">{{ isComplete(stage) ? '已完成' : '待完成' }}</span>
+          <span class="state">{{
+            isSelected(stage, index)
+              ? isComplete(stage)
+                ? '当前查看 · 已完成'
+                : '当前查看 · 待完成'
+              : isComplete(stage)
+                ? '已完成'
+                : '待完成'
+          }}</span>
         </button>
       }
     </nav>
@@ -48,25 +56,32 @@ import { FengtaiStage } from './fengtai-leakage.models';
       column-gap: 7px;
       row-gap: 3px;
       text-align: left;
-      border: 1px solid #cbd5e1;
-      border-radius: 8px;
-      background: #fff;
-      color: #475569;
+      position: relative;
+      border: 1px solid var(--sw-border);
+      border-radius: var(--sw-radius-sm);
+      background: var(--sw-surface);
+      color: var(--sw-text-secondary);
       cursor: pointer;
       font: inherit;
+      transition:
+        border-color 120ms ease,
+        background 120ms ease,
+        box-shadow 120ms ease;
     }
     .stage:hover {
-      border-color: #0f766e;
-      background: #f0fdfa;
+      border-color: color-mix(in srgb, var(--sw-color-secondary) 55%, var(--sw-border));
+      background: var(--sw-color-secondary-soft);
     }
     .stage:focus-visible {
-      outline: 3px solid rgba(13, 148, 136, 0.28);
+      outline: 3px solid color-mix(in srgb, var(--sw-focus) 28%, transparent);
       outline-offset: 2px;
     }
     .stage.selected {
-      border-color: #0f766e;
-      background: #ecfdf5;
-      box-shadow: inset 0 0 0 1px #0f766e;
+      border-color: var(--sw-color-secondary);
+      background: var(--sw-color-secondary-soft);
+      box-shadow:
+        inset 3px 0 0 var(--sw-color-secondary),
+        0 3px 10px rgb(15 118 110 / 8%);
     }
     .ordinal {
       grid-row: span 2;
@@ -75,30 +90,36 @@ import { FengtaiStage } from './fengtai-leakage.models';
       width: 24px;
       height: 24px;
       border-radius: 50%;
-      background: #e2e8f0;
-      color: #475569;
+      border: 1px solid var(--sw-border);
+      background: var(--sw-surface-sunken);
+      color: var(--sw-text-secondary);
       font-size: 12px;
       font-weight: 700;
     }
     .complete .ordinal {
-      background: #0f766e;
+      border-color: var(--sw-color-secondary);
+      background: var(--sw-color-secondary);
       color: #fff;
     }
     .title {
       min-width: 0;
-      color: #1e293b;
+      color: var(--sw-text-primary);
       font-size: 12px;
       font-weight: 700;
       line-height: 1.35;
       overflow-wrap: anywhere;
     }
     .state {
-      color: #64748b;
+      color: var(--sw-text-muted);
       font-size: 11px;
       line-height: 1.25;
     }
     .complete .state {
-      color: #0f766e;
+      color: var(--sw-color-secondary-strong);
+    }
+    .selected .title,
+    .selected .state {
+      color: var(--sw-color-secondary-strong);
     }
     @media (max-width: 760px) {
       .rail {

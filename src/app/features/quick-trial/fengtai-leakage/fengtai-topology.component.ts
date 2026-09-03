@@ -31,6 +31,11 @@ import {
       height: 410px;
       min-height: 300px;
     }
+    @media (max-width: 600px) {
+      .host {
+        height: 340px;
+      }
+    }
   `,
 })
 export class FengtaiTopologyComponent implements AfterViewInit, OnChanges, OnDestroy {

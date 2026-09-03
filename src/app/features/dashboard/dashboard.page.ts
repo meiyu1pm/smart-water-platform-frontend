@@ -249,19 +249,25 @@ export function workloadLabel(level: PortalWorkloadLevel): string {
       margin: 0;
     }
     .hero {
+      position: relative;
+      overflow: hidden;
       display: flex;
       justify-content: space-between;
       align-items: flex-end;
       gap: 24px;
       padding: 26px;
       border-radius: var(--sw-radius-lg);
-      background: linear-gradient(125deg, #073763, #0f6f8f 68%, #168aa2);
+      border: 1px solid rgb(120 214 230 / 22%);
+      background:
+        radial-gradient(circle at 88% -35%, rgb(115 219 233 / 34%), transparent 300px),
+        linear-gradient(125deg, #06384e, #09627b 68%, #0d7b8e);
       color: white;
       box-shadow: var(--sw-shadow-md);
     }
     .hero h1 {
       margin: 4px 0 8px;
       font-size: clamp(26px, 3vw, 38px);
+      color: white;
     }
     .hero p:not(.eyebrow) {
       max-width: 680px;
@@ -321,6 +327,13 @@ export function workloadLabel(level: PortalWorkloadLevel): string {
       border-radius: var(--sw-radius-md);
       background: var(--sw-surface);
       box-shadow: var(--sw-shadow-sm);
+      transition:
+        border-color var(--sw-motion-fast) var(--sw-ease-standard),
+        box-shadow var(--sw-motion-fast) var(--sw-ease-standard);
+    }
+    .stats article:hover {
+      border-color: color-mix(in srgb, var(--sw-color-primary) 35%, var(--sw-border));
+      box-shadow: var(--sw-shadow-md);
     }
     .stats span,
     .stats small {
@@ -332,6 +345,8 @@ export function workloadLabel(level: PortalWorkloadLevel): string {
       display: block;
       margin: 7px 0 5px;
       font-size: 28px;
+      font-variant-numeric: tabular-nums;
+      letter-spacing: -0.035em;
     }
     .workload {
       display: grid;
@@ -486,6 +501,7 @@ export function workloadLabel(level: PortalWorkloadLevel): string {
     }
     .resource-list > a:hover {
       border-color: var(--sw-color-primary);
+      background: var(--sw-color-primary-faint);
     }
     .resource-list > a > span {
       min-width: 0;

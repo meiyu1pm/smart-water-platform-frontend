@@ -91,7 +91,7 @@ interface IssueItem {
           <div class="metric-card">
             <div class="metric-header">
               <small>资产状态</small>
-              <span class="metric-icon">●</span>
+              <span class="metric-marker status" aria-hidden="true"></span>
             </div>
             <div class="status-wrap">
               <app-status-chip [status]="item.status || 'active'" />
@@ -100,7 +100,7 @@ interface IssueItem {
           <div class="metric-card">
             <div class="metric-header">
               <small>演进版本数</small>
-              <span class="metric-icon">🌳</span>
+              <span class="metric-marker versions" aria-hidden="true"></span>
             </div>
             <div class="metric-val">
               <strong>{{ item.version_count || versions().length }}</strong>
@@ -110,7 +110,7 @@ interface IssueItem {
           <div class="metric-card">
             <div class="metric-header">
               <small>监测通道数</small>
-              <span class="metric-icon">📈</span>
+              <span class="metric-marker channels" aria-hidden="true"></span>
             </div>
             <div class="metric-val">
               <strong>{{ item.channel_count || channels().length }}</strong>
@@ -120,7 +120,7 @@ interface IssueItem {
           <div class="metric-card">
             <div class="metric-header">
               <small>最新综合质量</small>
-              <span class="metric-icon">✨</span>
+              <span class="metric-marker quality" aria-hidden="true"></span>
             </div>
             <div class="metric-val">
               <strong>{{
@@ -140,7 +140,7 @@ interface IssueItem {
             <div class="panel graph-panel">
               <div class="panel-header">
                 <div>
-                  <h3>数据血缘与演进拓扑 (Data Lineage)</h3>
+                  <h3>数据血缘与演进拓扑</h3>
                   <p class="panel-sub">
                     点击拓扑节点可切换右侧对应版本的详细指标、质量评估与监测通道
                   </p>
@@ -172,7 +172,11 @@ interface IssueItem {
                     <div
                       class="timeline-card"
                       [class.active]="selectedVersion()?.id === candidate.id"
+                      role="button"
+                      tabindex="0"
                       (click)="selectVersion(candidate)"
+                      (keydown.enter)="selectVersion(candidate)"
+                      (keydown.space)="$event.preventDefault(); selectVersion(candidate)"
                     >
                       <div class="card-top">
                         <span
@@ -860,9 +864,261 @@ interface IssueItem {
       font-size: 13px;
     }
 
+    /* Detail workbench visual layer: the lineage remains the primary canvas,
+       with selected-version evidence grouped in a stable inspection rail. */
+    .breadcrumb {
+      color: var(--sw-text-muted);
+    }
+    .crumb-link {
+      color: var(--sw-color-primary-strong);
+    }
+    .crumb-sep {
+      color: var(--sw-border-strong);
+    }
+    .crumb-current,
+    .asset-desc {
+      color: var(--sw-text-secondary);
+    }
+    .title-with-tag h1,
+    .panel-header h3,
+    .inspect-panel h2,
+    .metric-val strong,
+    .meta-box strong,
+    .big-score,
+    .dim-labels b,
+    .ch-title {
+      color: var(--sw-text-primary);
+    }
+    .source-tag {
+      border: 1px solid color-mix(in srgb, var(--sw-color-primary) 20%, var(--sw-border));
+      border-radius: var(--sw-radius-xs);
+      background: var(--sw-color-primary-soft);
+      color: var(--sw-color-primary-strong);
+    }
+    .source-tag.csv {
+      border-color: color-mix(in srgb, var(--sw-color-success) 22%, var(--sw-border));
+      background: var(--sw-color-success-soft);
+      color: var(--sw-color-secondary-strong);
+    }
+    .metric-card {
+      position: relative;
+      overflow: hidden;
+      border-color: var(--sw-border);
+      border-radius: var(--sw-radius-lg);
+      background: linear-gradient(145deg, var(--sw-surface) 58%, var(--sw-color-primary-faint));
+      box-shadow: var(--sw-shadow-sm);
+    }
+    .metric-card::before {
+      position: absolute;
+      inset: 0 auto 0 0;
+      width: 3px;
+      background: var(--sw-color-secondary);
+      content: '';
+    }
+    .metric-header small,
+    .metric-sub,
+    .panel-sub,
+    .eval-time,
+    .score-subtext,
+    .issue-title,
+    .ch-detail,
+    .card-body small,
+    .lineage-footer-info {
+      color: var(--sw-text-muted);
+    }
+    .metric-marker {
+      position: relative;
+      display: inline-grid;
+      place-items: center;
+      width: 26px;
+      height: 26px;
+      border-radius: 8px;
+      background: var(--sw-color-primary-soft);
+    }
+    .metric-marker::before {
+      width: 8px;
+      height: 8px;
+      border: 2px solid var(--sw-color-primary);
+      border-radius: 50%;
+      content: '';
+    }
+    .metric-marker.versions::before {
+      width: 12px;
+      height: 10px;
+      border-width: 0 0 2px 2px;
+      border-radius: 0;
+      transform: skewY(-26deg);
+    }
+    .metric-marker.channels::before {
+      width: 14px;
+      height: 9px;
+      border-width: 0 0 2px;
+      border-radius: 0;
+      background: linear-gradient(135deg, transparent 42%, var(--sw-color-primary) 43% 56%, transparent 57%);
+    }
+    .metric-marker.quality {
+      background: var(--sw-color-success-soft);
+    }
+    .metric-marker.quality::before {
+      border-color: var(--sw-color-success);
+      border-radius: 2px;
+      transform: rotate(45deg);
+    }
+    .panel {
+      border-color: var(--sw-border);
+      border-radius: var(--sw-radius-lg);
+      background: var(--sw-surface);
+      box-shadow: var(--sw-shadow-sm);
+    }
+    .graph-panel {
+      min-height: 640px;
+    }
+    .side-column {
+      position: sticky;
+      top: 16px;
+    }
+    .inspect-panel {
+      border-top: 3px solid var(--sw-color-primary);
+    }
+    .eyebrow,
+    .info-item code {
+      color: var(--sw-color-primary-strong);
+    }
+    .primary-pill {
+      border: 1px solid color-mix(in srgb, var(--sw-color-primary) 20%, var(--sw-border));
+      border-radius: 999px;
+      background: var(--sw-color-primary-soft);
+      color: var(--sw-color-primary-strong);
+    }
+    .version-note,
+    .meta-box,
+    .quality-score-hero,
+    .channel-card {
+      border-color: var(--sw-border);
+      background: var(--sw-surface-sunken);
+    }
+    .version-note {
+      border-left-color: var(--sw-color-primary);
+      color: var(--sw-text-secondary);
+    }
+    .meta-box {
+      min-height: 58px;
+      border-radius: var(--sw-radius-sm);
+    }
+    .meta-box small,
+    .meta-box span,
+    .big-score small,
+    .dim-labels,
+    .card-body span {
+      color: var(--sw-text-muted);
+    }
+    .meta-box code {
+      color: var(--sw-color-primary-strong);
+    }
+    .quality-score-hero {
+      border-left: 3px solid var(--sw-color-success);
+      border-radius: var(--sw-radius-md);
+    }
+    .grade-circle {
+      background: var(--sw-color-success);
+      box-shadow: none;
+    }
+    .grade-circle[data-grade='B'] {
+      background: var(--sw-color-primary);
+      box-shadow: none;
+    }
+    .grade-circle[data-grade='C'] {
+      background: var(--sw-color-warning);
+      box-shadow: none;
+    }
+    .grade-circle[data-grade='D'] {
+      background: var(--sw-color-danger);
+      box-shadow: none;
+    }
+    .progress-track {
+      height: 7px;
+      background: var(--sw-surface-muted);
+    }
+    .progress-bar {
+      transition: width var(--sw-motion-base) var(--sw-ease-standard);
+    }
+    .progress-bar.high {
+      background: var(--sw-color-success);
+    }
+    .progress-bar.medium {
+      background: var(--sw-color-primary);
+    }
+    .progress-bar.low {
+      background: var(--sw-color-warning);
+    }
+    .issue-section,
+    .version-timeline-grid,
+    .lineage-footer-info {
+      border-color: var(--sw-border);
+    }
+    .issue-chip,
+    .ch-pill.raw {
+      border: 1px solid var(--sw-border);
+      background: var(--sw-color-neutral-soft);
+      color: var(--sw-text-secondary);
+    }
+    .ch-pill.processed {
+      border: 1px solid color-mix(in srgb, var(--sw-color-success) 22%, var(--sw-border));
+      background: var(--sw-color-success-soft);
+      color: var(--sw-color-secondary-strong);
+    }
+    .channel-card {
+      min-height: 48px;
+      border-radius: var(--sw-radius-sm);
+    }
+    .timeline-card {
+      border-color: var(--sw-border);
+      border-radius: var(--sw-radius-md);
+      background: var(--sw-surface);
+      transition:
+        border-color var(--sw-motion-fast) var(--sw-ease-standard),
+        background-color var(--sw-motion-fast) var(--sw-ease-standard),
+        box-shadow var(--sw-motion-fast) var(--sw-ease-standard);
+    }
+    .timeline-card:hover {
+      border-color: color-mix(in srgb, var(--sw-color-primary) 35%, var(--sw-border));
+      transform: none;
+      box-shadow: var(--sw-shadow-sm);
+    }
+    .timeline-card.active {
+      border-color: var(--sw-color-accent);
+      background: var(--sw-color-accent-soft);
+      box-shadow: 0 0 0 1px var(--sw-color-accent);
+    }
+    .v-badge {
+      background: var(--sw-color-primary-soft);
+      color: var(--sw-color-primary-strong);
+    }
+    .v-badge.derived {
+      background: var(--sw-color-success-soft);
+      color: var(--sw-color-secondary-strong);
+    }
+    .empty-quality,
+    .empty-report,
+    .empty {
+      border: 1px dashed var(--sw-border-strong);
+      border-radius: var(--sw-radius-md);
+      background: var(--sw-surface-sunken);
+      color: var(--sw-text-muted);
+    }
+    button:focus-visible,
+    a:focus-visible,
+    .timeline-card:focus-visible {
+      outline: 2px solid var(--sw-focus);
+      outline-offset: 2px;
+    }
+
     @media (max-width: 1024px) {
       .workspace-grid {
         grid-template-columns: 1fr;
+      }
+      .side-column {
+        position: static;
       }
       .summary-grid {
         grid-template-columns: 1fr 1fr;
@@ -894,13 +1150,13 @@ export class DatasetDetailPage {
   readonly showHistory = signal(false);
 
   private readonly dimensionNameMap: Record<string, string> = {
-    completeness: '数据完整性 (Completeness)',
-    continuity: '时序连续性 (Continuity)',
-    validity: '数值有效性 (Validity)',
-    stability: '时序平稳性 (Stability)',
-    timeliness: '采集及时性 (Timeliness)',
-    consistency: '跨通道一致性 (Consistency)',
-    uniqueness: '记录唯一性 (Uniqueness)',
+    completeness: '数据完整性',
+    continuity: '时序连续性',
+    validity: '数值有效性',
+    stability: '时序平稳性',
+    timeliness: '采集及时性',
+    consistency: '跨通道一致性',
+    uniqueness: '记录唯一性',
   };
 
   private readonly issueLabelMap: Record<string, string> = {

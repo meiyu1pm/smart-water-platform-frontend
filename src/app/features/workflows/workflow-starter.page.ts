@@ -73,7 +73,7 @@ import { NotificationService } from '../../core/services/notification.service';
   styles: `
     :host {
       display: block;
-      color: #172033;
+      color: var(--sw-text-primary);
     }
     h1,
     h2,
@@ -81,7 +81,8 @@ import { NotificationService } from '../../core/services/notification.service';
       margin: 0;
     }
     h1 {
-      font-size: 32px;
+      font-size: clamp(27px, 2.4vw, 34px);
+      letter-spacing: -0.025em;
       margin-top: 4px;
     }
     h2 {
@@ -95,30 +96,31 @@ import { NotificationService } from '../../core/services/notification.service';
       margin-bottom: 20px;
     }
     .eyebrow {
-      color: #2563eb;
+      color: var(--sw-color-primary);
       font-size: 11px;
       font-weight: 800;
       letter-spacing: 0.08em;
     }
     .lead,
     .muted {
-      color: #667085;
+      color: var(--sw-text-muted);
     }
     .form-card {
       display: grid;
       grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
       gap: 16px;
-      background: #fff;
-      border: 1px solid #e4e7ec;
-      border-radius: 14px;
+      background: var(--sw-surface);
+      border: 1px solid var(--sw-border);
+      border-radius: var(--sw-radius-lg);
       padding: 20px;
       margin-bottom: 18px;
+      box-shadow: var(--sw-shadow-sm);
     }
     label {
       display: flex;
       flex-direction: column;
       gap: 7px;
-      color: #344054;
+      color: var(--sw-text-secondary);
       font-size: 13px;
       font-weight: 700;
     }
@@ -126,11 +128,12 @@ import { NotificationService } from '../../core/services/notification.service';
     textarea {
       width: 100%;
       box-sizing: border-box;
-      border: 1px solid #d0d5dd;
-      border-radius: 9px;
+      border: 1px solid var(--sw-border-strong);
+      border-radius: var(--sw-radius-sm);
       padding: 11px 12px;
       font: inherit;
-      color: #172033;
+      color: var(--sw-text-primary);
+      background: var(--sw-surface);
       resize: vertical;
     }
     .template-grid {
@@ -145,17 +148,20 @@ import { NotificationService } from '../../core/services/notification.service';
       gap: 13px;
       min-width: 0;
       padding: 18px;
-      border: 1px solid #dfe5ee;
-      background: #fff;
-      border-radius: 14px;
-      color: #172033;
+      border: 1px solid var(--sw-border);
+      background: var(--sw-surface);
+      border-radius: var(--sw-radius-lg);
+      color: var(--sw-text-primary);
       cursor: pointer;
-      box-shadow: 0 5px 15px rgba(16, 24, 40, 0.04);
+      box-shadow: var(--sw-shadow-sm);
+      transition:
+        border-color var(--sw-motion-fast) var(--sw-ease-standard),
+        box-shadow var(--sw-motion-fast) var(--sw-ease-standard);
     }
     .template-card:hover,
     .template-card.selected {
-      border-color: #0f67c9;
-      box-shadow: 0 0 0 3px #dcecff;
+      border-color: var(--sw-color-primary);
+      box-shadow: var(--sw-shadow-focus), var(--sw-shadow-sm);
     }
     .template-head {
       display: flex;
@@ -165,22 +171,22 @@ import { NotificationService } from '../../core/services/notification.service';
     .radio {
       width: 16px;
       height: 16px;
-      border: 2px solid #98a2b3;
+      border: 2px solid var(--sw-border-strong);
       border-radius: 50%;
       flex: 0 0 16px;
       box-sizing: border-box;
     }
     .radio.checked {
-      border: 5px solid #0f67c9;
+      border: 5px solid var(--sw-color-primary);
     }
     .count {
       margin-left: auto;
-      color: #667085;
+      color: var(--sw-text-muted);
       font-size: 12px;
       white-space: nowrap;
     }
     .template-card p {
-      color: #667085;
+      color: var(--sw-text-muted);
       line-height: 1.6;
       min-height: 52px;
     }
@@ -188,15 +194,16 @@ import { NotificationService } from '../../core/services/notification.service';
       display: flex;
       flex-direction: column;
       gap: 5px;
-      color: #667085;
+      color: var(--sw-text-muted);
       font-size: 12px;
       overflow-wrap: anywhere;
     }
     .message {
       padding: 11px 14px;
       border-radius: 9px;
-      background: #fff4d6;
-      color: #8a5b00;
+      border: 1px solid color-mix(in srgb, var(--sw-color-warning) 22%, var(--sw-border));
+      background: var(--sw-color-warning-soft);
+      color: var(--sw-color-warning);
       margin-bottom: 16px;
     }
     .footer {
@@ -208,20 +215,21 @@ import { NotificationService } from '../../core/services/notification.service';
     }
     button.primary,
     button.secondary {
-      border-radius: 9px;
+      min-height: 40px;
+      border-radius: var(--sw-radius-sm);
       padding: 11px 16px;
       font: inherit;
       cursor: pointer;
     }
     button.primary {
       border: 0;
-      background: #0f67c9;
-      color: #fff;
+      background: var(--sw-color-primary);
+      color: white;
     }
     button.secondary {
-      border: 1px solid #b6c5d9;
-      background: #fff;
-      color: #0f67c9;
+      border: 1px solid var(--sw-border-strong);
+      background: var(--sw-surface);
+      color: var(--sw-color-primary-strong);
     }
     button:disabled {
       opacity: 0.5;

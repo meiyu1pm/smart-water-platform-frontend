@@ -42,7 +42,7 @@ const roleOptions = ['admin', 'algorithm_operator', 'data_operator', 'basic_user
         ><button mat-flat-button (click)="openCreate()">创建用户</button>
       </div>
     </header>
-    <section class="filters">
+    <section class="filters" aria-label="用户筛选">
       <mat-form-field appearance="outline"
         ><mat-label>搜索用户</mat-label
         ><input matInput [(ngModel)]="query" (keyup.enter)="applyFilters()"
@@ -110,7 +110,10 @@ const roleOptions = ['admin', 'algorithm_operator', 'data_operator', 'basic_user
           }
         </article>
       } @empty {
-        <div class="empty">没有符合条件的用户。</div>
+        <div class="empty">
+          <strong>没有符合条件的用户</strong>
+          <span>调整搜索条件或角色、状态筛选后重试。</span>
+        </div>
       }
     </section>
     <footer class="pager">
@@ -242,7 +245,9 @@ const roleOptions = ['admin', 'algorithm_operator', 'data_operator', 'basic_user
             @if (user.status === 'pending_deletion') {
               <button mat-stroked-button (click)="restoreUser(user)">恢复账户及资源</button>
             } @else {
-              <button mat-stroked-button (click)="cancelUser(user)">注销账户</button>
+              <button class="danger-action" mat-stroked-button (click)="cancelUser(user)">
+                注销账户
+              </button>
             }
             <button mat-button (click)="editMode.set(!editMode())">
               {{ editMode() ? '查看信息' : '编辑信息' }}
@@ -271,12 +276,14 @@ const roleOptions = ['admin', 'algorithm_operator', 'data_operator', 'basic_user
     }
     .page-head {
       justify-content: space-between;
+      margin-bottom: var(--sw-space-5);
     }
     .eyebrow {
       margin: 0;
-      color: #0f4c81;
+      color: var(--sw-color-primary);
       font-size: 12px;
       font-weight: 800;
+      letter-spacing: 0.08em;
     }
     .page-head h1 {
       margin: 4px 0;
@@ -285,54 +292,65 @@ const roleOptions = ['admin', 'algorithm_operator', 'data_operator', 'basic_user
     .card-title p,
     .drawer p {
       margin: 0;
-      color: #64748b;
+      color: var(--sw-text-muted);
     }
     .filters {
-      margin: 20px 0;
+      margin: 0 0 var(--sw-space-4);
       flex-wrap: wrap;
+      padding: var(--sw-space-3) var(--sw-space-4);
+      border: 1px solid var(--sw-border);
+      border-radius: var(--sw-radius-md);
+      background: var(--sw-surface);
+      box-shadow: var(--sw-shadow-sm);
     }
     .filters mat-form-field {
       width: 210px;
+      margin-bottom: -20px;
     }
     .users-grid {
       display: grid;
       grid-template-columns: repeat(auto-fill, minmax(270px, 1fr));
-      gap: 14px;
+      gap: var(--sw-space-4);
     }
     .user-card {
       position: relative;
       min-width: 0;
       min-height: 190px;
       padding: 18px 18px 16px 23px;
-      background: #fff;
-      border: 1px solid #e2e8f0;
-      border-radius: 14px;
+      background: var(--sw-surface);
+      border: 1px solid var(--sw-border);
+      border-radius: var(--sw-radius-lg);
       overflow: hidden;
       box-sizing: border-box;
-      transition: 0.18s;
+      box-shadow: var(--sw-shadow-sm);
+      transition:
+        border-color var(--sw-motion-base) var(--sw-ease-standard),
+        box-shadow var(--sw-motion-base) var(--sw-ease-standard),
+        background-color var(--sw-motion-base) var(--sw-ease-standard);
     }
     .user-card:hover,
     .user-card.selected {
-      border-color: #93b9db;
-      box-shadow: 0 10px 28px #0f4c8118;
+      border-color: var(--sw-color-primary);
+      background: var(--sw-color-primary-faint);
+      box-shadow: var(--sw-shadow-md);
     }
     .role-stripe {
       position: absolute;
       inset: 0 auto 0 0;
       width: 6px;
-      background: #94a3b8;
+      background: var(--sw-border-strong);
     }
     .role-stripe[data-role='admin'] {
-      background: #7c3aed;
+      background: var(--sw-color-info);
     }
     .role-stripe[data-role='algorithm_operator'] {
-      background: #0f4c81;
+      background: var(--sw-color-primary);
     }
     .role-stripe[data-role='data_operator'] {
-      background: #059669;
+      background: var(--sw-color-secondary);
     }
     .role-stripe[data-role='basic_user'] {
-      background: #d97706;
+      background: var(--sw-color-accent);
     }
     .card-title {
       justify-content: space-between;
@@ -350,17 +368,17 @@ const roleOptions = ['admin', 'algorithm_operator', 'data_operator', 'basic_user
       padding: 3px 8px;
       border-radius: 999px;
       font-size: 12px;
-      background: #eef2f7;
-      color: #475569;
+      background: var(--sw-surface-sunken);
+      color: var(--sw-text-secondary);
     }
     .status[data-status='active'] {
-      background: #dcfce7;
-      color: #15803d;
+      background: var(--sw-color-success-soft);
+      color: var(--sw-color-success);
     }
     .status[data-status='pending_deletion'],
     .status[data-status='disabled'] {
-      background: #fee2e2;
-      color: #b91c1c;
+      background: var(--sw-color-danger-soft);
+      color: var(--sw-color-danger);
     }
     .roles {
       display: flex;
@@ -370,7 +388,7 @@ const roleOptions = ['admin', 'algorithm_operator', 'data_operator', 'basic_user
     }
     .counts {
       justify-content: space-between;
-      color: #64748b;
+      color: var(--sw-text-muted);
       font-size: 12px;
     }
     .counts span {
@@ -378,7 +396,7 @@ const roleOptions = ['admin', 'algorithm_operator', 'data_operator', 'basic_user
       gap: 2px;
     }
     .counts b {
-      color: #0f172a;
+      color: var(--sw-text-primary);
       font-size: 17px;
     }
     .hover-actions {
@@ -386,13 +404,16 @@ const roleOptions = ['admin', 'algorithm_operator', 'data_operator', 'basic_user
       right: 14px;
       bottom: 12px;
       padding: 6px;
-      background: #fffffff2;
+      background: color-mix(in srgb, var(--sw-surface) 94%, transparent);
       border-radius: 10px;
       opacity: 0;
       transform: translateY(5px);
-      transition: 0.18s;
+      transition:
+        opacity var(--sw-motion-base) var(--sw-ease-standard),
+        transform var(--sw-motion-base) var(--sw-ease-standard);
     }
-    .user-card:hover .hover-actions {
+    .user-card:hover .hover-actions,
+    .user-card:focus-within .hover-actions {
       opacity: 1;
       transform: none;
     }
@@ -411,10 +432,10 @@ const roleOptions = ['admin', 'algorithm_operator', 'data_operator', 'basic_user
       bottom: 18px;
       z-index: 20;
       padding: 8px 12px;
-      background: #fff;
-      border: 1px solid #dbe3ec;
-      border-radius: 14px;
-      box-shadow: 0 10px 30px #0f172a24;
+      background: var(--sw-surface-raised);
+      border: 1px solid var(--sw-border);
+      border-radius: var(--sw-radius-lg);
+      box-shadow: var(--sw-shadow-lg);
     }
     .batch-dock mat-form-field {
       width: 190px;
@@ -424,7 +445,7 @@ const roleOptions = ['admin', 'algorithm_operator', 'data_operator', 'basic_user
       position: fixed;
       inset: 0;
       z-index: 100;
-      background: #0f172a66;
+      background: color-mix(in srgb, var(--sw-text-primary) 42%, transparent);
       display: flex;
       justify-content: center;
       align-items: center;
@@ -432,9 +453,10 @@ const roleOptions = ['admin', 'algorithm_operator', 'data_operator', 'basic_user
     }
     .modal,
     .drawer {
-      background: #fff;
-      border-radius: 18px;
-      box-shadow: 0 24px 70px #0f172a33;
+      background: var(--sw-surface-raised);
+      border: 1px solid var(--sw-border);
+      border-radius: var(--sw-radius-xl);
+      box-shadow: var(--sw-shadow-lg);
       box-sizing: border-box;
     }
     .modal {
@@ -464,7 +486,7 @@ const roleOptions = ['admin', 'algorithm_operator', 'data_operator', 'basic_user
     .detail-status {
       justify-content: space-between;
       margin: 18px 0;
-      color: #64748b;
+      color: var(--sw-text-muted);
     }
     .resource-summary {
       display: grid;
@@ -474,29 +496,43 @@ const roleOptions = ['admin', 'algorithm_operator', 'data_operator', 'basic_user
     .resource-summary div {
       display: grid;
       padding: 14px;
-      background: #f8fafc;
-      border-radius: 12px;
+      background: var(--sw-surface-muted);
+      border: 1px solid var(--sw-border);
+      border-radius: var(--sw-radius-md);
     }
     .resource-summary b {
       font-size: 24px;
     }
     .resource-summary span,
     .permission-copy {
-      color: #64748b;
+      color: var(--sw-text-muted);
     }
     .danger-zone {
       justify-content: space-between;
       margin-top: 30px;
       padding-top: 18px;
-      border-top: 1px solid #e2e8f0;
+      border-top: 1px solid var(--sw-border);
     }
     .empty {
       grid-column: 1/-1;
       padding: 48px;
       text-align: center;
-      background: #fff;
-      border-radius: 14px;
-      color: #64748b;
+      background: var(--sw-surface);
+      border: 1px dashed var(--sw-border-strong);
+      border-radius: var(--sw-radius-lg);
+      color: var(--sw-text-muted);
+    }
+    .empty strong,
+    .empty span {
+      display: block;
+    }
+    .empty strong {
+      margin-bottom: var(--sw-space-1);
+      color: var(--sw-text-secondary);
+    }
+    .danger-action {
+      color: var(--sw-color-danger) !important;
+      border-color: color-mix(in srgb, var(--sw-color-danger) 45%, var(--sw-border)) !important;
     }
     @media (max-width: 800px) {
       .page-head {
@@ -519,6 +555,12 @@ const roleOptions = ['admin', 'algorithm_operator', 'data_operator', 'basic_user
       }
       .resource-summary {
         grid-template-columns: 1fr;
+      }
+      .users-grid {
+        grid-template-columns: 1fr;
+      }
+      .head-actions {
+        flex-wrap: wrap;
       }
     }
   `,

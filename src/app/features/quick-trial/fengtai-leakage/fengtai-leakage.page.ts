@@ -12,7 +12,6 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
 import { MatFormFieldModule } from '@angular/material/form-field';
-import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatProgressBarModule } from '@angular/material/progress-bar';
 import { MatSelectModule } from '@angular/material/select';
@@ -34,6 +33,7 @@ import { FengtaiStageResultComponent } from './fengtai-stage-result.component';
 import { FengtaiTopologyComponent } from './fengtai-topology.component';
 import { FengtaiTimelineControlComponent } from './fengtai-timeline-control.component';
 import { fengtaiLabel, fengtaiMetricValue } from './fengtai-labels';
+import { SwIconComponent } from '../../../shared/components/sw-icon.component';
 
 @Component({
   selector: 'app-fengtai-leakage-page',
@@ -43,7 +43,6 @@ import { fengtaiLabel, fengtaiMetricValue } from './fengtai-labels';
     FormsModule,
     MatButtonModule,
     MatFormFieldModule,
-    MatIconModule,
     MatProgressSpinnerModule,
     MatProgressBarModule,
     MatSelectModule,
@@ -52,6 +51,7 @@ import { fengtaiLabel, fengtaiMetricValue } from './fengtai-labels';
     FengtaiTopologyComponent,
     FengtaiAssetDetailComponent,
     FengtaiTimelineControlComponent,
+    SwIconComponent,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
@@ -62,50 +62,68 @@ import { fengtaiLabel, fengtaiMetricValue } from './fengtai-labels';
           <h1>{{ manifest()?.community || '丰泰风光苑' }}漏损闭环</h1>
           <p>数据质量、日内变化、水量平衡与重点管段分析。</p>
         </div>
+        <div class="hero-context" aria-label="闭环分析能力">
+          <span><app-sw-icon name="workflow" [size]="16" />8 步分析闭环</span>
+          <span><app-sw-icon name="scene" [size]="16" />管网拓扑联动</span>
+        </div>
       </section>
 
       <section class="toolbar" aria-label="分析策略与窗口选择">
-        <mat-form-field appearance="outline"
-          ><mat-label>分析策略</mat-label
-          ><mat-select [(ngModel)]="preset">
-            @for (item of presets(); track item.id) {
-              <mat-option [value]="item.id">{{ item.label }}</mat-option>
-            }
-          </mat-select></mat-form-field
-        >
-        <label>开始日期<input type="date" [(ngModel)]="startDate" /></label>
-        <label>结束日期<input type="date" [(ngModel)]="endDate" /></label>
-        <button
-          mat-flat-button
-          color="primary"
-          type="button"
-          [disabled]="analyzing()"
-          (click)="runAnalysis()"
-        >
-          <mat-icon>play_arrow</mat-icon>{{ analyzing() ? '正在分析…' : '运行分析' }}
-        </button>
+        <div class="toolbar-heading">
+          <strong>分析窗口</strong>
+          <span>选择策略和日期范围后运行</span>
+        </div>
+        <div class="toolbar-fields">
+          <mat-form-field appearance="outline"
+            ><mat-label>分析策略</mat-label
+            ><mat-select [(ngModel)]="preset">
+              @for (item of presets(); track item.id) {
+                <mat-option [value]="item.id">{{ item.label }}</mat-option>
+              }
+            </mat-select></mat-form-field
+          >
+          <label>开始日期<input type="date" [(ngModel)]="startDate" /></label>
+          <label>结束日期<input type="date" [(ngModel)]="endDate" /></label>
+          <button
+            mat-flat-button
+            color="primary"
+            type="button"
+            [disabled]="analyzing()"
+            [attr.aria-busy]="analyzing()"
+            (click)="runAnalysis()"
+          >
+            <app-sw-icon name="play" [size]="17" />{{
+              analyzing() ? '正在分析…' : '运行分析'
+            }}
+          </button>
+        </div>
       </section>
       @if (analyzing()) {
-        <section class="running">
+        <section class="running" role="status" aria-live="polite">
           <div><strong>正在分析</strong><span>正在处理所选时间范围的数据。</span></div>
           <mat-progress-bar mode="indeterminate"></mat-progress-bar>
         </section>
       }
       @if (error()) {
-        <div class="error">
-          <mat-icon>info</mat-icon><span>{{ error() }}</span
+        <div class="error" role="alert">
+          <app-sw-icon name="info" [size]="18" /><span>{{ error() }}</span
           ><button mat-button type="button" (click)="loadInitial()">重试</button>
         </div>
       }
 
       @if (initialLoading()) {
-        <section class="loading">
-          <mat-spinner diameter="30"></mat-spinner><span>正在加载分析数据…</span>
+        <section class="loading" role="status" aria-live="polite">
+          <mat-spinner diameter="30"></mat-spinner>
+          <div class="loading-copy">
+            <strong>正在准备漏损闭环</strong>
+            <span>加载试用范围与管网概览…</span>
+          </div>
         </section>
       } @else {
         <section class="flow">
           <div>
             <h2>闭环过程</h2>
+            <p>选择步骤查看对应的分析结果</p>
           </div>
           <app-fengtai-process-rail
             [stages]="stages()"
@@ -126,11 +144,19 @@ import { fengtaiLabel, fengtaiMetricValue } from './fengtai-labels';
           <section class="empty">
             <div>
               <strong>选择分析窗口并运行</strong>
+              <span>分析完成后将展示质量、异常、水量平衡与重点管段结果。</span>
             </div>
           </section>
         }
 
         <section class="stage-workspace">
+          <header class="workspace-heading">
+            <div>
+              <span>当前步骤</span>
+              <h2>{{ selectedStageTitle() }}</h2>
+            </div>
+            <span class="stage-position">{{ selectedStagePosition() }} / {{ stages().length }}</span>
+          </header>
           <app-fengtai-stage-result
             [selectedCode]="selectedStageCode()"
             [analysis]="analysis()"
@@ -227,24 +253,31 @@ import { fengtaiLabel, fengtaiMetricValue } from './fengtai-labels';
       display: block;
     }
     .page {
-      max-width: 1440px;
+      max-width: var(--sw-content-max);
       margin: 0 auto;
       padding: 24px;
       display: grid;
       gap: 18px;
-      color: #1e293b;
+      color: var(--sw-text-primary);
     }
     .hero {
       display: flex;
+      align-items: center;
       justify-content: space-between;
       gap: 24px;
       padding: 22px 24px;
-      border-radius: 12px;
-      background: linear-gradient(115deg, #073b4c, #0f766e);
+      position: relative;
+      overflow: hidden;
+      border: 1px solid color-mix(in srgb, var(--sw-color-secondary) 35%, transparent);
+      border-radius: var(--sw-radius-lg);
+      background:
+        radial-gradient(circle at 88% -20%, rgb(104 229 216 / 26%), transparent 280px),
+        linear-gradient(118deg, #063747, #0b655f 72%, #0f7b72);
       color: white;
+      box-shadow: var(--sw-shadow-md);
     }
     .eyebrow {
-      color: #99f6e4;
+      color: #a7f3e7;
       font-size: 12px;
       font-weight: 700;
       letter-spacing: 0.08em;
@@ -254,21 +287,59 @@ import { fengtaiLabel, fengtaiMetricValue } from './fengtai-labels';
       font-size: 25px;
       letter-spacing: 0.01em;
     }
+    .hero h1 {
+      color: white;
+    }
     .hero p {
       margin: 0;
       max-width: 720px;
-      color: #d5f5ee;
+      color: #d8f5ef;
       font-size: 14px;
       line-height: 1.65;
     }
+    .hero-context {
+      min-width: 180px;
+      display: grid;
+      gap: 7px;
+      padding-left: 20px;
+      border-left: 1px solid rgb(216 245 239 / 35%);
+    }
+    .hero-context span {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      color: #d8f5ef;
+      font-size: 12px;
+      font-weight: 650;
+    }
     .toolbar {
-      display: flex;
-      gap: 12px;
+      display: grid;
+      grid-template-columns: 155px minmax(0, 1fr);
+      gap: 16px;
       align-items: center;
       padding: 14px 16px;
-      border: 1px solid #dbe4ea;
-      border-radius: 10px;
-      background: #fff;
+      border: 1px solid var(--sw-border);
+      border-radius: var(--sw-radius-md);
+      background: var(--sw-surface);
+      box-shadow: var(--sw-shadow-sm);
+    }
+    .toolbar-heading {
+      display: grid;
+      gap: 3px;
+    }
+    .toolbar-heading strong {
+      font-size: 14px;
+    }
+    .toolbar-heading span {
+      color: var(--sw-text-muted);
+      font-size: 11px;
+    }
+    .toolbar-fields {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 10px;
+      min-width: 0;
     }
     mat-form-field {
       min-width: 185px;
@@ -277,38 +348,39 @@ import { fengtaiLabel, fengtaiMetricValue } from './fengtai-labels';
     label {
       display: grid;
       gap: 4px;
-      color: #64748b;
+      color: var(--sw-text-muted);
       font-size: 11px;
     }
     input {
       height: 34px;
       padding: 0 8px;
-      border: 1px solid #cbd5e1;
-      border-radius: 5px;
-      color: #334155;
+      border: 1px solid var(--sw-border-strong);
+      border-radius: var(--sw-radius-xs);
+      color: var(--sw-text-primary);
+      background: var(--sw-surface);
       font: inherit;
     }
-    button mat-icon {
-      margin-right: 4px;
+    button app-sw-icon {
+      margin-right: 6px;
     }
     .running {
       display: grid;
       gap: 9px;
       padding: 12px 16px;
-      border: 1px solid #bae6fd;
-      border-radius: 9px;
-      background: #f0f9ff;
+      border: 1px solid color-mix(in srgb, var(--sw-color-info) 28%, var(--sw-border));
+      border-radius: var(--sw-radius-sm);
+      background: var(--sw-color-info-soft);
     }
     .running div {
       display: grid;
       gap: 3px;
     }
     .running strong {
-      color: #075985;
+      color: var(--sw-color-primary-strong);
       font-size: 13px;
     }
     .running span {
-      color: #64748b;
+      color: var(--sw-text-secondary);
       font-size: 12px;
     }
     .error {
@@ -316,10 +388,10 @@ import { fengtaiLabel, fengtaiMetricValue } from './fengtai-labels';
       gap: 8px;
       align-items: center;
       padding: 10px 12px;
-      border: 1px solid #fed7aa;
-      background: #fff7ed;
-      color: #9a3412;
-      border-radius: 8px;
+      border: 1px solid color-mix(in srgb, var(--sw-color-warning) 32%, var(--sw-border));
+      background: var(--sw-color-warning-soft);
+      color: var(--sw-color-warning);
+      border-radius: var(--sw-radius-sm);
       font-size: 13px;
     }
     .loading,
@@ -329,10 +401,22 @@ import { fengtaiLabel, fengtaiMetricValue } from './fengtai-labels';
       gap: 12px;
       justify-content: center;
       align-items: center;
-      border: 1px dashed #cbd5e1;
-      border-radius: 10px;
-      color: #64748b;
+      border: 1px dashed var(--sw-border-strong);
+      border-radius: var(--sw-radius-md);
+      color: var(--sw-text-muted);
+      background: var(--sw-surface-muted);
       font-size: 13px;
+    }
+    .loading-copy {
+      display: grid;
+      gap: 3px;
+    }
+    .loading-copy strong {
+      color: var(--sw-text-primary);
+    }
+    .loading-copy span {
+      color: var(--sw-text-muted);
+      font-size: 12px;
     }
     .empty {
       justify-content: flex-start;
@@ -343,7 +427,7 @@ import { fengtaiLabel, fengtaiMetricValue } from './fengtai-labels';
       gap: 4px;
     }
     .empty strong {
-      color: #334155;
+      color: var(--sw-text-primary);
     }
     .empty span {
       font-size: 12px;
@@ -352,9 +436,10 @@ import { fengtaiLabel, fengtaiMetricValue } from './fengtai-labels';
       display: grid;
       gap: 12px;
       padding: 16px;
-      border: 1px solid #dbe4ea;
-      border-radius: 10px;
-      background: #fff;
+      border: 1px solid var(--sw-border);
+      border-radius: var(--sw-radius-md);
+      background: var(--sw-surface);
+      box-shadow: var(--sw-shadow-sm);
     }
     h2 {
       font-size: 15px;
@@ -362,7 +447,7 @@ import { fengtaiLabel, fengtaiMetricValue } from './fengtai-labels';
     }
     .flow p {
       margin: 4px 0 0;
-      color: #64748b;
+      color: var(--sw-text-muted);
       font-size: 12px;
     }
     .kpis {
@@ -371,27 +456,59 @@ import { fengtaiLabel, fengtaiMetricValue } from './fengtai-labels';
       gap: 10px;
     }
     .kpis article {
-      padding: 13px;
-      border: 1px solid #dbe4ea;
-      border-radius: 8px;
-      background: #fff;
+      min-height: 76px;
+      padding: 13px 14px;
+      border: 1px solid var(--sw-border);
+      border-radius: var(--sw-radius-md);
+      background: var(--sw-surface);
+      box-shadow: var(--sw-shadow-sm);
       display: grid;
+      align-content: center;
       gap: 5px;
     }
     .kpis span {
-      color: #64748b;
+      color: var(--sw-text-muted);
       font-size: 12px;
     }
     .kpis strong {
-      color: #0f766e;
+      color: var(--sw-color-secondary-strong);
       font-size: 18px;
       font-variant-numeric: tabular-nums;
     }
     .stage-workspace {
-      border: 1px solid #dbe4ea;
-      border-radius: 10px;
+      border: 1px solid var(--sw-border);
+      border-radius: var(--sw-radius-md);
       padding: 16px;
-      background: #fff;
+      background: var(--sw-surface);
+      box-shadow: var(--sw-shadow-sm);
+    }
+    .workspace-heading {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding-bottom: 12px;
+      margin-bottom: 14px;
+      border-bottom: 1px solid var(--sw-border);
+    }
+    .workspace-heading > div {
+      display: grid;
+      gap: 3px;
+    }
+    .workspace-heading > div > span {
+      color: var(--sw-text-muted);
+      font-size: 11px;
+      font-weight: 650;
+      letter-spacing: 0.05em;
+    }
+    .stage-position {
+      padding: 4px 9px;
+      border: 1px solid var(--sw-border);
+      border-radius: 999px;
+      color: var(--sw-text-muted);
+      background: var(--sw-surface-muted);
+      font-size: 11px;
+      font-variant-numeric: tabular-nums;
     }
     .topology-layout {
       display: grid;
@@ -406,8 +523,9 @@ import { fengtaiLabel, fengtaiMetricValue } from './fengtai-labels';
       min-height: 326px;
       min-width: 0;
       padding: 12px;
-      border: 1px solid #dbe4ea;
-      border-radius: 10px;
+      border: 1px solid var(--sw-border);
+      border-radius: var(--sw-radius-md);
+      background: var(--sw-canvas-bg);
     }
     .topology-controls {
       display: grid;
@@ -422,7 +540,7 @@ import { fengtaiLabel, fengtaiMetricValue } from './fengtai-labels';
     .layer-legend {
       grid-column: 1 / -1;
       margin: -2px 0 2px;
-      color: #64748b;
+      color: var(--sw-text-muted);
       font-size: 12px;
     }
     .legend-swatch {
@@ -431,7 +549,12 @@ import { fengtaiLabel, fengtaiMetricValue } from './fengtai-labels';
       height: 8px;
       margin-right: 6px;
       border-radius: 999px;
-      background: linear-gradient(90deg, #0f766e, #d97706, #dc2626);
+      background: linear-gradient(
+        90deg,
+        var(--sw-color-secondary),
+        var(--sw-color-accent),
+        var(--sw-color-danger)
+      );
       vertical-align: middle;
     }
     .topology-status {
@@ -440,18 +563,27 @@ import { fengtaiLabel, fengtaiMetricValue } from './fengtai-labels';
       align-items: center;
       justify-content: center;
       gap: 10px;
-      color: #64748b;
+      color: var(--sw-text-muted);
       font-size: 13px;
     }
     .topology-warning {
       flex-direction: column;
-      color: #9a3412;
+      color: var(--sw-color-warning);
     }
     @media (max-width: 900px) {
       .hero,
-      .toolbar {
+      .toolbar-fields {
         align-items: stretch;
         flex-direction: column;
+      }
+      .hero-context {
+        min-width: 0;
+        padding: 12px 0 0;
+        border-top: 1px solid rgb(216 245 239 / 35%);
+        border-left: 0;
+      }
+      .toolbar {
+        grid-template-columns: 1fr;
       }
       .topology-layout.detail-open {
         grid-template-columns: 1fr;
@@ -472,6 +604,11 @@ import { fengtaiLabel, fengtaiMetricValue } from './fengtai-labels';
       }
       mat-form-field {
         width: 100%;
+      }
+      .hero,
+      .stage-workspace,
+      .flow {
+        padding: 14px;
       }
     }
   `,
@@ -645,6 +782,16 @@ export class FengtaiLeakagePage implements OnInit {
   selectStage(code: string): void {
     this.selectedStageCode.set(code);
   }
+  selectedStageTitle(): string {
+    const selected = this.selectedStageCode();
+    const stage = this.stages().find((item, index) => this.stageCode(item, index) === selected);
+    return stage?.title || stage?.name || '分析结果';
+  }
+  selectedStagePosition(): number {
+    const selected = this.selectedStageCode();
+    const index = this.stages().findIndex((item, itemIndex) => this.stageCode(item, itemIndex) === selected);
+    return index >= 0 ? index + 1 : 1;
+  }
   selectTimestamp(timestamp: string): void {
     if (this.networkFrames()?.timestamps.includes(timestamp)) this.activeTimestamp.set(timestamp);
   }
@@ -803,5 +950,8 @@ export class FengtaiLeakagePage implements OnInit {
   }
   private dateValue(value: unknown): string | undefined {
     return typeof value === 'string' ? value : undefined;
+  }
+  private stageCode(stage: FengtaiStage, index: number): string {
+    return String(stage.code ?? stage.id ?? stage.name ?? stage.title ?? `stage-${index}`);
   }
 }

@@ -46,19 +46,19 @@ interface DailyBalance {
   `,
   styles: `
     .panel {
-      border: 1px solid #dbe4ea;
-      border-radius: 10px;
+      border: 1px solid var(--sw-border);
+      border-radius: var(--sw-radius-md);
       padding: 16px;
-      background: #fff;
+      background: var(--sw-surface);
     }
     h3 {
       margin: 0;
       font-size: 15px;
-      color: #0f172a;
+      color: var(--sw-text-primary);
     }
     p {
       margin: 4px 0 0;
-      color: #64748b;
+      color: var(--sw-text-muted);
       font-size: 12px;
       line-height: 1.5;
     }
@@ -76,13 +76,14 @@ interface DailyBalance {
       display: grid;
       gap: 3px;
       padding: 7px;
-      color: #64748b;
-      background: #f8fafc;
-      border-radius: 6px;
+      color: var(--sw-text-muted);
+      border: 1px solid var(--sw-border);
+      background: var(--sw-surface-muted);
+      border-radius: var(--sw-radius-xs);
       font-size: 11px;
     }
     .summary strong {
-      color: #0f172a;
+      color: var(--sw-text-primary);
       font-size: 13px;
       font-variant-numeric: tabular-nums;
     }

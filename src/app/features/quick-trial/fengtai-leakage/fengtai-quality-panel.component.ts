@@ -43,19 +43,19 @@ import { fengtaiLabel, fengtaiMetricValue } from './fengtai-labels';
   `,
   styles: `
     .panel {
-      border: 1px solid #dbe4ea;
-      border-radius: 10px;
+      border: 1px solid var(--sw-border);
+      border-radius: var(--sw-radius-md);
       padding: 16px;
-      background: #fff;
+      background: var(--sw-surface);
     }
     h3 {
       margin: 0;
-      color: #0f172a;
+      color: var(--sw-text-primary);
       font-size: 15px;
     }
     p {
       margin: 4px 0 0;
-      color: #64748b;
+      color: var(--sw-text-muted);
       font-size: 12px;
       line-height: 1.5;
     }
@@ -75,7 +75,7 @@ import { fengtaiLabel, fengtaiMetricValue } from './fengtai-labels';
     .compare-head {
       margin-top: 14px;
       padding: 0 8px 5px;
-      color: #64748b;
+      color: var(--sw-text-muted);
       font-size: 11px;
     }
     .comparison {
@@ -84,31 +84,34 @@ import { fengtaiLabel, fengtaiMetricValue } from './fengtai-labels';
     }
     .comparison div {
       padding: 8px;
-      background: #f8fafc;
-      border-radius: 6px;
-      color: #475569;
+      border: 1px solid var(--sw-border);
+      background: var(--sw-surface-muted);
+      border-radius: var(--sw-radius-xs);
+      color: var(--sw-text-secondary);
       font-size: 12px;
     }
     .comparison strong {
-      color: #475569;
+      color: var(--sw-text-secondary);
       font-size: 13px;
     }
     .comparison .after {
-      color: #0f766e;
+      color: var(--sw-color-secondary-strong);
     }
     .metric {
       padding: 10px;
-      background: #f8fafc;
-      border-radius: 7px;
+      border: 1px solid var(--sw-border);
+      background: var(--sw-surface-muted);
+      border-radius: var(--sw-radius-xs);
       display: grid;
       gap: 4px;
     }
     .metric span {
-      color: #64748b;
+      color: var(--sw-text-muted);
       font-size: 12px;
     }
     .metric strong {
-      color: #0f766e;
+      color: var(--sw-color-secondary-strong);
+      font-variant-numeric: tabular-nums;
       font-size: 16px;
     }
     .empty {

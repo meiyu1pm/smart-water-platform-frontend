@@ -416,7 +416,7 @@ type EditingResource =
                         (change)="toggleCollectionSelection(dataset.id)"
                       />
                     }
-                    <span class="dataset-type-icon" aria-hidden="true">▰</span>
+                    <span class="dataset-type-icon folder-glyph" aria-hidden="true"></span>
                     <span class="dataset-table-copy">
                       <strong>{{ dataset.name }}</strong>
                       @if (dataset.description?.trim()) {
@@ -459,9 +459,11 @@ type EditingResource =
                     >
                       新增数据表
                     </button>
-                    <span class="dataset-expand-indicator" aria-hidden="true">
-                      {{ isDatasetExpanded(dataset.id) ? '⌃' : '⌄' }}
-                    </span>
+                    <span
+                      class="dataset-expand-indicator"
+                      [class.expanded]="isDatasetExpanded(dataset.id)"
+                      aria-hidden="true"
+                    ></span>
                   </span>
                 </div>
                 @if (isDatasetExpanded(dataset.id)) {
@@ -515,7 +517,7 @@ type EditingResource =
                                   (change)="toggleTableSelection(file.id)"
                                 />
                               }
-                              <span class="dataset-file-icon" aria-hidden="true">表</span>
+                              <span class="dataset-file-icon file-glyph" aria-hidden="true"></span>
                               <span class="dataset-file-copy">
                                 <strong>{{ file.name }}</strong>
                                 <small>
@@ -564,7 +566,7 @@ type EditingResource =
                 }
               } @empty {
                 <div class="dataset-table-empty">
-                  <span>⌁</span>
+                  <span class="empty-symbol" aria-hidden="true"></span>
                   <strong>{{ search().trim() ? '没有找到匹配的数据集' : '暂无数据集' }}</strong>
                   <small>{{
                     search().trim() ? '请尝试其他搜索词。' : '点击上方“新建数据集”开始使用。'
@@ -607,7 +609,8 @@ type EditingResource =
                 (cdkDropListDropped)="dropToFolder($event, folder.id)"
                 (click)="navigate(folder.id)"
               >
-                <span class="folder-icon">▰</span><span>{{ folder.name }}</span
+                <span class="folder-icon folder-glyph" aria-hidden="true"></span
+                ><span>{{ folder.name }}</span
                 ><small>{{ folder.file_count }}</small>
               </button>
             }
@@ -714,7 +717,11 @@ type EditingResource =
                     (contextmenu)="openEntryMenu($event, entry)"
                   >
                     <div class="tile-icon" aria-hidden="true">
-                      {{ isFolder(entry) ? '▰' : fileIcon(entry) }}
+                      @if (isFolder(entry)) {
+                        <span class="folder-glyph"></span>
+                      } @else {
+                        <span class="file-glyph"></span>
+                      }
                     </div>
                     <strong>{{ entry.name }}</strong>
                     @if (isFolder(entry)) {
@@ -743,7 +750,7 @@ type EditingResource =
                   </article>
                 } @empty {
                   <div class="blank-state">
-                    <span>⌁</span>
+                    <span class="empty-symbol" aria-hidden="true"></span>
                     <p>此目录为空</p>
                     <small>可将文件拖入这里，或在空白处右键粘贴。</small>
                   </div>
@@ -860,7 +867,7 @@ type EditingResource =
     }
     .eyebrow {
       margin: 0;
-      color: #0f5f92;
+      color: var(--sw-color-primary);
       font-size: 12px;
       font-weight: 800;
     }
@@ -873,7 +880,7 @@ type EditingResource =
     }
     .page-head p:not(.eyebrow) {
       margin: 0;
-      color: #64748b;
+      color: var(--sw-text-muted);
     }
     .stat-grid {
       display: grid;
@@ -887,19 +894,21 @@ type EditingResource =
       padding: 15px;
     }
     .stat-grid span {
-      color: #64748b;
+      color: var(--sw-text-muted);
       font-size: 12px;
     }
     .stat-grid strong {
-      color: #0f172a;
+      color: var(--sw-text-primary);
       font-size: 22px;
+      font-variant-numeric: tabular-nums;
+      letter-spacing: -0.025em;
     }
     .stat-card small {
-      color: #64748b;
+      color: var(--sw-text-muted);
       font-size: 12px;
     }
     .stat-card small.stat-monthly::first-letter {
-      color: #0f9f6e;
+      color: var(--sw-color-success);
     }
     .explorer-card {
       padding: 18px;
@@ -914,7 +923,7 @@ type EditingResource =
       justify-content: space-between;
       gap: 18px;
       padding-bottom: 16px;
-      border-bottom: 1px solid #e2e8f0;
+      border-bottom: 1px solid var(--sw-border);
     }
     .dataset-table-search {
       width: min(300px, 100%);
@@ -938,28 +947,28 @@ type EditingResource =
     .dataset-table-head {
       min-height: 48px;
       padding: 0 12px;
-      background: #f8fafc;
-      color: #64748b;
+      background: var(--sw-surface-muted);
+      color: var(--sw-text-muted);
       font-size: 12px;
       font-weight: 750;
     }
     .dataset-table-row {
       min-height: 86px;
       padding: 12px;
-      border-top: 1px solid #e2e8f0;
-      color: #334155;
+      border-top: 1px solid var(--sw-border);
+      color: var(--sw-text-secondary);
       font-size: 13px;
       cursor: pointer;
       outline: none;
     }
     .dataset-table-row:hover {
-      background: #f8fbff;
+      background: var(--sw-color-primary-faint);
     }
     .dataset-table-row:focus-visible {
-      box-shadow: inset 0 0 0 2px #93c5fd;
+      box-shadow: inset 0 0 0 2px var(--sw-focus);
     }
     .dataset-table-row.expanded {
-      background: #f8fbff;
+      background: var(--sw-color-primary-faint);
     }
     .dataset-table-name {
       display: flex;
@@ -973,9 +982,9 @@ type EditingResource =
       place-items: center;
       width: 42px;
       height: 42px;
-      border-radius: 10px;
-      background: #e0f2fe;
-      color: #0284c7;
+      border-radius: var(--sw-radius-md);
+      background: var(--sw-color-primary-soft);
+      color: var(--sw-color-primary);
       font-size: 20px;
     }
     .dataset-table-copy {
@@ -985,24 +994,24 @@ type EditingResource =
     }
     .dataset-table-copy strong {
       overflow: hidden;
-      color: #1e3a5f;
+      color: var(--sw-text-primary);
       text-overflow: ellipsis;
       white-space: nowrap;
       font-size: 15px;
     }
     .dataset-table-copy small {
       overflow: hidden;
-      color: #94a3b8;
+      color: var(--sw-text-muted);
       text-overflow: ellipsis;
       white-space: nowrap;
       font-size: 12px;
     }
     .dataset-table-metrics {
-      color: #475569;
+      color: var(--sw-text-secondary);
       font-weight: 650;
     }
     .dataset-table-updated {
-      color: #64748b;
+      color: var(--sw-text-muted);
     }
     .dataset-table-operation {
       display: flex;
@@ -1018,7 +1027,7 @@ type EditingResource =
       width: 16px;
       height: 16px;
       margin: 0;
-      accent-color: #0284c7;
+      accent-color: var(--sw-color-primary);
       cursor: pointer;
     }
     .management-checkbox:disabled {
@@ -1026,15 +1035,15 @@ type EditingResource =
       opacity: 0.45;
     }
     .management-delete-button:not(:disabled) {
-      border-color: #fecaca;
-      color: #b91c1c;
+      border-color: color-mix(in srgb, var(--sw-color-danger) 28%, var(--sw-border));
+      color: var(--sw-color-danger);
     }
     .management-danger-text {
-      color: #b91c1c;
+      color: var(--sw-color-danger);
     }
     .dataset-expand-indicator {
       width: 14px;
-      color: #64748b;
+      color: var(--sw-text-muted);
       font-size: 15px;
       text-align: center;
     }
@@ -1044,18 +1053,18 @@ type EditingResource =
       place-items: center;
       min-height: 260px;
       margin: 0;
-      color: #64748b;
+      color: var(--sw-text-muted);
       text-align: center;
     }
     .dataset-table-empty {
       gap: 8px;
     }
     .dataset-table-empty span {
-      color: #93c5fd;
+      color: var(--sw-color-primary);
       font-size: 42px;
     }
     .dataset-table-empty strong {
-      color: #334155;
+      color: var(--sw-text-primary);
       font-size: 17px;
     }
     .dataset-table-empty small {
@@ -1064,16 +1073,16 @@ type EditingResource =
     .dataset-expanded-panel {
       min-width: 970px;
       padding: 0 0 16px;
-      border-top: 1px solid #dbeafe;
-      background: #f8fbff;
+      border-top: 1px solid var(--sw-border);
+      background: var(--sw-color-primary-faint);
     }
     .dataset-files-table {
       max-height: 260px;
       overflow-x: auto;
       overflow-y: auto;
-      border: 1px solid #dbe4ef;
-      border-radius: 10px;
-      background: #fff;
+      border: 1px solid var(--sw-border);
+      border-radius: var(--sw-radius-md);
+      background: var(--sw-surface);
     }
     .dataset-files-head,
     .dataset-file-row {
@@ -1089,8 +1098,8 @@ type EditingResource =
       z-index: 1;
       min-height: 42px;
       padding: 0 12px;
-      background: #f8fafc;
-      color: #64748b;
+      background: var(--sw-surface-muted);
+      color: var(--sw-text-muted);
       font-size: 12px;
       font-weight: 750;
     }
@@ -1101,7 +1110,7 @@ type EditingResource =
       gap: 8px;
     }
     .table-select-all {
-      color: #0284c7;
+      color: var(--sw-color-primary);
       font-size: 11px;
       font-weight: 650;
       cursor: pointer;
@@ -1109,8 +1118,8 @@ type EditingResource =
     .dataset-file-row {
       min-height: 58px;
       padding: 8px 12px;
-      border-top: 1px solid #eef2f7;
-      color: #475569;
+      border-top: 1px solid var(--sw-border);
+      color: var(--sw-text-secondary);
       font-size: 12px;
     }
     .dataset-file-name {
@@ -1125,12 +1134,12 @@ type EditingResource =
       gap: 2px;
     }
     .dataset-file-copy small {
-      color: #64748b;
+      color: var(--sw-text-muted);
       font-size: 11px;
     }
     .dataset-file-name strong {
       overflow: hidden;
-      color: #334155;
+      color: var(--sw-text-primary);
       text-overflow: ellipsis;
       white-space: nowrap;
     }
@@ -1141,8 +1150,8 @@ type EditingResource =
       width: 30px;
       height: 30px;
       border-radius: 8px;
-      background: #eff6ff;
-      color: #0284c7;
+      background: var(--sw-color-primary-soft);
+      color: var(--sw-color-primary);
       font-size: 12px;
     }
     .dataset-file-preview {
@@ -1154,12 +1163,12 @@ type EditingResource =
     .dataset-expanded-state {
       margin: 0;
       padding: 30px 14px;
-      color: #64748b;
+      color: var(--sw-text-muted);
       font-size: 13px;
       text-align: center;
     }
     .dataset-expanded-state.error {
-      color: #b91c1c;
+      color: var(--sw-color-danger);
     }
 
     .dialog-backdrop {
@@ -1655,6 +1664,208 @@ type EditingResource =
       color: #94a3b8;
       font-size: 12px;
     }
+
+    /* Stable hierarchy and state feedback for the file-manager workspace. */
+    .stat-card {
+      position: relative;
+      overflow: hidden;
+      background: linear-gradient(145deg, var(--sw-surface) 58%, var(--sw-color-primary-faint));
+    }
+    .stat-card::before,
+    .dataset-table-row.expanded::before {
+      position: absolute;
+      inset: 0 auto 0 0;
+      width: 3px;
+      background: var(--sw-color-secondary);
+      content: '';
+    }
+    .dataset-table-row {
+      position: relative;
+    }
+    .dataset-table-row.expanded::before {
+      background: var(--sw-color-primary);
+    }
+    .folder-glyph {
+      position: relative;
+      display: inline-block;
+      width: 20px;
+      height: 14px;
+      border-radius: 3px;
+      background: currentColor;
+    }
+    .folder-glyph::before {
+      position: absolute;
+      top: -4px;
+      left: 2px;
+      width: 8px;
+      height: 5px;
+      border-radius: 3px 3px 0 0;
+      background: currentColor;
+      content: '';
+    }
+    .dataset-type-icon.folder-glyph {
+      width: 42px;
+      height: 42px;
+      border-radius: var(--sw-radius-md);
+      background: var(--sw-color-primary-soft);
+    }
+    .dataset-type-icon.folder-glyph::before {
+      top: 13px;
+      left: 11px;
+      width: 20px;
+      height: 14px;
+      border-radius: 3px;
+      background: var(--sw-color-primary);
+      box-shadow: 0 -4px 0 -1px var(--sw-color-primary);
+    }
+    .file-glyph {
+      position: relative;
+      display: inline-block;
+      width: 15px;
+      height: 19px;
+      border: 1.5px solid currentColor;
+      border-radius: 3px;
+    }
+    .file-glyph::before,
+    .file-glyph::after {
+      position: absolute;
+      right: 3px;
+      left: 3px;
+      height: 1.5px;
+      background: currentColor;
+      content: '';
+    }
+    .file-glyph::before {
+      top: 7px;
+    }
+    .file-glyph::after {
+      top: 11px;
+    }
+    .dataset-file-icon.file-glyph {
+      width: 30px;
+      height: 30px;
+      border: 0;
+    }
+    .dataset-file-icon.file-glyph::before {
+      top: 7px;
+      right: 8px;
+      left: 8px;
+      height: 16px;
+      border: 1.5px solid var(--sw-color-primary);
+      border-radius: 3px;
+      background: transparent;
+    }
+    .dataset-file-icon.file-glyph::after {
+      top: 12px;
+      right: 11px;
+      left: 11px;
+      box-shadow: 0 4px 0 var(--sw-color-primary);
+    }
+    .dataset-expand-indicator {
+      position: relative;
+      width: 30px;
+      height: 30px;
+      border-radius: 50%;
+      background: var(--sw-surface-muted);
+    }
+    .dataset-expand-indicator::before {
+      position: absolute;
+      top: 10px;
+      left: 11px;
+      width: 6px;
+      height: 6px;
+      border-right: 1.5px solid var(--sw-text-secondary);
+      border-bottom: 1.5px solid var(--sw-text-secondary);
+      transform: rotate(45deg);
+      content: '';
+    }
+    .dataset-expand-indicator.expanded::before {
+      top: 12px;
+      transform: rotate(225deg);
+    }
+    .empty-symbol {
+      display: block;
+      width: 52px;
+      height: 38px;
+      margin: 0 auto 12px;
+      border: 2px solid var(--sw-border-strong);
+      border-radius: var(--sw-radius-sm);
+      background: linear-gradient(
+        var(--sw-surface) 30%,
+        var(--sw-color-primary-soft) 31% 35%,
+        var(--sw-surface) 36% 62%,
+        var(--sw-color-primary-soft) 63% 67%,
+        var(--sw-surface) 68%
+      );
+    }
+    .dialog-backdrop {
+      backdrop-filter: blur(3px);
+    }
+    .create-dialog,
+    .context-menu {
+      border-color: var(--sw-border);
+      background: var(--sw-surface-raised);
+      box-shadow: var(--sw-shadow-lg);
+    }
+    .explorer-layout {
+      border: 1px solid var(--sw-border);
+      border-radius: var(--sw-radius-md);
+      overflow: hidden;
+    }
+    .side-nav {
+      padding: 14px 10px;
+      background: var(--sw-surface-sunken);
+    }
+    .nav-entry {
+      min-height: 40px;
+      border: 1px solid transparent;
+    }
+    .nav-entry.active {
+      border-color: color-mix(in srgb, var(--sw-color-primary) 28%, var(--sw-border));
+      background: var(--sw-color-primary-soft);
+    }
+    .file-pane {
+      padding: 16px 18px 18px;
+    }
+    .file-tile {
+      position: relative;
+      min-height: 128px;
+      padding: 14px;
+      border-radius: var(--sw-radius-md);
+    }
+    .file-tile.selected {
+      border-color: var(--sw-color-accent);
+      background: var(--sw-color-accent-soft);
+      box-shadow: 0 0 0 1px var(--sw-color-accent);
+    }
+    .file-tile.selected::after {
+      position: absolute;
+      top: 9px;
+      right: 9px;
+      width: 8px;
+      height: 8px;
+      border: 2px solid var(--sw-surface);
+      border-radius: 50%;
+      background: var(--sw-color-accent);
+      content: '';
+    }
+    .file-grid.cdk-drop-list-dragging,
+    .nav-entry.cdk-drop-list-receiving {
+      background: var(--sw-color-primary-faint);
+      box-shadow: inset 0 0 0 2px var(--sw-color-primary);
+    }
+    .dialog-close:focus-visible,
+    .choice-card:focus-visible,
+    .context-menu button:focus-visible,
+    .pagination button:focus-visible,
+    .selection-actions button:focus-visible,
+    .upload-button:focus-within,
+    .breadcrumbs button:focus-visible,
+    .nav-entry:focus-visible,
+    .file-tile:focus-visible {
+      outline: 2px solid var(--sw-focus);
+      outline-offset: 2px;
+    }
     @media (max-width: 760px) {
       .explorer-layout {
         grid-template-columns: 1fr;
@@ -1665,7 +1876,7 @@ type EditingResource =
         overflow-x: auto;
         padding: 10px 0;
         border-right: 0;
-        border-bottom: 1px solid #e2e8f0;
+        border-bottom: 1px solid var(--sw-border);
       }
       .nav-caption,
       .nav-empty {
@@ -1680,7 +1891,7 @@ type EditingResource =
         display: none;
       }
       .file-pane {
-        padding-left: 0;
+        padding: 14px;
       }
     }
     @media (max-width: 560px) {

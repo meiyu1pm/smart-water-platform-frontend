@@ -24,6 +24,11 @@ type Point = [string, number | null];
       height: 390px;
       min-height: 300px;
     }
+    @media (max-width: 600px) {
+      .host {
+        height: 330px;
+      }
+    }
   `,
 })
 export class FengtaiAnalysisChartComponent implements AfterViewInit, OnChanges, OnDestroy {

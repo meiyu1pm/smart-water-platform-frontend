@@ -29,12 +29,13 @@
       </div>
     </header>
 
-    <nav class="tabs" aria-label="文件详情栏目">
+    <nav class="tabs" role="tablist" aria-label="文件详情栏目">
       @for (tab of tabs; track tab.id) {
         <button
           type="button"
+          role="tab"
           [class.active]="activeTab() === tab.id"
-          [attr.aria-current]="activeTab() === tab.id ? 'page' : null"
+          [attr.aria-selected]="activeTab() === tab.id"
           (click)="selectTab(tab.id)"
         >
           {{ tab.label }}
@@ -42,7 +43,7 @@
       }
     </nav>
 
-    <div class="content">
+    <div class="content" role="tabpanel">
       @if (activeTab() === 'preview') {
         @if (previewLoading()) {
           <p class="state">正在读取前 50 行…</p>

@@ -14,11 +14,12 @@ import {
 } from '@angular/core';
 import * as echarts from 'echarts';
 import { AssetSelection, FengtaiAssetDetail, FengtaiCandidate } from './fengtai-leakage.models';
+import { SwIconComponent } from '../../../shared/components/sw-icon.component';
 
 @Component({
   selector: 'app-fengtai-asset-detail',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, SwIconComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `<aside class="panel" role="dialog" aria-label="资产详情">
     <header>
@@ -26,7 +27,9 @@ import { AssetSelection, FengtaiAssetDetail, FengtaiCandidate } from './fengtai-
         <p class="eyebrow">资产详情</p>
         <h2>{{ detail?.asset?.name || selection?.name || '资产' }}</h2>
       </div>
-      <button type="button" (click)="closed.emit()" aria-label="关闭">×</button>
+      <button type="button" (click)="closed.emit()" aria-label="关闭资产详情">
+        <app-sw-icon name="close" [size]="18" />
+      </button>
     </header>
     @if (loading) {
       <p class="state">正在加载资产详情…</p>
@@ -87,14 +90,14 @@ import { AssetSelection, FengtaiAssetDetail, FengtaiCandidate } from './fengtai-
   </aside>`,
   styles: `
     .panel {
-      background: #fff;
-      border: 1px solid #dbe4ee;
-      border-radius: 16px;
+      background: var(--sw-surface);
+      border: 1px solid var(--sw-border);
+      border-radius: var(--sw-radius-lg);
       padding: 18px;
       max-width: 460px;
       width: min(100%, 460px);
       box-sizing: border-box;
-      box-shadow: 0 12px 32px #0f172a18;
+      box-shadow: var(--sw-shadow-md);
     }
     .panel header {
       display: flex;
@@ -103,20 +106,28 @@ import { AssetSelection, FengtaiAssetDetail, FengtaiCandidate } from './fengtai-
     }
     .panel h2 {
       margin: 0;
-      color: #172033;
+      color: var(--sw-text-primary);
       font-size: 18px;
     }
     .eyebrow {
       margin: 0 0 4px;
-      color: #64748b;
+      color: var(--sw-text-muted);
       font-size: 11px;
     }
     .panel header button {
       border: 0;
+      width: 38px;
+      height: 38px;
+      display: grid;
+      place-items: center;
+      border-radius: var(--sw-radius-sm);
       background: transparent;
-      font-size: 25px;
-      color: #64748b;
+      color: var(--sw-text-muted);
       cursor: pointer;
+    }
+    .panel header button:hover {
+      color: var(--sw-text-primary);
+      background: var(--sw-surface-muted);
     }
     .facts {
       display: grid;
@@ -125,35 +136,36 @@ import { AssetSelection, FengtaiAssetDetail, FengtaiCandidate } from './fengtai-
       margin: 16px 0;
     }
     .facts div {
-      background: #f8fafc;
-      border-radius: 8px;
+      border: 1px solid var(--sw-border);
+      background: var(--sw-surface-muted);
+      border-radius: var(--sw-radius-sm);
       padding: 8px;
     }
     .facts dt {
       font-size: 11px;
-      color: #64748b;
+      color: var(--sw-text-muted);
     }
     .facts dd {
       margin: 3px 0 0;
-      color: #1e293b;
+      color: var(--sw-text-primary);
       word-break: break-word;
     }
     .scope {
       display: inline-block;
       padding: 4px 9px;
       border-radius: 999px;
-      background: #dcfce7;
-      color: #166534;
+      background: var(--sw-color-success-soft);
+      color: var(--sw-color-success);
       font-size: 12px;
     }
     .scope.reference {
-      background: #fef3c7;
-      color: #92400e;
+      background: var(--sw-color-warning-soft);
+      color: var(--sw-color-warning);
     }
     .scope-note,
     .state {
       font-size: 12px;
-      color: #64748b;
+      color: var(--sw-text-muted);
     }
     .state-facts {
       display: grid;
@@ -163,36 +175,38 @@ import { AssetSelection, FengtaiAssetDetail, FengtaiCandidate } from './fengtai-
     }
     .state-facts div {
       padding: 7px;
-      background: #f8fafc;
-      border-radius: 7px;
+      border: 1px solid var(--sw-border);
+      background: var(--sw-surface-muted);
+      border-radius: var(--sw-radius-xs);
     }
     .state-facts dt {
-      color: #64748b;
+      color: var(--sw-text-muted);
       font-size: 11px;
     }
     .state-facts dd {
       margin: 3px 0 0;
-      color: #1e293b;
+      color: var(--sw-text-primary);
       font-size: 12px;
     }
     .risk {
       margin-bottom: 10px;
       padding: 9px 10px;
       border-radius: 8px;
-      background: #fff7ed;
+      border: 1px solid color-mix(in srgb, var(--sw-color-accent) 26%, var(--sw-border));
+      background: var(--sw-color-accent-soft);
       display: flex;
       align-items: center;
       justify-content: space-between;
-      color: #9a3412;
+      color: var(--sw-color-warning);
       font-size: 12px;
     }
     .error {
-      color: #b91c1c;
+      color: var(--sw-color-danger);
     }
     .retry {
-      border: 1px solid #cbd5e1;
-      background: #fff;
-      border-radius: 7px;
+      border: 1px solid var(--sw-border-strong);
+      background: var(--sw-surface);
+      border-radius: var(--sw-radius-xs);
       padding: 6px 12px;
     }
     .chart {
@@ -201,7 +215,7 @@ import { AssetSelection, FengtaiAssetDetail, FengtaiCandidate } from './fengtai-
     }
     .panel h3 {
       font-size: 13px;
-      color: #334155;
+      color: var(--sw-text-secondary);
     }
     .adjacent {
       display: flex;
@@ -210,7 +224,8 @@ import { AssetSelection, FengtaiAssetDetail, FengtaiCandidate } from './fengtai-
     }
     .adjacent span {
       padding: 4px 8px;
-      background: #f1f5f9;
+      border: 1px solid var(--sw-border);
+      background: var(--sw-surface-muted);
       border-radius: 999px;
       font-size: 12px;
     }

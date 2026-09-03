@@ -406,7 +406,7 @@ import { StatusChipComponent } from '../../shared/components/status-chip.compone
     }
     .eyebrow {
       margin: 0;
-      color: #0f4c81;
+      color: var(--sw-color-primary);
       font-size: 12px;
       font-weight: 800;
       letter-spacing: 0.08em;
@@ -426,7 +426,7 @@ import { StatusChipComponent } from '../../shared/components/status-chip.compone
     .section-title p,
     .actions span,
     .asset-grid p {
-      color: #64748b;
+      color: var(--sw-text-muted);
       overflow-wrap: anywhere;
     }
     .workflow-card,
@@ -434,9 +434,14 @@ import { StatusChipComponent } from '../../shared/components/status-chip.compone
     .asset-grid mat-card {
       padding: 20px;
       min-width: 0;
+      border-color: var(--sw-border);
+      border-radius: var(--sw-radius-lg);
+      background: var(--sw-surface);
+      box-shadow: var(--sw-shadow-sm);
     }
     .workflow-card {
       margin-bottom: 18px;
+      border-top: 3px solid var(--sw-color-primary);
     }
     .duplicate-warning,
     .mapping-suggestion {
@@ -449,10 +454,24 @@ import { StatusChipComponent } from '../../shared/components/status-chip.compone
       border-radius: 10px;
       overflow-wrap: anywhere;
     }
-    .duplicate-warning { background: #fff7ed; color: #9a3412; }
-    .mapping-suggestion { background: #eff6ff; color: #1e3a8a; }
+    .duplicate-warning {
+      border: 1px solid color-mix(in srgb, var(--sw-color-warning) 24%, var(--sw-border));
+      background: var(--sw-color-warning-soft);
+      color: var(--sw-color-warning);
+    }
+    .mapping-suggestion {
+      border: 1px solid color-mix(in srgb, var(--sw-color-primary) 20%, var(--sw-border));
+      background: var(--sw-color-primary-faint);
+      color: var(--sw-color-primary-strong);
+    }
     .mapping-suggestion span { display: block; margin-top: 4px; font-size: 12px; }
-    .quality-toggle { display: inline-flex; align-items: center; gap: 8px; color: #475569; }
+    .quality-toggle {
+      display: inline-flex;
+      align-items: center;
+      min-height: 36px;
+      gap: 8px;
+      color: var(--sw-text-secondary);
+    }
     .upload-form {
       display: grid;
       gap: 12px;
@@ -461,21 +480,33 @@ import { StatusChipComponent } from '../../shared/components/status-chip.compone
     .file-field {
       display: grid;
       gap: 6px;
-      border: 1px dashed #94a3b8;
-      border-radius: 8px;
-      padding: 14px;
-      color: #475569;
+      min-height: 88px;
+      border: 1px dashed color-mix(in srgb, var(--sw-color-primary) 48%, var(--sw-border));
+      border-radius: var(--sw-radius-md);
+      padding: 16px;
+      background: var(--sw-color-primary-faint);
+      color: var(--sw-text-secondary);
       cursor: pointer;
+      transition:
+        border-color var(--sw-motion-fast) var(--sw-ease-standard),
+        background-color var(--sw-motion-fast) var(--sw-ease-standard);
+    }
+    .file-field:hover,
+    .file-field:focus-within {
+      border-color: var(--sw-color-primary);
+      background: var(--sw-color-primary-soft);
     }
     .file-field strong {
       overflow-wrap: anywhere;
-      color: #0f172a;
+      color: var(--sw-text-primary);
     }
     .preview-wrap {
       overflow: auto;
       margin: 14px 0;
-      border: 1px solid #e2e8f0;
-      border-radius: 8px;
+      border: 1px solid var(--sw-border);
+      border-radius: var(--sw-radius-md);
+      background: var(--sw-surface);
+      box-shadow: var(--sw-shadow-sm);
     }
     table {
       width: max-content;
@@ -490,10 +521,14 @@ import { StatusChipComponent } from '../../shared/components/status-chip.compone
       text-align: left;
       vertical-align: top;
       overflow-wrap: anywhere;
-      border-bottom: 1px solid #e2e8f0;
+      border-bottom: 1px solid var(--sw-border);
     }
     th {
-      background: #f8fafc;
+      position: sticky;
+      top: 0;
+      z-index: 1;
+      background: var(--sw-surface-muted);
+      color: var(--sw-text-secondary);
       white-space: nowrap;
     }
     .mapping-grid,
@@ -508,8 +543,9 @@ import { StatusChipComponent } from '../../shared/components/status-chip.compone
     .metric-grid {
       padding: 14px;
       margin-top: 8px;
-      border: 1px solid #e2e8f0;
-      border-radius: 8px;
+      border: 1px solid var(--sw-border);
+      border-radius: var(--sw-radius-md);
+      background: var(--sw-surface-sunken);
       align-items: center;
     }
     .wide {
@@ -530,16 +566,46 @@ import { StatusChipComponent } from '../../shared/components/status-chip.compone
     .asset-grid {
       grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
     }
+    .asset-grid mat-card,
+    .source-list mat-card {
+      transition:
+        border-color var(--sw-motion-fast) var(--sw-ease-standard),
+        box-shadow var(--sw-motion-fast) var(--sw-ease-standard);
+    }
+    .asset-grid mat-card:hover,
+    .source-list mat-card:hover {
+      border-color: color-mix(in srgb, var(--sw-color-primary) 28%, var(--sw-border));
+      box-shadow: var(--sw-shadow-md);
+    }
+    .asset-grid h3,
+    .source-list h3,
+    .section-title h2 {
+      color: var(--sw-text-primary);
+    }
+    .asset-actions {
+      margin-top: 16px;
+      padding-top: 14px;
+      border-top: 1px solid var(--sw-border);
+    }
     .section-title {
       margin-bottom: 12px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid var(--sw-border);
     }
     .empty {
       padding: 32px;
       text-align: center;
-      color: #64748b;
-      background: #fff;
-      border: 1px solid #e2e8f0;
-      border-radius: 12px;
+      color: var(--sw-text-muted);
+      background: var(--sw-surface);
+      border: 1px dashed var(--sw-border-strong);
+      border-radius: var(--sw-radius-lg);
+    }
+    button:focus-visible,
+    a:focus-visible,
+    .file-field:focus-within,
+    .quality-toggle:focus-within {
+      outline: 2px solid var(--sw-focus);
+      outline-offset: 2px;
     }
     @media (max-width: 800px) {
       .page-head,

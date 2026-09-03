@@ -203,7 +203,7 @@ export class QuickTrialService {
     {
       id: 'timeseries-forecast',
       name: '时序预测',
-      icon: '📈',
+      icon: 'chart',
       description: '基于水务时序历史趋势与周期性规律，精准外推预测未来供水量或流量走势。',
       defaultAlgorithm: 'auto',
       algorithms: [
@@ -218,7 +218,7 @@ export class QuickTrialService {
     {
       id: 'anomaly-detection',
       name: '异常突变检测',
-      icon: '🔍',
+      icon: 'search',
       description: '智能捕捉水质、水压突变点与离群波动，快速定位异常工况。',
       defaultAlgorithm: 'hampel',
       algorithms: [{ id: 'hampel', name: 'Hampel（稳健离群检测）' }],
@@ -229,7 +229,7 @@ export class QuickTrialService {
     {
       id: 'dma-leakage',
       name: 'DMA夜间流量初筛',
-      icon: '💧',
+      icon: 'droplet',
       description: '基于总表最小夜间流量筛查持续高流量日期，结果仅作为漏损核查线索。',
       defaultAlgorithm: 'minimum_night_flow',
       algorithms: [{ id: 'minimum_night_flow', name: 'MNF（最小夜间流量）' }],

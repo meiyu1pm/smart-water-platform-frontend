@@ -37,10 +37,10 @@ import { FengtaiCandidate } from './fengtai-leakage.models';
   `,
   styles: `
     .panel {
-      border: 1px solid #dbe4ea;
-      border-radius: 10px;
+      border: 1px solid var(--sw-border);
+      border-radius: var(--sw-radius-md);
       padding: 16px;
-      background: #fff;
+      background: var(--sw-surface);
     }
     .heading {
       display: flex;
@@ -50,12 +50,12 @@ import { FengtaiCandidate } from './fengtai-leakage.models';
     }
     h3 {
       margin: 0;
-      color: #0f172a;
+      color: var(--sw-text-primary);
       font-size: 15px;
     }
     p {
       margin: 4px 0 0;
-      color: #64748b;
+      color: var(--sw-text-muted);
       font-size: 12px;
       line-height: 1.5;
     }
@@ -64,11 +64,10 @@ import { FengtaiCandidate } from './fengtai-leakage.models';
       padding: 0;
       list-style: none;
       display: grid;
-      gap: 9px;
+      gap: 7px;
     }
     li {
-      border-top: 1px solid #edf2f7;
-      padding-top: 9px;
+      padding: 0;
     }
     li button {
       width: 100%;
@@ -76,37 +75,38 @@ import { FengtaiCandidate } from './fengtai-leakage.models';
       gap: 12px;
       justify-content: space-between;
       text-align: left;
-      border: 0;
-      padding: 0;
-      background: transparent;
+      border: 1px solid var(--sw-border);
+      border-radius: var(--sw-radius-sm);
+      padding: 10px 12px;
+      background: var(--sw-surface-muted);
       cursor: pointer;
       font: inherit;
     }
     li button:hover strong,
     li button:focus-visible strong {
-      color: #0f766e;
+      color: var(--sw-color-secondary-strong);
     }
     li button:focus-visible {
-      outline: 2px solid #0f766e;
-      outline-offset: 3px;
-      border-radius: 4px;
+      outline: 3px solid color-mix(in srgb, var(--sw-focus) 28%, transparent);
+      outline-offset: 2px;
     }
     li div {
       display: grid;
       gap: 3px;
     }
     li strong {
-      color: #1e293b;
+      color: var(--sw-text-primary);
       font-size: 13px;
     }
     li span {
-      color: #64748b;
+      color: var(--sw-text-muted);
       font-size: 12px;
       line-height: 1.45;
     }
     b {
-      color: #b45309;
+      color: var(--sw-color-warning);
       font-size: 13px;
+      font-variant-numeric: tabular-nums;
     }
     .empty {
       padding: 11px 0 2px;

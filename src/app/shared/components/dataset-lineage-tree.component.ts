@@ -186,7 +186,7 @@ export function buildLineageTree(
             (click)="resetView()"
             aria-label="重置视角"
           >
-            <span class="ctrl-icon">⟲</span>
+            <span class="ctrl-icon reset">复位</span>
           </button>
         </div>
       </div>
@@ -206,30 +206,35 @@ export function buildLineageTree(
     }
     .tree-container {
       position: relative;
-      background: #fafbfd;
-      border: 1px solid #e2e8f0;
-      border-radius: 12px;
+      background: var(--sw-surface-sunken);
+      border: 1px solid var(--sw-border);
+      border-radius: var(--sw-radius-lg);
       overflow: hidden;
+      box-shadow: var(--sw-shadow-sm);
     }
     .tree-toolbar {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: 10px 16px;
-      background: #ffffff;
-      border-bottom: 1px solid #edf2f7;
+      gap: 12px;
+      min-height: 48px;
+      padding: 8px 14px;
+      background: var(--sw-surface);
+      border-bottom: 1px solid var(--sw-border);
     }
     .legend-group {
       display: flex;
       align-items: center;
-      gap: 16px;
+      flex-wrap: wrap;
+      gap: 8px 14px;
       font-size: 12px;
-      color: #64748b;
+      color: var(--sw-text-muted);
     }
     .legend-item {
       display: inline-flex;
       align-items: center;
       gap: 6px;
+      white-space: nowrap;
     }
     .dot {
       width: 8px;
@@ -237,29 +242,35 @@ export function buildLineageTree(
       border-radius: 50%;
     }
     .dot.imported {
-      background: #0284c7;
+      background: var(--sw-color-primary);
     }
     .dot.derived {
-      background: #059669;
+      background: var(--sw-color-secondary);
     }
     .dot.current {
-      background: #16a34a;
-      box-shadow: 0 0 0 2px rgba(22, 163, 74, 0.3);
+      background: var(--sw-color-success);
+      box-shadow: 0 0 0 2px color-mix(in srgb, var(--sw-color-success) 28%, transparent);
     }
     .dot.selected {
-      background: #0f5f92;
-      box-shadow: 0 0 0 2px rgba(15, 95, 146, 0.35);
+      background: var(--sw-color-accent);
+      box-shadow: 0 0 0 2px color-mix(in srgb, var(--sw-color-accent) 32%, transparent);
     }
     .action-group {
       display: flex;
       align-items: center;
       gap: 4px;
+      padding-left: 8px;
+      border-left: 1px solid var(--sw-border);
     }
     .ctrl-icon {
       font-size: 16px;
       font-weight: 700;
       line-height: 1;
-      color: #475569;
+      color: var(--sw-text-secondary);
+    }
+    .ctrl-icon.reset {
+      font-size: 11px;
+      font-weight: 650;
     }
     .lineage-host {
       width: 100%;
@@ -271,8 +282,29 @@ export function buildLineageTree(
       inset: 0;
       display: grid;
       place-items: center;
-      color: #94a3b8;
-      background: rgba(255, 255, 255, 0.85);
+      color: var(--sw-text-muted);
+      background: color-mix(in srgb, var(--sw-surface) 88%, transparent);
+    }
+    button:focus-visible {
+      outline: 2px solid var(--sw-focus);
+      outline-offset: 2px;
+    }
+    @media (max-width: 640px) {
+      .tree-toolbar {
+        align-items: flex-start;
+        flex-direction: column;
+      }
+      .action-group {
+        width: 100%;
+        justify-content: flex-end;
+        padding-top: 6px;
+        padding-left: 0;
+        border-top: 1px solid var(--sw-border);
+        border-left: 0;
+      }
+      .lineage-host {
+        height: 420px;
+      }
     }
   `,
 })
@@ -393,7 +425,7 @@ export class DatasetLineageTreeComponent implements AfterViewInit, OnChanges, On
                 const node = params.data;
                 if (!node) return '';
                 if (node.isVirtualRoot) {
-                  return '{rootTitle| 📊 原始数据接入源 }\n{meta|包含多个初始导入分支}';
+                  return '{rootTitle|原始数据接入源}\n{meta|包含多个初始导入分支}';
                 }
                 const isDerived = node.versionKind === 'derived';
                 const tag = isDerived

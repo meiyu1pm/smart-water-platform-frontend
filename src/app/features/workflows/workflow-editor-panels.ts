@@ -179,7 +179,13 @@ export interface SelectedRuntimeBinding {
     }
     .catalog-item:hover {
       border-color: var(--sw-color-primary);
+      background: var(--sw-color-primary-faint);
       box-shadow: var(--sw-shadow-sm);
+    }
+    .catalog-item:focus-visible {
+      border-color: var(--sw-focus);
+      outline: 0;
+      box-shadow: var(--sw-shadow-focus);
     }
     .catalog-item i {
       width: 8px;
@@ -188,7 +194,7 @@ export interface SelectedRuntimeBinding {
       background: var(--sw-color-success);
     }
     .catalog-item i.gpu {
-      background: #8b5cf6;
+      background: var(--sw-color-accent);
     }
     .catalog-item b,
     .catalog-item small {
@@ -534,7 +540,7 @@ export class WorkflowCanvasPanelComponent implements AfterViewInit, OnDestroy {
         @if (dataFileNode(); as dataNode) {
           <section class="runtime-binding data-file-binding">
             <header class="section-subhead">
-              <h3>📁 绑定数据文件版本</h3>
+              <h3>绑定数据文件版本</h3>
               <small class="subhead-tip">指定该节点读取的数据集文件版本及输出列视图</small>
             </header>
 
@@ -608,7 +614,7 @@ export class WorkflowCanvasPanelComponent implements AfterViewInit, OnDestroy {
                   <span class="mode-tag">{{ bindingSummary.outputMode }}</span>
                 </div>
                 <div class="card-detail">
-                  <span>📄 {{ bindingSummary.fileName || '数据文件' }} ({{ bindingSummary.version || ('版本 #' + bindingSummary.fileVersionId) }})</span>
+                  <span>{{ bindingSummary.fileName || '数据文件' }} ({{ bindingSummary.version || ('版本 #' + bindingSummary.fileVersionId) }})</span>
                   <small class="view-detail">{{ bindingSummary.viewSummary || '已保存视图' }}</small>
                 </div>
               </div>
@@ -754,11 +760,11 @@ export class WorkflowCanvasPanelComponent implements AfterViewInit, OnDestroy {
       margin-top: 4px;
     }
     .warning-text {
-      color: #b45309;
+      color: var(--sw-color-warning);
       font-size: 12px;
     }
     .text-link {
-      color: #2563eb;
+      color: var(--sw-color-info);
       font-size: 12px;
       text-decoration: none;
       font-weight: 600;
@@ -794,7 +800,7 @@ export class WorkflowCanvasPanelComponent implements AfterViewInit, OnDestroy {
     }
     .subhead-tip {
       font-size: 11px;
-      color: #64748b;
+      color: var(--sw-text-muted);
       display: block;
       margin-bottom: 6px;
     }
@@ -811,35 +817,35 @@ export class WorkflowCanvasPanelComponent implements AfterViewInit, OnDestroy {
       flex-direction: column;
       gap: 4px;
       font-size: 12px;
-      color: #475569;
+      color: var(--sw-text-secondary);
       font-weight: 500;
     }
     .form-select {
       width: 100%;
       padding: 7px 9px;
-      border: 1.5px solid #cbd5e1;
+      border: 1.5px solid var(--sw-border-strong);
       border-radius: 6px;
-      background: #ffffff;
-      color: #0f172a;
+      background: var(--sw-surface);
+      color: var(--sw-text-primary);
       font-size: 12px;
       outline: none;
       transition: border-color 0.15s ease;
     }
     .form-select:focus {
-      border-color: #0284c7;
-      box-shadow: 0 0 0 2px rgba(2, 132, 199, 0.15);
+      border-color: var(--sw-focus);
+      box-shadow: var(--sw-shadow-focus);
     }
     .form-select:disabled {
-      background: #f1f5f9;
-      color: #94a3b8;
+      background: var(--sw-surface-sunken);
+      color: var(--sw-text-muted);
       cursor: not-allowed;
     }
     .frozen-binding-card {
       padding: 10px 12px;
       border-radius: 8px;
-      background: #f0fdf4;
-      border: 1px solid #bbf7d0;
-      color: #166534;
+      background: var(--sw-color-success-soft);
+      border: 1px solid color-mix(in srgb, var(--sw-color-success) 22%, var(--sw-border));
+      color: var(--sw-color-success);
       font-size: 12px;
       display: grid;
       gap: 4px;
@@ -853,12 +859,12 @@ export class WorkflowCanvasPanelComponent implements AfterViewInit, OnDestroy {
       font-size: 10px;
       font-weight: 700;
       text-transform: uppercase;
-      background: #dcfce7;
+      background: color-mix(in srgb, var(--sw-color-success) 18%, transparent);
       padding: 2px 6px;
       border-radius: 4px;
     }
     .frozen-binding-card .view-detail {
-      color: #15803d;
+      color: var(--sw-color-success);
       font-size: 11px;
       display: block;
       margin-top: 2px;
