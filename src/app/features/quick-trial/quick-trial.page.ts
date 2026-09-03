@@ -36,6 +36,8 @@ import {
   DataFilePreviewPanelComponent,
 } from '../data-sources/data-file-preview-panel.component';
 import { NotificationService } from '../../core/services/notification.service';
+import { AuthService } from '../../core/services/auth.service';
+import { LoginDialogService } from '../login/login-dialog.component';
 
 @Component({
   selector: 'app-quick-trial-page',
@@ -1238,6 +1240,8 @@ export class QuickTrialPage implements OnInit, AfterViewInit, OnDestroy {
   private readonly quickTrial = inject(QuickTrialService);
   private readonly dataFiles = inject(DataFileService);
   private readonly notifications = inject(NotificationService);
+  private readonly auth = inject(AuthService);
+  private readonly loginDialog = inject(LoginDialogService);
 
   readonly scenarios = this.quickTrial.availableScenarios;
   readonly selectedTaskId = signal('timeseries-forecast');
@@ -1532,7 +1536,17 @@ export class QuickTrialPage implements OnInit, AfterViewInit, OnDestroy {
     const input = event.target as HTMLInputElement;
     const file = input.files?.[0];
     if (!file) return;
+    if (!this.auth.isAuthenticated()) {
+      this.loginDialog.requireLogin().subscribe((ready) => {
+        if (ready) this.uploadSelectedFile(file);
+        else input.value = '';
+      });
+      return;
+    }
+    this.uploadSelectedFile(file);
+  }
 
+  private uploadSelectedFile(file: File): void {
     // 直接从本地 File 对象异步解析全量时序行
     void file.text().then((text) => {
       const full = parseCsvTextToRows(text);
@@ -1730,6 +1744,12 @@ export class QuickTrialPage implements OnInit, AfterViewInit, OnDestroy {
   }
 
   runQuickTrial(): void {
+    if (!this.auth.isAuthenticated()) {
+      this.loginDialog.requireLogin().subscribe((ready) => {
+        if (ready) this.runQuickTrial();
+      });
+      return;
+    }
     this.running.set(true);
     this.result.set(null);
     this.drawerOpen.set(false);

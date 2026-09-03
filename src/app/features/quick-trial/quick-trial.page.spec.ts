@@ -8,6 +8,7 @@ import { vi } from 'vitest';
 import { QuickTrialPage } from './quick-trial.page';
 import { QuickTrialService } from './quick-trial.service';
 import { DataFileService } from '../../core/services/data-file.service';
+import { AuthService } from '../../core/services/auth.service';
 
 describe('QuickTrialPage', () => {
   let component: QuickTrialPage;
@@ -132,6 +133,7 @@ describe('QuickTrialPage', () => {
         provideRouter([]),
         { provide: QuickTrialService, useValue: quickTrialSpy },
         { provide: DataFileService, useValue: dataFileSpy },
+        { provide: AuthService, useValue: { isAuthenticated: () => true } },
       ],
     }).compileComponents();
 

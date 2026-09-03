@@ -9,6 +9,7 @@ import { filter } from 'rxjs/operators';
 
 import { AuthService } from '../core/services/auth.service';
 import { NotificationService } from '../core/services/notification.service';
+import { LoginDialogService } from '../features/login/login-dialog.component';
 
 interface NavigationItem {
   label: string;
@@ -74,6 +75,10 @@ interface NavigationItem {
             <span class="user-name">{{ user.display_name }}（{{ user.roles.join('、') }}）</span>
             <button mat-button type="button" (click)="cancelAccount()">注销账户</button>
             <button mat-button type="button" (click)="logout()">退出</button>
+          } @else {
+            <button mat-flat-button color="primary" type="button" (click)="openLogin()">
+              登录
+            </button>
           }
         </mat-toolbar>
         <main class="content" [class.workspace-content]="workspace()"><router-outlet /></main>
@@ -166,6 +171,7 @@ export class AppShellComponent {
   readonly drawerOpen = signal(false);
   private readonly router = inject(Router);
   private readonly notifications = inject(NotificationService);
+  private readonly loginDialog = inject(LoginDialogService);
   readonly workspace = signal(false);
   private readonly items: NavigationItem[] = [
     { label: '快速试用', route: '/quick-trial' },
@@ -209,7 +215,11 @@ export class AppShellComponent {
 
   logout(): void {
     this.auth.clearSession();
-    void this.router.navigate(['/login']);
+    void this.router.navigate(['/quick-trial']);
+  }
+
+  openLogin(): void {
+    this.loginDialog.requireLogin().subscribe();
   }
 
   cancelAccount(): void {

@@ -1,6 +1,6 @@
 import { Routes } from '@angular/router';
 
-import { authGuard } from './core/guards/auth.guard';
+import { authChildGuard } from './core/guards/auth.guard';
 import { permissionGuard } from './core/guards/permission.guard';
 
 export const routes: Routes = [
@@ -11,12 +11,12 @@ export const routes: Routes = [
   {
     path: '',
     loadComponent: () => import('./layout/app-shell.component').then((m) => m.AppShellComponent),
-    canActivate: [authGuard],
+    canActivateChild: [authChildGuard],
     children: [
       {
         path: 'quick-trial',
         loadComponent: () =>
-          import('./features/quick-trial/quick-trial.page').then((m) => m.QuickTrialPage),
+          import('./features/quick-trial/quick-trial-hub.page').then((m) => m.QuickTrialHubPage),
       },
       {
         path: 'dashboard',
