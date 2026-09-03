@@ -13,7 +13,12 @@ import {
 } from '@angular/core';
 import * as echarts from 'echarts';
 
-import { AssetSelection, FengtaiCandidate, FengtaiTopology } from './fengtai-leakage.models';
+import {
+  AssetSelection,
+  FengtaiCandidate,
+  FengtaiNetworkLayer,
+  FengtaiTopology,
+} from './fengtai-leakage.models';
 
 @Component({
   selector: 'app-fengtai-topology',
@@ -31,6 +36,9 @@ import { AssetSelection, FengtaiCandidate, FengtaiTopology } from './fengtai-lea
 export class FengtaiTopologyComponent implements AfterViewInit, OnChanges, OnDestroy {
   @Input() topology: FengtaiTopology | undefined;
   @Input() candidates: FengtaiCandidate[] = [];
+  @Input() activeLayer: FengtaiNetworkLayer | null = null;
+  @Input() activeFrameValues: Record<string, number | null> = {};
+  @Input() selectedAsset: AssetSelection | null = null;
   @Output() readonly assetSelected = new EventEmitter<AssetSelection>();
   @ViewChild('host') private host?: ElementRef<HTMLDivElement>;
   private chart: echarts.ECharts | null = null;
@@ -44,7 +52,8 @@ export class FengtaiTopologyComponent implements AfterViewInit, OnChanges, OnDes
     this.render();
     this.chart.on('click', (params: any) => this.selectAsset(params));
   }
-  ngOnChanges(_changes: SimpleChanges): void {
+  ngOnChanges(changes: SimpleChanges): void {
+    if (changes['selectedAsset']) this.selectedId = this.selectedAsset?.id ?? null;
     this.render();
   }
   ngOnDestroy(): void {
@@ -66,31 +75,40 @@ export class FengtaiTopologyComponent implements AfterViewInit, OnChanges, OnDes
         if (p.source === this.selectedId) adjacent.add(p.target);
         if (p.target === this.selectedId) adjacent.add(p.source);
       });
-    const nodes = (this.topology?.nodes ?? []).map((node) => ({
-      id: node.id,
-      name: node.name ?? node.id,
-      type: node.type ?? 'node',
-      x: node.x,
-      y: node.y,
-      symbol: node.type === 'valve' ? 'diamond' : node.type === 'hydrant' ? 'triangle' : 'circle',
-      symbolSize:
-        (node.type === 'valve' || node.type === 'hydrant' ? 15 : 9) +
-        (this.selectedId === node.id ? 4 : 0),
-      label: {
-        show: node.type === 'valve' || node.type === 'hydrant',
-        position: 'right',
-        color: '#475569',
-        fontSize: 10,
-      },
-      value: node.type ?? '节点',
-      itemStyle: {
-        color: node.type === 'valve' ? '#0f766e' : node.type === 'hydrant' ? '#dc2626' : '#475569',
-        borderColor: this.selectedId === node.id ? '#f59e0b' : 'transparent',
-        borderWidth: this.selectedId === node.id ? 3 : 0,
-        opacity:
-          this.selectedId && node.id !== this.selectedId && !adjacent.has(node.id) ? 0.18 : 1,
-      },
-    }));
+    const nodes = (this.topology?.nodes ?? []).map((node) => {
+      const active = this.activeState(
+        node.id,
+        node.type === 'valve' ? 'valve' : node.type === 'pipe' ? 'pipe' : 'node',
+      );
+      return {
+        id: node.id,
+        name: node.name ?? node.id,
+        type: node.type ?? 'node',
+        x: node.x,
+        y: node.y,
+        symbol: node.type === 'valve' ? 'diamond' : node.type === 'hydrant' ? 'triangle' : 'circle',
+        symbolSize:
+          (node.type === 'valve' || node.type === 'hydrant' ? 15 : 9) +
+          (this.selectedId === node.id ? 4 : 0) +
+          (active?.size ?? 0),
+        label: {
+          show: node.type === 'valve' || node.type === 'hydrant',
+          position: 'right',
+          color: '#475569',
+          fontSize: 10,
+        },
+        value: active?.label ?? node.type ?? '节点',
+        itemStyle: {
+          color:
+            active?.color ??
+            (node.type === 'valve' ? '#0f766e' : node.type === 'hydrant' ? '#dc2626' : '#475569'),
+          borderColor: this.selectedId === node.id ? '#f59e0b' : 'transparent',
+          borderWidth: this.selectedId === node.id ? 3 : 0,
+          opacity:
+            this.selectedId && node.id !== this.selectedId && !adjacent.has(node.id) ? 0.18 : 1,
+        },
+      };
+    });
     const candidateByPipe = new Map(
       this.candidates
         .filter((candidate) => candidate.pipe_id)
@@ -99,14 +117,16 @@ export class FengtaiTopologyComponent implements AfterViewInit, OnChanges, OnDes
     const links = pipes.map((pipe) => {
       const candidate = candidateByPipe.get(pipe.id ?? '');
       const risk = candidate?.score ?? candidate?.risk ?? pipe.risk;
+      const active = this.activeState(pipe.id ?? '', 'pipe');
       return {
         id: pipe.id,
         source: pipe.source,
         target: pipe.target,
         name: pipe.name ?? pipe.id ?? '管段',
         lineStyle: {
-          color: this.selectedId === pipe.id ? '#f59e0b' : this.riskColor(risk),
-          width: this.selectedId === pipe.id ? 6 : candidate ? 4 : 2.5,
+          color: this.selectedId === pipe.id ? '#f59e0b' : (active?.color ?? this.riskColor(risk)),
+          width: this.selectedId === pipe.id ? 6 : (active?.width ?? (candidate ? 4 : 2.5)),
+          type: active?.lineType,
           opacity:
             this.selectedId &&
             pipe.id !== this.selectedId &&
@@ -117,7 +137,7 @@ export class FengtaiTopologyComponent implements AfterViewInit, OnChanges, OnDes
               ? 0.12
               : 0.9,
         },
-        value: candidate ? `候选 ${this.riskText(risk)}` : this.riskText(risk),
+        value: active?.label ?? (candidate ? `候选 ${this.riskText(risk)}` : this.riskText(risk)),
       };
     });
     this.chart.setOption(
@@ -125,7 +145,9 @@ export class FengtaiTopologyComponent implements AfterViewInit, OnChanges, OnDes
         animation: false,
         title: {
           text: '管网风险概览',
-          subtext: '点击资产查看详情 · 滚轮缩放',
+          subtext: this.activeLayer
+            ? `${this.layerKindLabel(this.activeLayer.value_kind)}：${this.activeLayer.name}（${this.activeLayer.unit}） · 点击资产查看详情 · 滚轮缩放`
+            : '点击资产查看详情 · 滚轮缩放',
           left: 0,
           textStyle: { color: '#1e293b', fontSize: 14, fontWeight: 'normal' },
           subtextStyle: { color: '#64748b', fontSize: 11 },
@@ -194,5 +216,53 @@ export class FengtaiTopologyComponent implements AfterViewInit, OnChanges, OnDes
   private riskText(value: unknown): string {
     if (typeof value !== 'number') return String(value ?? '常规');
     return `${Math.round((value > 1 ? value / 100 : value) * 100)}%`;
+  }
+
+  private activeState(
+    assetId: string,
+    assetType: string,
+  ): {
+    color: string;
+    width?: number;
+    size?: number;
+    lineType?: 'solid' | 'dashed';
+    label: string;
+  } | null {
+    const layer = this.activeLayer;
+    if (
+      !layer ||
+      layer.asset_type !== assetType ||
+      !Object.prototype.hasOwnProperty.call(this.activeFrameValues, assetId)
+    )
+      return null;
+    const value = this.activeFrameValues[assetId];
+    const label = `${layer.name}：${value === null ? '无数据' : `${this.valueText(value)} ${layer.unit}`}`;
+    if (value === null) return { color: '#94a3b8', width: 2.5, size: 0, lineType: 'dashed', label };
+    const ratio = this.valueRatio(value, layer);
+    return {
+      color: ratio >= 0.7 ? '#dc2626' : ratio >= 0.4 ? '#d97706' : '#0f766e',
+      width: 2.5 + ratio * 3.5,
+      size: Math.round(ratio * 5),
+      label,
+    };
+  }
+
+  private valueRatio(value: number, layer: FengtaiNetworkLayer): number {
+    const min = typeof layer.min === 'number' ? layer.min : value;
+    const max = typeof layer.max === 'number' ? layer.max : value;
+    if (max <= min) return 0.5;
+    return Math.max(0, Math.min(1, (value - min) / (max - min)));
+  }
+
+  private valueText(value: number): string {
+    return Number.isInteger(value) ? String(value) : value.toFixed(2);
+  }
+
+  private layerKindLabel(kind: FengtaiNetworkLayer['value_kind']): string {
+    return (
+      ({ observed: '实测', cleaned: '清洗后实测', estimated: '估算', derived: '推导' } as const)[
+        kind
+      ] ?? kind
+    );
   }
 }

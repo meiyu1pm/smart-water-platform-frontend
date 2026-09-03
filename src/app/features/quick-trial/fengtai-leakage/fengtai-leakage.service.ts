@@ -6,6 +6,7 @@ import {
   FengtaiAnalysis,
   FengtaiAnalyzeRequest,
   FengtaiLeakageManifest,
+  FengtaiNetworkFrames,
   FengtaiTopology,
   FengtaiRawTopologyResponse,
   FengtaiAssetDetail,
@@ -34,15 +35,34 @@ export class FengtaiLeakageService {
   }
 
   getAssetDetail(
+    analysisId: string,
     assetId: string,
     startDate: string,
     endDate: string,
+    preset: string,
   ): Observable<FengtaiAssetDetail> {
     return this.api.get<FengtaiAssetDetail>(
-      `${this.basePath}/assets/${encodeURIComponent(assetId)}`,
+      `${this.basePath}/analyses/${encodeURIComponent(analysisId)}/assets/${encodeURIComponent(assetId)}`,
       {
         start_date: startDate,
         end_date: endDate,
+        preset,
+      },
+    );
+  }
+
+  getNetworkFrames(
+    analysisId: string,
+    startDate: string,
+    endDate: string,
+    preset: string,
+  ): Observable<FengtaiNetworkFrames> {
+    return this.api.get<FengtaiNetworkFrames>(
+      `${this.basePath}/analyses/${encodeURIComponent(analysisId)}/frames`,
+      {
+        start_date: startDate,
+        end_date: endDate,
+        preset,
       },
     );
   }

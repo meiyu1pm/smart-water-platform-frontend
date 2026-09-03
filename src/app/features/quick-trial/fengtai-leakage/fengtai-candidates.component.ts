@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, Input } from '@angular/core';
+import { ChangeDetectionStrategy, Component, EventEmitter, Input, Output } from '@angular/core';
 import { CommonModule } from '@angular/common';
 
 import { FengtaiCandidate } from './fengtai-leakage.models';
@@ -20,11 +20,13 @@ import { FengtaiCandidate } from './fengtai-leakage.models';
         <ol>
           @for (candidate of candidates; track candidate.id ?? candidate.pipe_id ?? $index) {
             <li>
-              <div>
-                <strong>{{ candidate.name || candidate.pipe_id || '管段候选' }}</strong
-                ><span>{{ reason(candidate) }}</span>
-              </div>
-              <b>{{ score(candidate) }}</b>
+              <button type="button" (click)="candidateSelected.emit(candidate)">
+                <div>
+                  <strong>{{ candidate.name || candidate.pipe_id || '管段候选' }}</strong
+                  ><span>{{ reason(candidate) }}</span>
+                </div>
+                <b>{{ score(candidate) }}</b>
+              </button>
             </li>
           }
         </ol>
@@ -65,11 +67,29 @@ import { FengtaiCandidate } from './fengtai-leakage.models';
       gap: 9px;
     }
     li {
+      border-top: 1px solid #edf2f7;
+      padding-top: 9px;
+    }
+    li button {
+      width: 100%;
       display: flex;
       gap: 12px;
       justify-content: space-between;
-      border-top: 1px solid #edf2f7;
-      padding-top: 9px;
+      text-align: left;
+      border: 0;
+      padding: 0;
+      background: transparent;
+      cursor: pointer;
+      font: inherit;
+    }
+    li button:hover strong,
+    li button:focus-visible strong {
+      color: #0f766e;
+    }
+    li button:focus-visible {
+      outline: 2px solid #0f766e;
+      outline-offset: 3px;
+      border-radius: 4px;
     }
     li div {
       display: grid;
@@ -95,9 +115,10 @@ import { FengtaiCandidate } from './fengtai-leakage.models';
 })
 export class FengtaiCandidatesComponent {
   @Input() candidates: FengtaiCandidate[] = [];
+  @Output() readonly candidateSelected = new EventEmitter<FengtaiCandidate>();
   score(candidate: FengtaiCandidate): string {
     return typeof candidate.score === 'number'
-      ? `${candidate.score.toFixed(1)} 分`
+      ? `${candidate.score.toFixed(2)} 分`
       : candidate.risk || '复核';
   }
   reason(candidate: FengtaiCandidate): string {

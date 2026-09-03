@@ -64,6 +64,39 @@ export interface FengtaiTopology {
   [key: string]: unknown;
 }
 
+export type FengtaiLayerAssetType = 'node' | 'pipe' | 'valve';
+export type FengtaiLayerValueKind = 'observed' | 'cleaned' | 'estimated' | 'derived';
+
+export interface FengtaiNetworkTimeline {
+  interval_minutes: number;
+  frame_count: number;
+  default_layer: string;
+  endpoint: string;
+}
+
+export interface FengtaiNetworkLayer {
+  code: string;
+  name: string;
+  unit: string;
+  asset_type: FengtaiLayerAssetType;
+  value_kind: FengtaiLayerValueKind;
+  asset_ids: string[];
+  values: Array<Array<number | null>>;
+  min: number | null;
+  max: number | null;
+}
+
+export interface FengtaiNetworkFrames {
+  analysis_id: string;
+  start_date: string;
+  end_date: string;
+  interval_minutes: number;
+  timestamps: string[];
+  default_timestamp: string;
+  default_layer: string;
+  layers: FengtaiNetworkLayer[];
+}
+
 export type FengtaiAssetType = 'node' | 'pipe' | 'valve' | 'hydrant' | 'meter';
 export interface AssetSelection {
   type: FengtaiAssetType;
@@ -78,7 +111,7 @@ export interface FengtaiAssetDetail {
     [key: string]: unknown;
   };
   connections: { node_ids: string[]; pipe_ids: string[] };
-  measurement: {
+  measurement?: {
     scope: 'direct' | 'community_reference';
     source_label: string;
     point_name: string;
@@ -93,6 +126,23 @@ export interface FengtaiAssetDetail {
     interval_minutes: number;
     full_resolution_points: number;
     series_points: number;
+  };
+  state_series?: {
+    timestamps: string[];
+    metrics: Array<{
+      code: string;
+      name: string;
+      unit: string;
+      value_kind: FengtaiLayerValueKind;
+      values: Array<number | null>;
+      confidence_values?: Array<number | null>;
+    }>;
+  };
+  calculation?: {
+    status: 'computed' | 'unavailable';
+    evidence_scope: string;
+    method: string;
+    confidence: number;
   };
   [key: string]: unknown;
 }
@@ -153,6 +203,7 @@ export interface FengtaiCandidate {
   risk?: string;
   reason?: string;
   evidence?: Record<string, unknown> | string[];
+  peak_at?: string;
   [key: string]: unknown;
 }
 
@@ -169,6 +220,7 @@ export interface FengtaiAnalysis {
   candidates?: FengtaiCandidate[];
   recommendation?: Record<string, unknown> | string;
   limitations?: string[];
+  network_timeline?: FengtaiNetworkTimeline;
   [key: string]: unknown;
 }
 

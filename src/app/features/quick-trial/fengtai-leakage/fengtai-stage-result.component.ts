@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, Input } from '@angular/core';
+import { ChangeDetectionStrategy, Component, EventEmitter, Input, Output } from '@angular/core';
 import { CommonModule } from '@angular/common';
 
 import { FengtaiAnalysisChartComponent } from './fengtai-analysis-chart.component';
@@ -67,6 +67,7 @@ import { FengtaiWaterBalanceComponent } from './fengtai-water-balance.component'
         @case ('candidate') {
           <app-fengtai-candidates
             [candidates]="analysis?.candidates ?? []"
+            (candidateSelected)="candidateSelected.emit($event)"
           ></app-fengtai-candidates>
         }
         @case ('recommendation') {
@@ -123,6 +124,9 @@ export class FengtaiStageResultComponent {
   @Input() selectedCode = '';
   @Input() analysis: FengtaiAnalysis | null = null;
   @Input() manifest: FengtaiLeakageManifest | null = null;
+  @Output() readonly candidateSelected = new EventEmitter<
+    import('./fengtai-leakage.models').FengtaiCandidate
+  >();
 
   kind():
     | 'data'

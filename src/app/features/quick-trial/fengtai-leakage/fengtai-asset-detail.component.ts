@@ -44,13 +44,36 @@ import { AssetSelection, FengtaiAssetDetail, FengtaiCandidate } from './fengtai-
       </dl>
       @if (candidate && candidate.score !== undefined) {
         <div class="risk">
-          <span>综合评分</span><strong>{{ candidate.score.toFixed(1) }} 分</strong>
+          <span>综合评分</span><strong>{{ candidate.score.toFixed(2) }} 分</strong>
         </div>
       }
-      <span class="scope" [class.reference]="detail.measurement.scope === 'community_reference'">{{
-        detail.measurement.scope === 'community_reference' ? '小区级参考' : '直接测量'
-      }}</span>
-      <p class="scope-note">数据来源：{{ detail.measurement.source_label }}</p>
+      @if (detail.calculation; as calculation) {
+        <span
+          class="scope"
+          [class.reference]="calculation.evidence_scope !== 'node_history_aggregate'"
+          >{{ scopeLabel(calculation.evidence_scope) }}</span
+        >
+        <p class="scope-note">
+          计算方法：{{ calculation.method }} · 置信度
+          {{ (calculation.confidence * 100).toFixed(0) }}%
+        </p>
+      } @else if (detail.measurement; as measurement) {
+        <span class="scope" [class.reference]="measurement.scope === 'community_reference'">{{
+          measurement.scope === 'community_reference' ? '小区级参考' : '直接测量'
+        }}</span>
+        <p class="scope-note">数据来源：{{ measurement.source_label }}</p>
+      }
+      @if (stateEntries().length) {
+        <h3>当前时刻状态</h3>
+        <dl class="state-facts">
+          @for (entry of stateEntries(); track entry.label) {
+            <div>
+              <dt>{{ entry.label }}</dt>
+              <dd>{{ entry.value }}</dd>
+            </div>
+          }
+        </dl>
+      }
       <div #chartHost class="chart" aria-label="分析窗口流量压力曲线"></div>
       <h3>邻接关系</h3>
       <div class="adjacent">
@@ -132,6 +155,26 @@ import { AssetSelection, FengtaiAssetDetail, FengtaiCandidate } from './fengtai-
       font-size: 12px;
       color: #64748b;
     }
+    .state-facts {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 7px;
+      margin: 8px 0;
+    }
+    .state-facts div {
+      padding: 7px;
+      background: #f8fafc;
+      border-radius: 7px;
+    }
+    .state-facts dt {
+      color: #64748b;
+      font-size: 11px;
+    }
+    .state-facts dd {
+      margin: 3px 0 0;
+      color: #1e293b;
+      font-size: 12px;
+    }
     .risk {
       margin-bottom: 10px;
       padding: 9px 10px;
@@ -189,6 +232,7 @@ export class FengtaiAssetDetailComponent implements AfterViewInit, OnChanges, On
   @Input() candidate: FengtaiCandidate | null = null;
   @Input() loading = false;
   @Input() error = '';
+  @Input() activeTimestamp: string | null = null;
   @Output() readonly closed = new EventEmitter<void>();
   @Output() readonly retry = new EventEmitter<void>();
   private host?: ElementRef<HTMLDivElement>;
@@ -237,6 +281,38 @@ export class FengtaiAssetDetailComponent implements AfterViewInit, OnChanges, On
       ...this.detail.connections.pipe_ids.map((id) => `管段 ${id}`),
     ];
   }
+  stateEntries(): Array<{ label: string; value: string }> {
+    const state = this.detail?.state_series;
+    if (!state?.timestamps.length || !this.activeTimestamp) return [];
+    const index = state.timestamps.indexOf(this.activeTimestamp);
+    if (index < 0) return [];
+    return state.metrics
+      .map((metric) => {
+        const value = metric.values[index];
+        if (value === null || value === undefined) return null;
+        const kind =
+          (
+            { observed: '实测', cleaned: '清洗后实测', estimated: '估算', derived: '推导' } as const
+          )[metric.value_kind] ?? metric.value_kind;
+        return {
+          label: `${metric.name}（${kind}）`,
+          value: `${Number.isInteger(value) ? value : value.toFixed(2)} ${metric.unit}`,
+        };
+      })
+      .filter((entry): entry is { label: string; value: string } => entry !== null);
+  }
+  scopeLabel(scope: string): string {
+    return (
+      (
+        {
+          node_history_aggregate: '节点观测与拓扑汇总',
+          topology_proxy: '拓扑代理估算',
+          direct: '直接测量',
+          community_reference: '小区级参考',
+        } as Record<string, string>
+      )[scope] ?? scope
+    );
+  }
   private factLabel(key: string): string {
     return (
       (
@@ -274,36 +350,71 @@ export class FengtaiAssetDetailComponent implements AfterViewInit, OnChanges, On
     return String(value);
   }
   private renderChart(): void {
-    const series = this.detail?.measurement.series;
-    if (!this.host || !series?.timestamps.length) {
+    const measurement = this.detail?.measurement?.series;
+    const state = this.detail?.state_series;
+    const timestamps = measurement?.timestamps ?? state?.timestamps ?? [];
+    if (!this.host || !timestamps.length) {
       this.chart?.clear();
       return;
     }
-    this.chart ??= echarts.init(this.host.nativeElement, null, { renderer: 'svg' });
-    this.chart.setOption(
-      {
-        animation: false,
-        tooltip: { trigger: 'axis' },
-        legend: { data: ['流量', '压力'] },
-        xAxis: { type: 'category', data: series.timestamps },
-        yAxis: [
-          { type: 'value', name: '流量 m³/h' },
-          { type: 'value', name: '压力 MPa' },
-        ],
-        dataZoom: [{ type: 'inside' }, { type: 'slider', height: 14, bottom: 4 }],
-        grid: { left: 46, right: 46, top: 38, bottom: 36 },
-        series: [
-          { name: '流量', type: 'line', showSymbol: false, data: series.flow },
+    const chartSeries = measurement
+      ? [
+          {
+            name: '流量',
+            type: 'line',
+            showSymbol: false,
+            data: measurement.flow,
+            yAxisIndex: 0,
+            markLine: this.cursorMarkLine(),
+          },
           {
             name: '压力',
             type: 'line',
             yAxisIndex: 1,
             showSymbol: false,
-            data: series.pressure,
+            data: measurement.pressure,
           },
+        ]
+      : (state?.metrics ?? []).map((metric, index) => ({
+          name: metric.name,
+          type: 'line',
+          showSymbol: false,
+          data: metric.values,
+          yAxisIndex: index === 0 ? 0 : 1,
+          markLine: index === 0 ? this.cursorMarkLine() : undefined,
+        }));
+    const legend = measurement
+      ? ['流量', '压力']
+      : (state?.metrics ?? []).map((metric) => metric.name);
+    const units = measurement
+      ? ['流量 m³/h', '压力 MPa']
+      : [state?.metrics[0]?.unit ?? '', state?.metrics[1]?.unit ?? ''];
+    this.chart ??= echarts.init(this.host.nativeElement, null, { renderer: 'svg' });
+    this.chart.setOption(
+      {
+        animation: false,
+        tooltip: { trigger: 'axis' },
+        legend: { data: legend },
+        xAxis: { type: 'category', data: timestamps },
+        yAxis: [
+          { type: 'value', name: units[0] },
+          { type: 'value', name: units[1] },
         ],
+        dataZoom: [{ type: 'inside' }, { type: 'slider', height: 14, bottom: 4 }],
+        grid: { left: 46, right: 46, top: 38, bottom: 36 },
+        series: chartSeries,
       },
       { notMerge: true },
     );
+  }
+  private cursorMarkLine(): object | undefined {
+    return this.activeTimestamp
+      ? {
+          silent: true,
+          symbol: 'none',
+          lineStyle: { color: '#f59e0b' },
+          data: [{ xAxis: this.activeTimestamp }],
+        }
+      : undefined;
   }
 }
