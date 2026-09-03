@@ -9,8 +9,8 @@ import { finalize } from 'rxjs';
 
 import { AuthService } from '../../core/services/auth.service';
 import { NotificationService } from '../../core/services/notification.service';
+import { safeInternalRedirect } from '../../core/routing/route-access-policy';
 import { SwIconComponent } from '../../shared/components/sw-icon.component';
-import { safeInternalRedirect } from './login-dialog.component';
 
 @Component({
   selector: 'app-login-page',

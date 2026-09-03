@@ -14,6 +14,7 @@ import { Observable, finalize, map } from 'rxjs';
 
 import { AuthService } from '../../core/services/auth.service';
 import { NotificationService } from '../../core/services/notification.service';
+import { safeInternalRedirect } from '../../core/routing/route-access-policy';
 import { SwIconComponent } from '../../shared/components/sw-icon.component';
 
 export interface LoginDialogContext {
@@ -21,10 +22,7 @@ export interface LoginDialogContext {
   description?: string;
   reason?: string;
   redirectUrl?: string;
-}
-
-export function safeInternalRedirect(url: string | undefined): string | undefined {
-  return url && /^\/(?!\/)/.test(url) ? url : undefined;
+  navigateOnSuccess?: boolean;
 }
 
 @Component({
@@ -230,7 +228,8 @@ export class LoginDialogService {
         map((authenticated) => {
           const ready = authenticated === true;
           const redirectUrl = safeInternalRedirect(context.redirectUrl);
-          if (ready && redirectUrl) void this.router.navigateByUrl(redirectUrl);
+          if (ready && redirectUrl && context.navigateOnSuccess !== false)
+            void this.router.navigateByUrl(redirectUrl);
           return ready;
         }),
       );

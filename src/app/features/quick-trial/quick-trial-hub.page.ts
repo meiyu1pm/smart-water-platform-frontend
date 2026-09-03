@@ -1,5 +1,10 @@
-import { ChangeDetectionStrategy, Component } from '@angular/core';
+import { ChangeDetectionStrategy, Component, OnInit, inject } from '@angular/core';
 import { MatTabsModule } from '@angular/material/tabs';
+import { ActivatedRoute, Router } from '@angular/router';
+import { take } from 'rxjs';
+
+import { safeInternalRedirect } from '../../core/routing/route-access-policy';
+import { LoginDialogService } from '../login/login-dialog.component';
 import { FengtaiLeakagePage } from './fengtai-leakage/fengtai-leakage.page';
 import { QuickTrialPage } from './quick-trial.page';
 
@@ -74,4 +79,43 @@ import { QuickTrialPage } from './quick-trial.page';
     }
   `,
 })
-export class QuickTrialHubPage {}
+export class QuickTrialHubPage implements OnInit {
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
+  private readonly loginDialog = inject(LoginDialogService);
+
+  ngOnInit(): void {
+    this.route.queryParamMap.pipe(take(1)).subscribe((params) => {
+      if (params.get('login') !== '1') return;
+      const redirectUrl = safeInternalRedirect(params.get('redirect') || undefined);
+      if (!redirectUrl) {
+        this.clearLoginIntent();
+        return;
+      }
+      this.loginDialog
+        .requireLogin({
+          title: '登录后继续访问',
+          description: '登录后将返回你刚才请求的页面。',
+          reason: 'protected-route',
+          redirectUrl,
+          navigateOnSuccess: false,
+        })
+        .subscribe((authenticated) => {
+          if (authenticated) {
+            void this.router.navigateByUrl(redirectUrl);
+          } else {
+            this.clearLoginIntent();
+          }
+        });
+    });
+  }
+
+  private clearLoginIntent(): void {
+    void this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: { login: null, redirect: null },
+      queryParamsHandling: 'merge',
+      replaceUrl: true,
+    });
+  }
+}

@@ -33,12 +33,6 @@ export class AuthService {
   );
   readonly isGuest = computed(() => this.accessState() === 'guest');
 
-  constructor() {
-    if (this.sessionState()) {
-      this.restoreProfile().subscribe();
-    }
-  }
-
   login(username: string, password: string): Observable<LoginResponse> {
     return this.http
       .post<ApiEnvelope<LoginResponse>>('/api/v1/auth/login', { username, password })

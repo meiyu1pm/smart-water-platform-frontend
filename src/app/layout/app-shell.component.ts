@@ -8,21 +8,14 @@ import { filter } from 'rxjs/operators';
 import { AuthService } from '../core/services/auth.service';
 import { NotificationService } from '../core/services/notification.service';
 import { LoginDialogService } from '../features/login/login-dialog.component';
-import { RouteAccess } from '../core/routing/route-access-policy';
-import { SwIconComponent, SwIconName } from '../shared/components/sw-icon.component';
+import { navigationItem, PlatformRouteKey } from '../core/routing/route-access-policy';
+import { SwIconComponent } from '../shared/components/sw-icon.component';
 
-interface NavigationItem {
-  label: string;
-  route: string;
-  icon: SwIconName;
-  permission?: string;
-  access: RouteAccess;
-  guestNavigation?: 'locked' | 'hidden';
-}
+type NavigationItem = ReturnType<typeof navigationItem>;
 
 interface NavigationGroup {
   label: string;
-  items: NavigationItem[];
+  items: PlatformRouteKey[];
 }
 
 @Component({
@@ -436,109 +429,28 @@ export class AppShellComponent {
   private readonly groups: NavigationGroup[] = [
     {
       label: '开始',
-      items: [
-        { label: '快速试用', route: '/quick-trial', icon: 'flask', access: 'public' },
-        {
-          label: '平台概览',
-          route: '/dashboard',
-          icon: 'dashboard',
-          access: 'authenticated',
-          guestNavigation: 'locked',
-        },
-      ],
+      items: ['quickTrial', 'dashboard'],
     },
     {
       label: '数据与分析',
-      items: [
-        {
-          label: '场景中心',
-          route: '/scenes',
-          icon: 'scene',
-          permission: 'workflow:read',
-          access: 'authenticated',
-          guestNavigation: 'locked',
-        },
-        {
-          label: '数据源与导入',
-          route: '/data-sources',
-          icon: 'database',
-          permission: 'data_source:read',
-          access: 'authenticated',
-          guestNavigation: 'locked',
-        },
-        {
-          label: '数据集管理',
-          route: '/data-collections',
-          icon: 'folder',
-          permission: 'data_source:read',
-          access: 'authenticated',
-          guestNavigation: 'hidden',
-        },
-        {
-          label: '算子中心',
-          route: '/operators',
-          icon: 'operators',
-          permission: 'operator:read',
-          access: 'authenticated',
-          guestNavigation: 'hidden',
-        },
-      ],
+      items: ['scenes', 'dataSources', 'dataCollections', 'operators'],
     },
     {
       label: '运行与管理',
-      items: [
-        {
-          label: '工作流',
-          route: '/workflows',
-          icon: 'workflow',
-          permission: 'workflow:read',
-          access: 'authenticated',
-          guestNavigation: 'locked',
-        },
-        {
-          label: '运行记录',
-          route: '/workflow-runs',
-          icon: 'history',
-          permission: 'workflow:read',
-          access: 'authenticated',
-          guestNavigation: 'hidden',
-        },
-        {
-          label: '任务中心',
-          route: '/tasks',
-          icon: 'tasks',
-          permission: 'task:read',
-          access: 'authenticated',
-          guestNavigation: 'hidden',
-        },
-        {
-          label: '用户管理',
-          route: '/users',
-          icon: 'users',
-          permission: 'user:manage',
-          access: 'authenticated',
-          guestNavigation: 'hidden',
-        },
-        {
-          label: '资源回收站',
-          route: '/recycle-bin',
-          icon: 'recycle',
-          permission: 'recycle:manage',
-          access: 'authenticated',
-          guestNavigation: 'hidden',
-        },
-      ],
+      items: ['workflows', 'workflowRuns', 'tasks', 'users', 'recycleBin'],
     },
   ];
   readonly visibleGroups = computed(() =>
     this.groups
       .map((group) => ({
         ...group,
-        items: group.items.filter((item) =>
-          this.auth.isGuest()
-            ? item.access === 'public' || item.guestNavigation === 'locked'
-            : !item.permission || this.auth.hasPermission(item.permission),
-        ),
+        items: group.items
+          .map(navigationItem)
+          .filter((item) =>
+            this.auth.isGuest()
+              ? item.access === 'public' || item.guestNavigation === 'locked'
+              : !item.permission || this.auth.hasPermission(item.permission),
+          ),
       }))
       .filter((group) => group.items.length > 0),
   );
@@ -551,6 +463,12 @@ export class AppShellComponent {
       .subscribe((event) => {
         this.workspace.set(this.isWorkspaceUrl(event.urlAfterRedirects));
         this.currentPageTitle.set(this.resolvePageTitle(event.urlAfterRedirects));
+        if (this.hasForbiddenNotice(event.urlAfterRedirects)) {
+          this.notifications.error(
+            new Error('当前账号没有访问该页面的权限。请返回可访问的工作区或联系管理员。'),
+          );
+          void this.router.navigate(['/dashboard'], { replaceUrl: true });
+        }
       });
   }
 
@@ -558,10 +476,14 @@ export class AppShellComponent {
     return /\/workflows\/[^/]+\/edit(?:\?|$)/.test(url);
   }
 
+  private hasForbiddenNotice(url: string): boolean {
+    return new URLSearchParams(url.split('?')[1] ?? '').get('forbidden') === '1';
+  }
+
   private resolvePageTitle(url: string): string {
     const path = url.split('?')[0];
     const item = this.groups
-      .flatMap((group) => group.items)
+      .flatMap((group) => group.items.map(navigationItem))
       .find((candidate) => path === candidate.route || path.startsWith(`${candidate.route}/`));
     return item?.label ?? '智慧水务平台';
   }

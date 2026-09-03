@@ -10,7 +10,9 @@ const requireAuthentication = (route: ActivatedRouteSnapshot, state: { url: stri
   const policy = policyForRoute(route);
   if (policy.access === 'public') return true;
   if (!auth.isAuthenticated()) {
-    return router.createUrlTree(['/quick-trial'], { queryParams: { redirect: state.url } });
+    return router.createUrlTree(['/quick-trial'], {
+      queryParams: { login: '1', redirect: state.url },
+    });
   }
   return !policy.permission || auth.hasPermission(policy.permission)
     ? true
