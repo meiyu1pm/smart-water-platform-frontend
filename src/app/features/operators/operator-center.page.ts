@@ -1018,7 +1018,12 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
     }
     .toolbar {
       flex-wrap: wrap;
-      margin-bottom: 12px;
+      margin-bottom: var(--sw-space-3);
+      padding: var(--sw-space-3);
+      border: 1px solid var(--sw-border);
+      border-radius: var(--sw-radius-md);
+      background: var(--sw-surface);
+      box-shadow: var(--sw-shadow-sm);
     }
     input,
     select {
@@ -1126,8 +1131,17 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
     }
     .operator-list {
       padding: 10px;
-      max-height: 680px;
+      max-height: min(680px, calc(100vh - 250px));
       overflow: auto;
+      scrollbar-gutter: stable;
+    }
+    .operator-list .empty {
+      min-height: 180px;
+      display: grid;
+      place-items: center;
+      padding: var(--sw-space-5);
+      color: var(--sw-text-muted);
+      text-align: center;
     }
     .catalog-resizer {
       align-self: stretch;
@@ -1161,11 +1175,19 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
       padding: 13px 12px;
       background: var(--sw-surface);
       color: var(--sw-text-primary);
-      border-bottom: 1px solid var(--sw-border);
+      border: 1px solid transparent;
+      border-bottom-color: var(--sw-border);
+      border-radius: var(--sw-radius-sm);
+      transition:
+        background-color var(--sw-motion-fast) var(--sw-ease-standard),
+        border-color var(--sw-motion-fast) var(--sw-ease-standard);
     }
-    .operator-row:hover,
+    .operator-row:hover {
+      background: var(--sw-color-primary-faint);
+    }
     .operator-row.selected {
       background: var(--sw-color-primary-soft);
+      border-color: color-mix(in srgb, var(--sw-color-primary) 36%, var(--sw-border));
     }
     .status-dot {
       flex: 0 0 9px;
@@ -1186,6 +1208,7 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
     }
     .row-copy strong {
       overflow-wrap: anywhere;
+      line-height: 1.35;
     }
     .row-copy small,
     .badge,
@@ -1204,6 +1227,19 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
       justify-content: space-between;
       align-items: flex-start;
     }
+    .version-viewer {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: var(--sw-space-2);
+      margin: var(--sw-space-3) 0 0;
+      color: var(--sw-text-muted);
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .version-viewer select {
+      min-width: 150px;
+    }
     code {
       color: var(--sw-text-muted);
       font-size: 12px;
@@ -1216,6 +1252,7 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
       background: var(--sw-surface-sunken);
       color: var(--sw-text-muted);
       font-size: 12px;
+      font-weight: 700;
     }
     .state.ready {
       background: var(--sw-color-success-soft);
@@ -1236,6 +1273,8 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
       gap: 4px;
       border-bottom: 1px solid var(--sw-border);
       margin-bottom: 16px;
+      overflow-x: auto;
+      scrollbar-width: thin;
     }
     .tabs button {
       border-radius: 8px 8px 0 0;
@@ -1243,6 +1282,7 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
       background: transparent;
       color: var(--sw-text-muted);
       border-bottom: 2px solid transparent;
+      white-space: nowrap;
     }
     .tabs button.active {
       color: var(--sw-color-primary-strong);
@@ -1262,13 +1302,13 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
       flex-direction: column;
       gap: 3px;
       padding: 9px 0;
-      border-bottom: 1px solid #eef1f5;
+      border-bottom: 1px solid var(--sw-border);
     }
     details {
       margin-top: 16px;
     }
     .section-subtitle {
-      color: #64748b;
+      color: var(--sw-text-muted);
       font-size: 12px;
       margin-top: 2px;
     }
@@ -1292,17 +1332,17 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
       justify-content: space-between;
       align-items: flex-start;
       padding: 12px 14px;
-      background: #f8fafc;
-      border: 1px solid #e2e8f0;
-      border-radius: 10px;
+      background: var(--sw-surface-muted);
+      border: 1px solid var(--sw-border);
+      border-radius: var(--sw-radius-sm);
       gap: 16px;
       transition:
         background 0.15s,
         border-color 0.15s;
     }
     .param-row:hover {
-      background: #f1f5f9;
-      border-color: #cbd5e1;
+      background: var(--sw-color-primary-faint);
+      border-color: var(--sw-border-strong);
     }
     .param-main {
       flex: 1;
@@ -1320,13 +1360,13 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
     .param-title {
       font-weight: 600;
       font-size: 14px;
-      color: #1e293b;
+      color: var(--sw-text-primary);
     }
     .param-key {
       font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
       font-size: 11px;
-      background: #e2e8f0;
-      color: #475569;
+      background: var(--sw-surface-sunken);
+      color: var(--sw-text-secondary);
       padding: 2px 6px;
       border-radius: 4px;
     }
@@ -1334,32 +1374,32 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
       font-size: 11px;
       padding: 2px 7px;
       border-radius: 999px;
-      background: #e0f2fe;
-      color: #0369a1;
+      background: var(--sw-color-info-soft);
+      color: var(--sw-color-info);
       font-weight: 500;
     }
     .param-unit-badge {
       font-size: 11px;
       padding: 2px 6px;
       border-radius: 4px;
-      background: #fef3c7;
-      color: #92400e;
+      background: var(--sw-color-accent-soft);
+      color: var(--sw-color-accent);
     }
     .param-desc {
       font-size: 12px;
-      color: #475569;
+      color: var(--sw-text-secondary);
       margin: 0;
       line-height: 1.4;
     }
     .param-constraints {
       font-size: 11px;
-      color: #64748b;
+      color: var(--sw-text-muted);
       display: flex;
       align-items: center;
       gap: 4px;
     }
     .constraint-label {
-      color: #94a3b8;
+      color: var(--sw-text-muted);
     }
     .param-value-col {
       display: flex;
@@ -1370,16 +1410,16 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
     }
     .param-val-label {
       font-size: 11px;
-      color: #94a3b8;
+      color: var(--sw-text-muted);
     }
     .param-val-pill {
       font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
       font-size: 12px;
       font-weight: 600;
       padding: 4px 10px;
-      background: #eff6ff;
-      border: 1px solid #bfdbfe;
-      color: #1d4ed8;
+      background: var(--sw-color-primary-soft);
+      border: 1px solid color-mix(in srgb, var(--sw-color-primary) 25%, var(--sw-border));
+      color: var(--sw-color-primary-strong);
       border-radius: 6px;
       max-width: 220px;
       overflow: hidden;
@@ -1389,10 +1429,10 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
     .params-edit-card {
       margin-bottom: 18px;
       padding: 16px;
-      border: 1px solid #93c5fd;
-      border-radius: 12px;
-      background: #f0f7ff;
-      box-shadow: 0 4px 12px rgba(15, 103, 201, 0.08);
+      border: 1px solid color-mix(in srgb, var(--sw-color-primary) 38%, var(--sw-border));
+      border-radius: var(--sw-radius-md);
+      background: var(--sw-color-primary-faint);
+      box-shadow: var(--sw-shadow-sm);
       display: grid;
       gap: 14px;
     }
@@ -1402,11 +1442,11 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
       align-items: flex-start;
       gap: 12px;
       padding-bottom: 10px;
-      border-bottom: 1px solid #dbeafe;
+      border-bottom: 1px solid var(--sw-border);
     }
     .edit-card-header strong {
       font-size: 14px;
-      color: #1e3a8a;
+      color: var(--sw-color-primary-strong);
     }
     .edit-card-form {
       padding: 8px 0;
@@ -1416,19 +1456,19 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
       justify-content: flex-end;
       gap: 10px;
       padding-top: 10px;
-      border-top: 1px solid #dbeafe;
+      border-top: 1px solid var(--sw-border);
     }
     .raw-contract-details {
       margin-top: 20px;
       padding-top: 12px;
-      border-top: 1px dashed #cbd5e1;
+      border-top: 1px dashed var(--sw-border-strong);
     }
     .release-binding-card {
       margin-top: 18px;
       padding: 14px;
-      border: 1px solid #dbe5f0;
-      border-radius: 10px;
-      background: #f8fafc;
+      border: 1px solid var(--sw-border);
+      border-radius: var(--sw-radius-sm);
+      background: var(--sw-surface-muted);
       display: flex;
       align-items: center;
       justify-content: space-between;
@@ -1442,13 +1482,13 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
       max-width: 360px;
     }
     .raw-contract-details summary {
-      color: #64748b;
+      color: var(--sw-text-muted);
       font-size: 12px;
       cursor: pointer;
       user-select: none;
     }
     .raw-contract-details summary:hover {
-      color: #0f67c9;
+      color: var(--sw-color-primary);
     }
     .raw-contract-content {
       margin-top: 10px;
@@ -1456,12 +1496,13 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
     .raw-contract-content h4 {
       font-size: 12px;
       margin: 8px 0 4px;
-      color: #475569;
+      color: var(--sw-text-secondary);
     }
     pre {
       white-space: pre-wrap;
       overflow: auto;
-      background: #f6f8fb;
+      background: var(--sw-surface-muted);
+      color: var(--sw-text-primary);
       padding: 12px;
       border-radius: 8px;
       font-size: 12px;
@@ -1470,17 +1511,17 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
     .algorithm-ref {
       margin-top: 12px;
       padding: 10px;
-      background: #f1f7ff;
-      color: #28527a;
+      background: var(--sw-color-info-soft);
+      color: var(--sw-color-info);
       border-radius: 8px;
       font-size: 13px;
     }
     .training-card {
       margin: 14px 0;
       padding: 14px;
-      border: 1px solid #d8e6f7;
-      border-radius: 10px;
-      background: #f7fbff;
+      border: 1px solid var(--sw-border);
+      border-radius: var(--sw-radius-md);
+      background: var(--sw-color-primary-faint);
       display: grid;
       gap: 8px;
     }
@@ -1495,7 +1536,7 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
     .training-fields label {
       display: grid;
       gap: 5px;
-      color: #475467;
+      color: var(--sw-text-secondary);
       font-size: 12px;
     }
     .training-fields input,
@@ -1523,16 +1564,16 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
     }
     .training-feedback {
       font-size: 13px;
-      color: #b45309;
+      color: var(--sw-color-warning);
     }
     .training-feedback.success {
-      color: #15803d;
+      color: var(--sw-color-success);
       font-weight: 600;
     }
     .models-registry-section {
       margin-top: 24px;
       padding-top: 16px;
-      border-top: 1px solid #e4e7ec;
+      border-top: 1px solid var(--sw-border);
     }
     .section-title-row {
       display: flex;
@@ -1543,10 +1584,10 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
     }
     .empty-models-card {
       padding: 20px;
-      border: 1px dashed #cbd5e1;
-      border-radius: 10px;
+      border: 1px dashed var(--sw-border-strong);
+      border-radius: var(--sw-radius-sm);
       text-align: center;
-      background: #f8fafc;
+      background: var(--sw-surface-muted);
     }
     .models-grid {
       display: grid;
@@ -1554,20 +1595,20 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
     }
     .model-item-card {
       padding: 14px;
-      border: 1px solid #e2e8f0;
-      border-radius: 10px;
-      background: #fff;
+      border: 1px solid var(--sw-border);
+      border-radius: var(--sw-radius-sm);
+      background: var(--sw-surface);
       transition:
         border-color 0.15s,
         box-shadow 0.15s;
     }
     .model-item-card:hover {
-      border-color: #94a3b8;
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.04);
+      border-color: var(--sw-border-strong);
+      box-shadow: var(--sw-shadow-md);
     }
     .model-item-card.is-default-card {
-      border-color: #3b82f6;
-      background: #f8fbff;
+      border-color: var(--sw-color-primary);
+      background: var(--sw-color-primary-faint);
     }
     .model-item-head {
       display: flex;
@@ -1583,24 +1624,24 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
     }
     .model-code-label {
       font-size: 14px;
-      color: #0f172a;
+      color: var(--sw-text-primary);
     }
     .badge-default-model {
-      background: #2563eb;
+      background: var(--sw-color-primary);
       color: #fff;
       font-weight: 700;
     }
     .badge-ready {
-      background: #dcfce7;
-      color: #15803d;
+      background: var(--sw-color-success-soft);
+      color: var(--sw-color-success);
     }
     .badge-pending {
-      background: #fef3c7;
-      color: #b45309;
+      background: var(--sw-color-warning-soft);
+      color: var(--sw-color-warning);
     }
     .badge-vis {
-      background: #f1f5f9;
-      color: #475569;
+      background: var(--sw-surface-sunken);
+      color: var(--sw-text-secondary);
     }
     .model-item-details {
       display: grid;
@@ -1621,9 +1662,9 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
     }
     .chip {
       padding: 2px 8px;
-      background: #f1f5f9;
+      background: var(--sw-surface-sunken);
       border-radius: 4px;
-      color: #334155;
+      color: var(--sw-text-secondary);
       font-size: 11px;
     }
     .model-item-actions {
@@ -1650,24 +1691,25 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
     .modal-backdrop {
       position: fixed;
       inset: 0;
-      background: rgba(15, 23, 42, 0.45);
+      background: color-mix(in srgb, var(--sw-text-primary) 48%, transparent);
       display: grid;
       place-items: center;
       z-index: 1000;
       backdrop-filter: blur(2px);
     }
     .modal-card {
-      background: #fff;
-      border-radius: 14px;
+      background: var(--sw-surface-raised);
+      border: 1px solid var(--sw-border);
+      border-radius: var(--sw-radius-lg);
       width: min(90vw, 680px);
       max-height: 85vh;
       display: flex;
       flex-direction: column;
-      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15);
+      box-shadow: var(--sw-shadow-lg);
     }
     .modal-header {
       padding: 16px 20px;
-      border-bottom: 1px solid #e2e8f0;
+      border-bottom: 1px solid var(--sw-border);
       display: flex;
       justify-content: space-between;
       align-items: center;
@@ -1675,6 +1717,7 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
     .modal-close-btn {
       font-size: 18px;
       cursor: pointer;
+      color: var(--sw-text-secondary);
     }
     .modal-body {
       padding: 20px;
@@ -1687,13 +1730,14 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
       grid-template-columns: 1fr 1fr;
       gap: 8px;
       padding: 12px;
-      background: #f8fafc;
+      background: var(--sw-surface-muted);
+      border: 1px solid var(--sw-border);
       border-radius: 8px;
       font-size: 12px;
     }
     .modal-footer {
       padding: 14px 20px;
-      border-top: 1px solid #e2e8f0;
+      border-top: 1px solid var(--sw-border);
       display: flex;
       justify-content: flex-end;
       gap: 10px;
@@ -1703,11 +1747,11 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
       grid-template-columns: 1fr 1fr auto;
       gap: 12px;
       padding: 10px 0;
-      border-bottom: 1px solid #eef1f5;
-      color: #667085;
+      border-bottom: 1px solid var(--sw-border);
+      color: var(--sw-text-muted);
     }
     .version-row b {
-      color: #172033;
+      color: var(--sw-text-primary);
     }
     .version-select-row {
       grid-template-columns: auto minmax(140px, 0.9fr) minmax(150px, 1fr) minmax(180px, 1fr);
@@ -1722,11 +1766,11 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
     }
     .version-select-row:hover:not(.disabled),
     .version-select-row.selected {
-      border-color: #93c5fd;
-      background: #f0f7ff;
+      border-color: var(--sw-color-primary);
+      background: var(--sw-color-primary-faint);
     }
     .version-select-row.current {
-      background: #f0fdf4;
+      background: var(--sw-color-success-soft);
     }
     .version-select-row.disabled {
       cursor: not-allowed;
@@ -1735,7 +1779,7 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
     .version-select-row input {
       min-width: 0;
       margin: 0;
-      accent-color: #0f67c9;
+      accent-color: var(--sw-color-primary);
     }
     .version-identity {
       display: flex;
@@ -1743,14 +1787,14 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
       gap: 8px;
     }
     .current-version-badge {
-      color: #087443;
-      background: #dcfae6;
+      color: var(--sw-color-success);
+      background: var(--sw-color-success-soft);
       border-radius: 999px;
       padding: 2px 7px;
       white-space: nowrap;
     }
     .available-text {
-      color: #087443;
+      color: var(--sw-color-success);
     }
     .version-activation-actions {
       display: flex;
@@ -1759,9 +1803,9 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
       gap: 18px;
       margin-top: 16px;
       padding: 14px;
-      border: 1px solid #dbe7f5;
-      border-radius: 10px;
-      background: #f8fbff;
+      border: 1px solid var(--sw-border);
+      border-radius: var(--sw-radius-sm);
+      background: var(--sw-surface-muted);
     }
     .version-activation-actions p {
       margin: 4px 0 0;
@@ -1775,26 +1819,27 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
       display: grid;
       gap: 6px;
       padding: 14px;
-      background: #f6f8fb;
-      border-radius: 10px;
+      background: var(--sw-surface-muted);
+      border: 1px solid var(--sw-border);
+      border-radius: var(--sw-radius-sm);
     }
     .usage-grid strong {
       font-size: 22px;
     }
     .markdown {
       line-height: 1.7;
-      color: #344054;
+      color: var(--sw-text-secondary);
       max-width: 1040px;
     }
     .document-version {
-      color: #667085;
+      color: var(--sw-text-muted);
       font-size: 12px;
       margin: -4px 0 18px;
     }
     :host ::ng-deep .markdown h1,
     :host ::ng-deep .markdown h2,
     :host ::ng-deep .markdown h3 {
-      color: #172033;
+      color: var(--sw-text-primary);
       line-height: 1.3;
       margin: 1.35em 0 0.55em;
     }
@@ -1803,9 +1848,9 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
       width: min(100%, 1120px);
       height: auto;
       margin: 18px auto 10px;
-      border: 1px solid #e4e7ec;
+      border: 1px solid var(--sw-border);
       border-radius: 12px;
-      background: #f8fafc;
+      background: var(--sw-surface-muted);
     }
     :host ::ng-deep .markdown .katex-display {
       overflow-x: auto;
@@ -1836,24 +1881,32 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
       flex-direction: column;
       gap: 10px;
       padding: 16px;
-      border: 1px solid #e4e7ec;
-      border-radius: 10px;
+      border: 1px solid var(--sw-border);
+      border-radius: var(--sw-radius-md);
+      background: var(--sw-surface-muted);
+      transition:
+        border-color var(--sw-motion-fast) var(--sw-ease-standard),
+        background-color var(--sw-motion-fast) var(--sw-ease-standard);
+    }
+    .starter-card:hover {
+      border-color: var(--sw-border-strong);
+      background: var(--sw-color-primary-faint);
     }
     .starter-title {
       justify-content: space-between;
       align-items: flex-start;
     }
     .starter-title span {
-      color: #667085;
+      color: var(--sw-text-muted);
       font-size: 12px;
       white-space: nowrap;
     }
     .starter-card p {
-      color: #667085;
+      color: var(--sw-text-muted);
       min-height: 48px;
     }
     .starter-card small {
-      color: #667085;
+      color: var(--sw-text-muted);
       overflow-wrap: anywhere;
     }
     .starter-card a {
@@ -1871,55 +1924,55 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
       align-items: center;
       margin-bottom: 12px;
       padding-bottom: 8px;
-      border-bottom: 1px solid #eef1f5;
+      border-bottom: 1px solid var(--sw-border);
     }
     .doc-card-header h3 {
       margin: 0;
       font-size: 16px;
       font-weight: 700;
-      color: #0f172a;
+      color: var(--sw-text-primary);
     }
     .doc-version-tag {
       font-size: 11px;
       font-weight: 600;
       padding: 2px 8px;
-      background: #e0f2fe;
-      color: #0369a1;
+      background: var(--sw-color-info-soft);
+      color: var(--sw-color-info);
       border-radius: 999px;
     }
     .empty-docs-box {
       padding: 24px;
       text-align: center;
-      background: #f8fafc;
-      border: 1px dashed #cbd5e1;
+      background: var(--sw-surface-muted);
+      border: 1px dashed var(--sw-border-strong);
       border-radius: 10px;
       margin: 12px 0;
     }
     :host ::ng-deep .markdown {
       line-height: 1.75;
-      color: #334155;
+      color: var(--sw-text-secondary);
       font-size: 14px;
     }
     :host ::ng-deep .markdown h1 {
       font-size: 20px;
       font-weight: 800;
       margin: 20px 0 12px;
-      color: #0f172a;
+      color: var(--sw-text-primary);
       letter-spacing: -0.01em;
     }
     :host ::ng-deep .markdown h2 {
       font-size: 16px;
       font-weight: 700;
       margin: 18px 0 10px;
-      color: #1e293b;
+      color: var(--sw-text-primary);
       padding-bottom: 6px;
-      border-bottom: 1px solid #f1f5f9;
+      border-bottom: 1px solid var(--sw-border);
     }
     :host ::ng-deep .markdown h3 {
       font-size: 14px;
       font-weight: 600;
       margin: 14px 0 8px;
-      color: #334155;
+      color: var(--sw-text-secondary);
     }
     :host ::ng-deep .markdown p {
       margin: 10px 0;
@@ -1940,20 +1993,20 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
       border-spacing: 0;
       margin: 18px 0;
       font-size: 13px;
-      background: #ffffff;
-      border: 1px solid #cbd5e1;
+      background: var(--sw-surface);
+      border: 1px solid var(--sw-border-strong);
       border-radius: 8px;
       overflow: hidden;
-      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+      box-shadow: var(--sw-shadow-sm);
     }
     :host ::ng-deep .markdown th {
-      background: #f8fafc;
+      background: var(--sw-surface-muted);
       font-weight: 700;
-      color: #1e293b;
+      color: var(--sw-text-primary);
       text-align: left;
       padding: 10px 14px;
-      border-bottom: 1px solid #cbd5e1;
-      border-right: 1px solid #e2e8f0;
+      border-bottom: 1px solid var(--sw-border-strong);
+      border-right: 1px solid var(--sw-border);
       white-space: nowrap;
     }
     :host ::ng-deep .markdown th:last-child {
@@ -1961,9 +2014,9 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
     }
     :host ::ng-deep .markdown td {
       padding: 10px 14px;
-      border-bottom: 1px solid #e2e8f0;
-      border-right: 1px solid #f1f5f9;
-      color: #334155;
+      border-bottom: 1px solid var(--sw-border);
+      border-right: 1px solid var(--sw-border);
+      color: var(--sw-text-secondary);
       line-height: 1.6;
       word-break: break-word;
     }
@@ -1974,10 +2027,10 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
       border-bottom: none;
     }
     :host ::ng-deep .markdown tr:nth-child(even) td {
-      background: #fafcff;
+      background: var(--sw-surface-muted);
     }
     :host ::ng-deep .markdown tr:hover td {
-      background: #f1f5f9;
+      background: var(--sw-color-primary-faint);
     }
     :host ::ng-deep .markdown img {
       max-width: 100%;
@@ -1985,16 +2038,16 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
       display: block;
       margin: 20px auto;
       border-radius: 10px;
-      border: 1px solid #e2e8f0;
-      background: #ffffff;
+      border: 1px solid var(--sw-border);
+      background: var(--sw-surface);
       padding: 12px;
-      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.06);
+      box-shadow: var(--sw-shadow-md);
     }
     :host ::ng-deep .markdown code {
       font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
       font-size: 12px;
-      background: #f1f5f9;
-      color: #0369a1;
+      background: var(--sw-surface-sunken);
+      color: var(--sw-color-primary-strong);
       padding: 2px 6px;
       border-radius: 4px;
     }
@@ -2016,14 +2069,14 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
     :host ::ng-deep .markdown blockquote {
       margin: 14px 0;
       padding: 10px 16px;
-      border-left: 4px solid #0284c7;
-      background: #f0f9ff;
-      color: #0369a1;
+      border-left: 4px solid var(--sw-color-primary);
+      background: var(--sw-color-primary-faint);
+      color: var(--sw-color-primary-strong);
       border-radius: 0 6px 6px 0;
       line-height: 1.65;
     }
     :host ::ng-deep .markdown em {
-      color: #64748b;
+      color: var(--sw-text-muted);
       font-size: 13px;
     }
     @media (max-width: 900px) {
@@ -2052,10 +2105,27 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
       input {
         min-width: 100%;
       }
+      .toolbar > select,
+      .toolbar > button,
+      .toolbar > a {
+        flex: 1 1 calc(50% - var(--sw-space-2));
+      }
       .usage-grid,
       .version-row,
       .training-fields {
         grid-template-columns: 1fr;
+      }
+      .detail-card {
+        padding: var(--sw-space-4);
+      }
+      .version-viewer {
+        align-items: stretch;
+        flex-direction: column;
+      }
+      .version-viewer select,
+      .release-binding-actions select {
+        min-width: 0;
+        width: 100%;
       }
     }
   `,

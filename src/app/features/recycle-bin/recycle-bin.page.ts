@@ -29,7 +29,12 @@ import { BeijingTimePipe } from '../../shared/pipes/beijing-time.pipe';
       </div>
       <div class="actions">
         <button mat-stroked-button (click)="load()">刷新</button
-        ><button mat-flat-button [disabled]="!pageData().total" (click)="emptyBin()">
+        ><button
+          class="danger-action"
+          mat-stroked-button
+          [disabled]="!pageData().total"
+          (click)="emptyBin()"
+        >
           清空回收站
         </button>
       </div>
@@ -58,7 +63,9 @@ import { BeijingTimePipe } from '../../shared/pipes/beijing-time.pipe';
       <div class="batch">
         <span>已选 {{ selected().size }} 项</span
         ><button mat-stroked-button (click)="restoreSelected()">批量恢复</button
-        ><button mat-flat-button (click)="purgeSelected()">永久清理</button>
+        ><button class="danger-action" mat-stroked-button (click)="purgeSelected()">
+          永久清理
+        </button>
       </div>
     }
     <section class="panel">
@@ -86,7 +93,12 @@ import { BeijingTimePipe } from '../../shared/pipes/beijing-time.pipe';
           <div class="actions">
             <button mat-button [disabled]="!item.can_restore" (click)="restore(item)">
               恢复</button
-            ><button mat-button [disabled]="!item.can_purge" (click)="purge(item)">
+            ><button
+              class="danger-link"
+              mat-button
+              [disabled]="!item.can_purge"
+              (click)="purge(item)"
+            >
               {{ item.can_retry ? '重新清理' : '清理' }}
             </button>
           </div>
@@ -120,38 +132,49 @@ import { BeijingTimePipe } from '../../shared/pipes/beijing-time.pipe';
     }
     .head {
       justify-content: space-between;
+      margin-bottom: var(--sw-space-5);
     }
     .eyebrow {
       margin: 0;
-      color: #0f4c81;
+      color: var(--sw-color-primary);
       font-size: 12px;
       font-weight: 800;
+      letter-spacing: 0.08em;
     }
     .head h1 {
       margin: 4px 0;
     }
     .head p,
     small {
-      color: #64748b;
+      color: var(--sw-text-muted);
     }
     .filters {
-      margin: 20px 0;
+      margin: 0 0 var(--sw-space-4);
+      flex-wrap: wrap;
+      padding: var(--sw-space-3) var(--sw-space-4);
+      border: 1px solid var(--sw-border);
+      border-radius: var(--sw-radius-md);
+      background: var(--sw-surface);
+      box-shadow: var(--sw-shadow-sm);
     }
     .filters mat-form-field {
       width: 220px;
+      margin-bottom: -20px;
     }
     .batch {
-      margin-bottom: 12px;
-      padding: 10px 14px;
-      background: #eff6ff;
-      border: 1px solid #bfdbfe;
-      border-radius: 12px;
+      margin-bottom: var(--sw-space-3);
+      padding: var(--sw-space-2) var(--sw-space-4);
+      background: var(--sw-color-primary-soft);
+      border: 1px solid color-mix(in srgb, var(--sw-color-primary) 28%, var(--sw-border));
+      border-radius: var(--sw-radius-md);
+      color: var(--sw-color-primary-strong);
     }
     .panel {
-      background: #fff;
-      border: 1px solid #e2e8f0;
-      border-radius: 14px;
+      background: var(--sw-surface);
+      border: 1px solid var(--sw-border);
+      border-radius: var(--sw-radius-lg);
       overflow: hidden;
+      box-shadow: var(--sw-shadow-sm);
     }
     .row {
       display: grid;
@@ -159,16 +182,25 @@ import { BeijingTimePipe } from '../../shared/pipes/beijing-time.pipe';
       align-items: center;
       gap: 12px;
       padding: 14px 18px;
-      border-top: 1px solid #f1f5f9;
+      border-top: 1px solid var(--sw-border);
+      transition: background-color var(--sw-motion-fast) var(--sw-ease-standard);
+    }
+    .row:not(.heading):hover {
+      background: var(--sw-color-primary-faint);
     }
     .heading {
       border: 0;
-      background: #f8fafc;
+      background: var(--sw-surface-muted);
+      color: var(--sw-text-muted);
+      font-size: 12px;
       font-weight: 700;
     }
     .row small {
       display: block;
       margin-top: 4px;
+    }
+    .row b {
+      color: var(--sw-text-primary);
     }
     .actions {
       justify-content: flex-end;
@@ -176,11 +208,20 @@ import { BeijingTimePipe } from '../../shared/pipes/beijing-time.pipe';
     footer {
       justify-content: flex-end;
       padding: 12px 18px;
+      color: var(--sw-text-muted);
+      border-top: 1px solid var(--sw-border);
     }
     .empty {
       padding: 48px;
       text-align: center;
-      color: #64748b;
+      color: var(--sw-text-muted);
+    }
+    .danger-action,
+    .danger-link {
+      color: var(--sw-color-danger) !important;
+    }
+    .danger-action {
+      border-color: color-mix(in srgb, var(--sw-color-danger) 45%, var(--sw-border)) !important;
     }
     @media (max-width: 900px) {
       .head {
@@ -191,7 +232,12 @@ import { BeijingTimePipe } from '../../shared/pipes/beijing-time.pipe';
         display: none;
       }
       .row {
-        grid-template-columns: 40px 1fr 1fr;
+        grid-template-columns: 40px minmax(180px, 1fr) minmax(120px, auto);
+        padding: var(--sw-space-3) var(--sw-space-4);
+      }
+      .row > span:nth-of-type(2),
+      .row > div:nth-of-type(2) {
+        grid-column: 2 / -1;
       }
       .row > .actions {
         grid-column: 2/-1;
@@ -202,6 +248,22 @@ import { BeijingTimePipe } from '../../shared/pipes/beijing-time.pipe';
       }
       .filters mat-form-field {
         width: 100%;
+      }
+      footer {
+        justify-content: center;
+        flex-wrap: wrap;
+      }
+    }
+    @media (max-width: 560px) {
+      .actions {
+        flex-wrap: wrap;
+        justify-content: flex-start;
+      }
+      .row {
+        grid-template-columns: 34px minmax(0, 1fr);
+      }
+      .row > *:not(mat-checkbox) {
+        grid-column: 2;
       }
     }
   `,

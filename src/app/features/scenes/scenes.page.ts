@@ -28,7 +28,7 @@ interface BusinessScene {
           覆盖供水、排水、水质、能耗全链路12大智慧水务算法场景，开箱即用，一键进入编排与分析。
         </p>
       </div>
-      <div class="header-actions">
+      <div class="header-actions" role="group" aria-label="按业务类型筛选场景">
         <button
           mat-stroked-button
           [class.active]="filterCategory() === ''"
@@ -60,10 +60,11 @@ interface BusinessScene {
       </div>
     </header>
 
-    <section class="scene-grid">
+    <section class="scene-grid" aria-label="业务场景">
       @for (scene of displayScenes(); track scene.id) {
         <article
           class="scene-card"
+          [attr.data-category]="scene.category"
           [class.offline]="scene.status === 'coming'"
           [class.clickable]="scene.status === 'online'"
           [attr.role]="scene.status === 'online' ? 'button' : null"
@@ -85,7 +86,7 @@ interface BusinessScene {
           <div class="card-foot">
             <span class="category-tag">{{ scene.category }}</span>
             @if (scene.status === 'online') {
-              <span class="enter-text">立即使用 →</span>
+              <span class="enter-text">打开场景</span>
             }
           </div>
         </article>
@@ -102,8 +103,8 @@ interface BusinessScene {
       display: flex;
       justify-content: space-between;
       align-items: flex-end;
-      gap: 24px;
-      margin-bottom: 24px;
+      gap: var(--sw-space-6);
+      margin-bottom: var(--sw-space-5);
     }
 
     .eyebrow {
@@ -128,9 +129,14 @@ interface BusinessScene {
 
     .header-actions {
       display: flex;
-      gap: 8px;
+      gap: var(--sw-space-2);
       flex-wrap: wrap;
       justify-content: flex-end;
+      padding: var(--sw-space-2);
+      border: 1px solid var(--sw-border);
+      border-radius: var(--sw-radius-md);
+      background: var(--sw-surface);
+      box-shadow: var(--sw-shadow-sm);
     }
 
     .header-actions button.active {
@@ -141,19 +147,37 @@ interface BusinessScene {
 
     .scene-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-      gap: 16px;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: var(--sw-space-4);
     }
 
     .scene-card {
+      position: relative;
       display: flex;
       flex-direction: column;
-      padding: 20px;
+      min-height: 196px;
+      padding: var(--sw-space-5);
+      overflow: hidden;
       border: 1px solid var(--sw-border);
       border-radius: var(--sw-radius-lg);
       background: var(--sw-surface);
       box-shadow: var(--sw-shadow-sm);
-      transition: all 0.2s ease;
+      transition:
+        border-color var(--sw-motion-base) var(--sw-ease-standard),
+        box-shadow var(--sw-motion-base) var(--sw-ease-standard),
+        background-color var(--sw-motion-base) var(--sw-ease-standard);
+    }
+
+    .scene-card::before {
+      content: '';
+      position: absolute;
+      inset: 0 0 auto;
+      height: 3px;
+      background: var(--sw-border-strong);
+    }
+
+    .scene-card.clickable::before {
+      background: var(--sw-color-secondary);
     }
 
     .scene-card.clickable {
@@ -163,6 +187,7 @@ interface BusinessScene {
     .scene-card.clickable:hover {
       border-color: var(--sw-color-primary);
       box-shadow: var(--sw-shadow-md);
+      background: var(--sw-color-primary-faint);
     }
 
     .scene-card.clickable:focus-visible {
@@ -172,15 +197,20 @@ interface BusinessScene {
     }
 
     .scene-card.offline {
-      opacity: 0.55;
+      background: var(--sw-surface-muted);
       cursor: not-allowed;
+    }
+
+    .scene-card.offline h3,
+    .scene-card.offline .scene-icon {
+      color: var(--sw-text-secondary);
     }
 
     .card-head {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      margin-bottom: 14px;
+      margin-bottom: var(--sw-space-4);
     }
 
     .scene-icon {
@@ -188,8 +218,8 @@ interface BusinessScene {
       height: 44px;
       display: grid;
       place-items: center;
-      border-radius: 10px;
-      background: linear-gradient(135deg, var(--sw-color-primary-soft), var(--sw-color-info-soft));
+      border-radius: var(--sw-radius-md);
+      background: var(--sw-color-secondary-soft);
       color: var(--sw-color-primary);
     }
 
@@ -208,24 +238,25 @@ interface BusinessScene {
     }
 
     h3 {
-      margin: 0 0 6px;
-      font-size: 17px;
+      margin: 0 0 var(--sw-space-2);
+      font-size: 18px;
+      line-height: 1.35;
     }
 
     .desc {
       flex: 1;
-      margin: 0 0 16px;
+      margin: 0 0 var(--sw-space-4);
       color: var(--sw-text-secondary);
       font-size: 13px;
       line-height: 1.55;
-      min-height: 40px;
+      min-height: 42px;
     }
 
     .card-foot {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      padding-top: 12px;
+      padding-top: var(--sw-space-3);
       border-top: 1px solid var(--sw-border);
     }
 
@@ -235,9 +266,18 @@ interface BusinessScene {
     }
 
     .enter-text {
+      display: inline-flex;
+      align-items: center;
+      gap: var(--sw-space-1);
       font-size: 12px;
-      font-weight: 600;
+      font-weight: 700;
       color: var(--sw-color-primary);
+    }
+
+    .enter-text::after {
+      content: '›';
+      font-size: 18px;
+      line-height: 1;
     }
 
     @media (max-width: 900px) {
@@ -247,12 +287,17 @@ interface BusinessScene {
       }
       .header-actions {
         justify-content: flex-start;
+        width: 100%;
+        box-sizing: border-box;
       }
     }
 
     @media (max-width: 600px) {
       .scene-grid {
         grid-template-columns: 1fr;
+      }
+      .header-actions button {
+        flex: 1 1 calc(50% - var(--sw-space-2));
       }
     }
   `,

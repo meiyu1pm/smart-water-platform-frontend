@@ -29,7 +29,7 @@ import { BeijingTimePipe } from '../../shared/pipes/beijing-time.pipe';
             </a>
           }
           @if (canCancel(task)) {
-            <button mat-flat-button color="warn" type="button" (click)="cancel(task)">
+            <button class="danger-action" mat-stroked-button type="button" (click)="cancel(task)">
               请求取消
             </button>
           }
@@ -38,7 +38,7 @@ import { BeijingTimePipe } from '../../shared/pipes/beijing-time.pipe';
           }
         </div>
       </header>
-      <section class="grid">
+      <section class="grid" aria-label="任务执行概览">
         <mat-card class="status-card"
           ><div class="status-line">
             <app-status-chip [status]="task.status" /><strong>{{ task.progress }}%</strong>
@@ -70,13 +70,19 @@ import { BeijingTimePipe } from '../../shared/pipes/beijing-time.pipe';
         </mat-card>
       </section>
       @if (task.error_code || task.error_message) {
-        <section class="error">
+        <section class="error" role="alert">
           <strong>{{ task.error_code || '任务失败' }}</strong>
           <p>{{ task.error_message }}</p>
         </section>
       }
       <section class="panel">
-        <h2>任务日志</h2>
+        <div class="panel-head">
+          <div>
+            <h2>任务日志</h2>
+            <p>按时间顺序记录调度、执行和状态变化。</p>
+          </div>
+          <span>{{ handle?.logs()?.length ?? 0 }} 条</span>
+        </div>
         @for (log of handle?.logs() ?? []; track log.created_at + log.message) {
           <div class="log">
             <time>{{ log.created_at | beijingTime: 'HH:mm:ss' }}</time
@@ -93,15 +99,19 @@ import { BeijingTimePipe } from '../../shared/pipes/beijing-time.pipe';
   styles: `
     .page-head,
     .status-line,
-    .buttons {
+    .buttons,
+    .panel-head {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      gap: 16px;
+      gap: var(--sw-space-4);
+    }
+    .page-head {
+      margin-bottom: var(--sw-space-5);
     }
     .eyebrow {
       margin: 0;
-      color: #0f4c81;
+      color: var(--sw-color-primary);
       font-size: 12px;
       font-weight: 800;
       letter-spacing: 0.08em;
@@ -111,46 +121,86 @@ import { BeijingTimePipe } from '../../shared/pipes/beijing-time.pipe';
     p {
       margin-top: 0;
     }
+    h1 {
+      margin-bottom: var(--sw-space-1);
+      font-size: clamp(26px, 3vw, 34px);
+      letter-spacing: -0.025em;
+    }
     .mono {
       font-family: ui-monospace, monospace;
-      color: #64748b;
+      color: var(--sw-text-muted);
+      font-size: 12px;
+      overflow-wrap: anywhere;
     }
     .grid {
       display: grid;
-      grid-template-columns: 1.2fr 1fr;
-      gap: 16px;
+      grid-template-columns: 1.25fr repeat(2, minmax(0, 1fr));
+      gap: var(--sw-space-4);
     }
-    .status-card,
-    mat-card,
+    .grid mat-card,
     .panel {
-      padding: 20px;
+      padding: var(--sw-space-5);
+      border: 1px solid var(--sw-border);
+      border-radius: var(--sw-radius-lg);
+      background: var(--sw-surface);
+      box-shadow: var(--sw-shadow-sm);
+    }
+    .grid mat-card p {
+      margin-bottom: var(--sw-space-2);
+      color: var(--sw-text-muted);
+      font-size: 13px;
+    }
+    .grid mat-card > strong {
+      display: block;
+      margin-bottom: var(--sw-space-4);
+      color: var(--sw-text-primary);
+      font-size: 18px;
+      font-variant-numeric: tabular-nums;
     }
     .status-line strong {
       font-size: 30px;
-      color: #0f172a;
+      color: var(--sw-text-primary);
+      font-variant-numeric: tabular-nums;
     }
     .progress {
       height: 10px;
       border-radius: 999px;
-      background: #e2e8f0;
+      background: var(--sw-surface-sunken);
       margin: 16px 0;
     }
     .progress span {
       display: block;
       height: 100%;
       border-radius: inherit;
-      background: #0f4c81;
-      transition: width 0.3s;
+      background: var(--sw-color-primary);
+      transition: width var(--sw-motion-panel) var(--sw-ease-standard);
     }
     .status-card p,
     small {
-      color: #64748b;
+      color: var(--sw-text-muted);
     }
     .panel {
-      margin-top: 16px;
-      background: #fff;
-      border: 1px solid #e2e8f0;
-      border-radius: 12px;
+      margin-top: var(--sw-space-4);
+    }
+    .panel-head {
+      align-items: flex-start;
+      margin-bottom: var(--sw-space-3);
+    }
+    .panel-head h2 {
+      margin-bottom: var(--sw-space-1);
+      font-size: 18px;
+    }
+    .panel-head p,
+    .panel-head span {
+      margin: 0;
+      color: var(--sw-text-muted);
+      font-size: 12px;
+    }
+    .panel-head span {
+      padding: 4px 8px;
+      border-radius: 999px;
+      background: var(--sw-surface-muted);
+      white-space: nowrap;
     }
     .log {
       display: grid;
@@ -158,31 +208,58 @@ import { BeijingTimePipe } from '../../shared/pipes/beijing-time.pipe';
       gap: 12px;
       align-items: center;
       padding: 10px 0;
-      border-top: 1px solid #f1f5f9;
+      border-top: 1px solid var(--sw-border);
     }
     .log time {
-      color: #94a3b8;
+      color: var(--sw-text-muted);
       font-family: ui-monospace, monospace;
     }
     .error {
       margin-top: 16px;
       padding: 16px;
       border-radius: 10px;
-      background: #fef2f2;
-      color: #991b1b;
+      border: 1px solid color-mix(in srgb, var(--sw-color-danger) 30%, var(--sw-border));
+      background: var(--sw-color-danger-soft);
+      color: var(--sw-color-danger);
     }
     .empty {
       padding: 30px;
-      color: #64748b;
+      color: var(--sw-text-muted);
       text-align: center;
+    }
+    .danger-action {
+      color: var(--sw-color-danger) !important;
+      border-color: color-mix(in srgb, var(--sw-color-danger) 45%, var(--sw-border)) !important;
+    }
+    @media (max-width: 1000px) {
+      .grid {
+        grid-template-columns: 1fr 1fr;
+      }
+      .status-card {
+        grid-column: 1 / -1;
+      }
     }
     @media (max-width: 700px) {
       .grid {
         grid-template-columns: 1fr;
       }
+      .status-card {
+        grid-column: auto;
+      }
       .page-head {
         align-items: flex-start;
         flex-direction: column;
+      }
+      .buttons {
+        width: 100%;
+        flex-wrap: wrap;
+        justify-content: flex-start;
+      }
+      .log {
+        grid-template-columns: 64px auto;
+      }
+      .log > span:last-child {
+        grid-column: 1 / -1;
       }
     }
   `,
