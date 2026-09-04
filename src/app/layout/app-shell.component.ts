@@ -1,49 +1,36 @@
 import { Component, HostListener, computed, inject, signal } from '@angular/core';
 import { MatButtonModule } from '@angular/material/button';
-import { MatDividerModule } from '@angular/material/divider';
-import { MatIconModule } from '@angular/material/icon';
-import { MatListModule } from '@angular/material/list';
 import { MatSidenavModule } from '@angular/material/sidenav';
 import { MatToolbarModule } from '@angular/material/toolbar';
-import { MatTooltipModule } from '@angular/material/tooltip';
 import { NavigationEnd, Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { filter } from 'rxjs/operators';
 
 import { AuthService } from '../core/services/auth.service';
 import { NotificationService } from '../core/services/notification.service';
+import { LoginDialogService } from '../features/login/login-dialog.component';
+import { navigationItem, PlatformRouteKey } from '../core/routing/route-access-policy';
+import { SwIconComponent } from '../shared/components/sw-icon.component';
 
-interface NavChild {
-  label: string;
-  route: string;
-  permission?: string;
-  /** 标记为待后端接口的模块，显示角标 */
-  pending?: boolean;
-}
+type NavigationItem = ReturnType<typeof navigationItem>;
 
-interface NavItem {
+interface NavigationGroup {
   label: string;
-  icon: string;
-  route?: string;
-  permission?: string;
-  badge?: number;
-  children?: NavChild[];
+  items: PlatformRouteKey[];
 }
 
 @Component({
   selector: 'app-shell',
   imports: [
     MatButtonModule,
-    MatDividerModule,
-    MatIconModule,
-    MatListModule,
     MatSidenavModule,
     MatToolbarModule,
-    MatTooltipModule,
     RouterLink,
     RouterLinkActive,
     RouterOutlet,
+    SwIconComponent,
   ],
   template: `
+    <a class="skip-link" href="#main-content">跳至主要内容</a>
     <mat-sidenav-container class="shell">
       <mat-sidenav
         [mode]="mobile() ? 'over' : 'side'"
@@ -51,130 +38,109 @@ interface NavItem {
         (closed)="drawerOpen.set(false)"
         class="side-nav"
       >
-        <!-- 品牌 -->
         <div class="brand">
-          <span class="brand-mark">
-            <mat-icon>donut_large</mat-icon>
-          </span>
-          <div>
-            <strong>AlgoSphere</strong>
-            <small>算法资产与场景中台</small>
-          </div>
+          <span class="brand-mark"><app-sw-icon name="droplet" [size]="22" /></span>
+          <div><strong>智慧水务</strong><small>分析与决策平台</small></div>
         </div>
-
-        <mat-divider />
-
-        <!-- 主导航 -->
-        <nav class="nav-list">
-          @for (item of visibleItems(); track item.label) {
-            @if (item.children) {
-              <!-- 可折叠分组 -->
-              <div class="nav-group">
-                <button
-                  type="button"
-                  class="nav-group-toggle"
-                  [class.expanded]="expandedGroups()[item.label]"
-                  (click)="toggleGroup(item.label)"
-                >
-                  <mat-icon class="nav-icon">{{ item.icon }}</mat-icon>
-                  <span class="nav-label">{{ item.label }}</span>
-                  <mat-icon class="chevron" [class.rotated]="expandedGroups()[item.label]">
-                    chevron_right
-                  </mat-icon>
-                </button>
-                @if (expandedGroups()[item.label]) {
-                  <div class="nav-children">
-                    @for (child of item.children; track child.route) {
-                      <a
-                        class="nav-child"
-                        [routerLink]="child.route"
-                        routerLinkActive="active-child"
-                        (click)="closeDrawer()"
-                      >
-                        <span class="child-dot"></span>
-                        <span>{{ child.label }}</span>
-                        @if (child.pending) {
-                          <span class="pending-tag">待接口</span>
-                        }
-                      </a>
-                    }
-                  </div>
+        <nav class="navigation" aria-label="平台主导航">
+          @for (group of visibleGroups(); track group.label) {
+            <section class="nav-group">
+              <p>{{ group.label }}</p>
+              @for (item of group.items; track item.route) {
+                @if (isLockedForGuest(item)) {
+                  <button type="button" class="locked-link" (click)="requestRouteLogin(item)">
+                    <app-sw-icon [name]="item.icon" [size]="18" />
+                    <span>{{ item.label }}</span
+                    ><small>登录后访问</small>
+                  </button>
+                } @else {
+                  <a
+                    [routerLink]="item.route"
+                    routerLinkActive="active-link"
+                    (click)="closeDrawer()"
+                  >
+                    <app-sw-icon [name]="item.icon" [size]="18" />
+                    <span>{{ item.label }}</span>
+                  </a>
                 }
-              </div>
-            } @else {
-              <!-- 单级菜单项 -->
-              <a
-                class="nav-item"
-                [routerLink]="item.route!"
-                routerLinkActive="active-item"
-                (click)="closeDrawer()"
-              >
-                <mat-icon class="nav-icon">{{ item.icon }}</mat-icon>
-                <span class="nav-label">{{ item.label }}</span>
-                @if (item.badge) {
-                  <span class="nav-badge">{{ item.badge }}</span>
-                }
-              </a>
-            }
+              }
+            </section>
           }
+          <section class="nav-group nav-support">
+            <p>支持</p>
+            <a
+              href="https://schwarz-hal.github.io/smart-water-platform-docs/"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <app-sw-icon name="book" [size]="18" />
+              <span>文档中心</span>
+            </a>
+          </section>
         </nav>
-
-        <div class="nav-spacer"></div>
-
-        <!-- 工作区卡片 -->
-        <div class="workspace-card">
-          <div class="ws-icon">
-            <mat-icon>business</mat-icon>
-          </div>
-          <div class="ws-info">
-            <strong>哈工大联合项目</strong>
-            <small>专业工作区 · 68% 已使用</small>
-            <div class="ws-bar">
-              <div class="ws-bar-fill" style="width: 68%"></div>
-            </div>
-          </div>
-        </div>
-
-        <!-- 用户区 -->
-        <div class="user-section">
-          @if (auth.user(); as user) {
-            <div class="user-avatar">{{ avatarText(user.display_name || user.username) }}</div>
-            <div class="user-info">
-              <strong>{{ user.display_name || user.username }}</strong>
-              <small>{{ user.roles.join('、') || '用户' }}</small>
-            </div>
-            <button mat-icon-button type="button" class="user-more" [matTooltip]="'更多操作'" (click)="userMenuOpen.set(!userMenuOpen())">
-              <mat-icon>more_vert</mat-icon>
-            </button>
-            @if (userMenuOpen()) {
-              <div class="user-menu">
-                <button type="button" (click)="cancelAccount()">注销账户</button>
-                <button type="button" (click)="logout()">退出登录</button>
-              </div>
-            }
-          }
+        <div class="nav-footer">
+          <app-sw-icon name="activity" [size]="18" />
+          <div><strong>统一分析工作台</strong><small>数据、算子与任务协同管理</small></div>
         </div>
       </mat-sidenav>
-
       <mat-sidenav-content>
         <mat-toolbar class="top-bar">
           @if (mobile()) {
-            <button mat-icon-button type="button" class="menu-button" (click)="drawerOpen.set(true)">
-              <mat-icon>menu</mat-icon>
+            <button
+              mat-button
+              type="button"
+              class="menu-button sw-icon-button"
+              aria-label="打开主导航"
+              (click)="drawerOpen.set(true)"
+            >
+              <app-sw-icon name="menu" [size]="21" />
             </button>
           }
-          <span class="top-title">{{ currentPageTitle() }}</span>
+          <div class="page-context">
+            <span>智慧水务工作台</span>
+            <strong>{{ currentPageTitle() }}</strong>
+          </div>
           <span class="spacer"></span>
           @if (auth.user(); as user) {
-            <button mat-icon-button type="button" matTooltip="通知">
-              <mat-icon>notifications_none</mat-icon>
+            <div class="account-summary">
+              <span class="avatar">{{ userInitial() }}</span>
+              <span class="user-name"
+                ><strong>{{ user.display_name || user.username }}</strong
+                ><small>{{ user.roles.join('、') }}</small></span
+              >
+            </div>
+            <button
+              mat-button
+              class="account-action danger-action"
+              type="button"
+              (click)="cancelAccount()"
+            >
+              <app-sw-icon name="user-remove" [size]="17" />注销账户
             </button>
-            <button mat-icon-button type="button" matTooltip="帮助" (click)="openDocs()">
-              <mat-icon>help_outline</mat-icon>
+            <button mat-button class="account-action" type="button" (click)="logout()">
+              <app-sw-icon name="logout" [size]="17" />退出
+            </button>
+          } @else {
+            <span class="guest-label">访客浏览</span>
+            <button
+              mat-flat-button
+              color="primary"
+              type="button"
+              class="login-button"
+              (click)="openLogin()"
+            >
+              <app-sw-icon name="login" [size]="17" />登录
             </button>
           }
         </mat-toolbar>
-        <main class="content" [class.workspace-content]="workspace()"><router-outlet /></main>
+        <main
+          id="main-content"
+          class="content"
+          [class.workspace-content]="workspace()"
+          tabindex="-1"
+        >
+          <router-outlet />
+        </main>
       </mat-sidenav-content>
     </mat-sidenav-container>
   `,
@@ -183,323 +149,266 @@ interface NavItem {
       height: 100vh;
       background: var(--sw-page-bg);
     }
+    .skip-link {
+      position: fixed;
+      top: 8px;
+      left: 12px;
+      z-index: 9999;
+      padding: 9px 12px;
+      border-radius: var(--sw-radius-sm);
+      background: var(--sw-color-primary-strong);
+      color: white;
+      text-decoration: none;
+      transform: translateY(-160%);
+      transition: transform var(--sw-motion-fast) var(--sw-ease-standard);
+    }
+    .skip-link:focus {
+      transform: translateY(0);
+    }
     .side-nav {
-      width: 260px;
-      border-right: 1px solid #cfe0f5;
-      background: linear-gradient(180deg, #eef5fd 0%, #e6f0fb 100%);
-      display: flex;
-      flex-direction: column;
+      width: 252px;
+      border-right: 0;
+      background:
+        radial-gradient(circle at 10% -10%, rgb(35 145 173 / 28%), transparent 220px),
+        var(--sw-nav-bg);
+      color: var(--sw-nav-text);
     }
-    .side-nav .mat-mdc-divider {
-      --mdc-divider-color: #cfe0f5;
-    }
-
-    /* 品牌 */
     .brand {
       display: flex;
       align-items: center;
       gap: 12px;
-      padding: 20px 18px 16px;
+      min-height: 78px;
+      padding: 18px 20px;
+      border-bottom: 1px solid rgb(255 255 255 / 9%);
     }
     .brand-mark {
-      width: 38px;
-      height: 38px;
-      border-radius: 10px;
-      background: linear-gradient(135deg, #1e3a5f 0%, #0f5f92 100%);
-      color: white;
       display: grid;
       place-items: center;
-    }
-    .brand-mark mat-icon {
-      font-size: 22px;
-      width: 22px;
-      height: 22px;
+      width: 40px;
+      height: 40px;
+      border: 1px solid rgb(255 255 255 / 22%);
+      border-radius: 12px;
+      background: linear-gradient(145deg, #169ac0, #0b6d88);
+      color: white;
+      box-shadow: 0 8px 22px rgb(0 20 30 / 24%);
     }
     .brand strong {
       display: block;
-      font-size: 16px;
-      font-weight: 800;
-      color: var(--sw-text-primary);
-      letter-spacing: -0.3px;
+      color: #f4fbfd;
+      font-size: 15px;
+      letter-spacing: 0.02em;
     }
     .brand small {
       display: block;
       margin-top: 2px;
-      color: var(--sw-text-muted);
+      color: var(--sw-nav-muted);
       font-size: 11px;
     }
-
-    /* 导航列表 */
-    .nav-list {
-      padding: 8px 10px;
-      flex: 1;
+    .navigation {
+      height: calc(100vh - 154px);
+      padding: 10px 12px 18px;
       overflow-y: auto;
     }
-    .nav-item,
-    .nav-group-toggle {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      width: 100%;
-      padding: 10px 12px;
-      border: none;
-      background: transparent;
-      border-radius: 8px;
-      color: var(--sw-text-secondary);
-      font-size: 14px;
-      font-weight: 500;
-      cursor: pointer;
-      text-decoration: none;
-      transition: background 0.15s, color 0.15s;
-      text-align: left;
-    }
-    .nav-item:hover,
-    .nav-group-toggle:hover {
-      background: rgba(255, 255, 255, 0.65);
-      color: var(--sw-text-primary);
-    }
-    .nav-item.active-item {
-      background: rgba(15, 95, 146, 0.12);
-      color: var(--sw-color-primary-strong);
-      font-weight: 700;
-    }
-    .nav-icon {
-      font-size: 20px;
-      width: 20px;
-      height: 20px;
-      flex-shrink: 0;
-    }
-    .nav-label {
-      flex: 1;
-    }
-    .nav-badge {
-      background: var(--sw-color-danger);
-      color: white;
-      font-size: 11px;
-      font-weight: 700;
-      padding: 1px 7px;
-      border-radius: 999px;
-      min-width: 18px;
-      text-align: center;
-    }
-    .chevron {
-      font-size: 18px;
-      width: 18px;
-      height: 18px;
-      transition: transform 0.2s;
-      color: var(--sw-text-muted);
-    }
-    .chevron.rotated {
-      transform: rotate(90deg);
-    }
-
-    /* 子菜单 */
     .nav-group {
-      margin-bottom: 2px;
+      display: grid;
+      gap: 3px;
+      margin-top: 12px;
     }
-    .nav-children {
-      padding-left: 32px;
-      margin-top: 2px;
-    }
-    .nav-child {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      padding: 7px 12px;
-      border-radius: 6px;
-      color: var(--sw-text-secondary);
-      font-size: 13px;
-      text-decoration: none;
-      cursor: pointer;
-      transition: background 0.15s, color 0.15s;
-    }
-    .nav-child:hover {
-      background: rgba(255, 255, 255, 0.6);
-      color: var(--sw-text-primary);
-    }
-    .nav-child.active-child {
-      color: var(--sw-color-primary-strong);
-      font-weight: 600;
-    }
-    .child-dot {
-      width: 5px;
-      height: 5px;
-      border-radius: 50%;
-      background: var(--sw-border-strong);
-      flex-shrink: 0;
-    }
-    .nav-child.active-child .child-dot {
-      background: var(--sw-color-primary);
-    }
-    .pending-tag {
-      margin-left: auto;
+    .nav-group > p {
+      margin: 0 10px 5px;
+      color: var(--sw-nav-muted);
       font-size: 10px;
-      padding: 1px 6px;
-      border-radius: 4px;
-      background: var(--sw-color-warning-soft);
-      color: var(--sw-color-warning);
-      font-weight: 600;
+      font-weight: 750;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
     }
-
-    .nav-spacer {
-      flex: 1;
-    }
-
-    /* 工作区卡片 */
-    .workspace-card {
-      margin: 8px 12px;
-      padding: 12px;
-      background: linear-gradient(135deg, #1e3a5f 0%, #2d5a87 100%);
-      border-radius: 10px;
+    .nav-group a,
+    .locked-link {
       display: flex;
-      gap: 10px;
+      align-items: center;
+      gap: 11px;
+      min-height: 40px;
+      padding: 0 11px;
+      border: 1px solid transparent;
+      border-radius: 9px;
+      color: var(--sw-nav-text);
+      font-size: 13px;
+      font-weight: 560;
+      text-decoration: none;
+      width: 100%;
+      background: transparent;
+      font-family: inherit;
+      text-align: left;
+      cursor: pointer;
+      transition:
+        color var(--sw-motion-fast) var(--sw-ease-standard),
+        background-color var(--sw-motion-fast) var(--sw-ease-standard),
+        border-color var(--sw-motion-fast) var(--sw-ease-standard);
+    }
+    .nav-group a:hover,
+    .locked-link:hover {
+      border-color: rgb(255 255 255 / 9%);
+      background: rgb(255 255 255 / 7%);
       color: white;
     }
-    .ws-icon {
-      width: 36px;
-      height: 36px;
-      border-radius: 8px;
-      background: rgba(255, 255, 255, 0.15);
-      display: grid;
-      place-items: center;
-      flex-shrink: 0;
+    .active-link {
+      border-color: rgb(116 213 232 / 18%) !important;
+      background: linear-gradient(90deg, rgb(31 155 184 / 30%), rgb(31 155 184 / 12%)) !important;
+      color: white !important;
+      font-weight: 700 !important;
+      box-shadow: inset 3px 0 0 #54c6dd;
     }
-    .ws-icon mat-icon {
-      font-size: 20px;
-      width: 20px;
-      height: 20px;
+    .nav-support {
+      padding-top: 11px;
+      border-top: 1px solid rgb(255 255 255 / 8%);
     }
-    .ws-info {
-      flex: 1;
-      min-width: 0;
+    .locked-link small {
+      margin-left: auto;
+      color: var(--sw-nav-muted);
+      font-size: 10px;
     }
-    .ws-info strong {
-      display: block;
-      font-size: 13px;
+    .guest-label {
+      margin-right: 10px;
+      padding: 5px 8px;
+      border: 1px solid var(--sw-border);
+      border-radius: 999px;
+      color: var(--sw-text-secondary);
+      font-size: 12px;
       font-weight: 700;
     }
-    .ws-info small {
-      display: block;
-      font-size: 11px;
-      opacity: 0.75;
-      margin: 2px 0 6px;
-    }
-    .ws-bar {
-      height: 4px;
-      background: rgba(255, 255, 255, 0.2);
-      border-radius: 2px;
-      overflow: hidden;
-    }
-    .ws-bar-fill {
-      height: 100%;
-      background: #54b5e8;
-      border-radius: 2px;
-    }
-
-    /* 用户区 */
-    .user-section {
-      position: relative;
+    .nav-footer {
       display: flex;
       align-items: center;
       gap: 10px;
-      padding: 12px 14px;
-      border-top: 1px solid #cfe0f5;
+      min-height: 76px;
+      padding: 14px 20px;
+      border-top: 1px solid rgb(255 255 255 / 9%);
+      background: rgb(0 17 25 / 16%);
     }
-    .user-avatar {
-      width: 34px;
-      height: 34px;
-      border-radius: 50%;
-      background: linear-gradient(135deg, #0f5f92, #087f8c);
-      color: white;
-      display: grid;
-      place-items: center;
-      font-size: 13px;
-      font-weight: 700;
-      flex-shrink: 0;
-    }
-    .user-info {
-      flex: 1;
-      min-width: 0;
-    }
-    .user-info strong {
+    .nav-footer strong,
+    .nav-footer small {
       display: block;
-      font-size: 13px;
-      color: var(--sw-text-primary);
     }
-    .user-info small {
-      display: block;
+    .nav-footer strong {
+      color: #dff4f7;
       font-size: 11px;
-      color: var(--sw-text-muted);
     }
-    .user-more {
-      color: var(--sw-text-muted);
+    .nav-footer small {
+      margin-top: 2px;
+      color: var(--sw-nav-muted);
+      font-size: 10px;
     }
-    .user-menu {
-      position: absolute;
-      bottom: 100%;
-      right: 10px;
-      background: var(--sw-surface);
-      border: 1px solid var(--sw-border);
-      border-radius: 8px;
-      box-shadow: var(--sw-shadow-lg);
-      padding: 4px;
-      min-width: 140px;
-      z-index: 100;
-    }
-    .user-menu button {
-      display: block;
-      width: 100%;
-      padding: 8px 12px;
-      border: none;
-      background: transparent;
-      text-align: left;
-      font-size: 13px;
-      color: var(--sw-text-secondary);
-      border-radius: 6px;
-      cursor: pointer;
-    }
-    .user-menu button:hover {
-      background: var(--sw-surface-muted);
-      color: var(--sw-text-primary);
+    .nav-footer > app-sw-icon {
+      color: #6fd2df;
     }
 
-    /* 顶栏 */
     .top-bar {
+      min-height: 72px;
+      padding: 0 24px;
       background: var(--sw-surface);
       border-bottom: 1px solid var(--sw-border);
       color: var(--sw-text-primary);
-      height: 56px;
+      box-shadow: 0 1px 0 rgb(15 45 61 / 2%);
     }
-    .top-title {
-      font-size: 15px;
-      font-weight: 600;
+    .page-context {
+      display: grid;
+      gap: 1px;
+      line-height: 1.2;
+    }
+    .page-context span {
+      color: var(--sw-text-muted);
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.09em;
+      text-transform: uppercase;
+    }
+    .page-context strong {
+      font-size: 16px;
+      font-weight: 720;
     }
     .spacer {
       flex: 1;
     }
-    .menu-button {
+    .account-summary {
+      display: flex;
+      align-items: center;
+      gap: 9px;
       margin-right: 8px;
+      padding-right: 15px;
+      border-right: 1px solid var(--sw-border);
+    }
+    .avatar {
+      display: grid;
+      place-items: center;
+      width: 34px;
+      height: 34px;
+      border-radius: 10px;
+      background: var(--sw-color-primary-soft);
+      color: var(--sw-color-primary-strong);
+      font-size: 13px;
+      font-weight: 850;
+    }
+    .user-name {
+      display: grid;
+      gap: 1px;
+      color: var(--sw-text-secondary);
+      font-size: 12px;
+      line-height: 1.25;
+    }
+    .user-name strong {
+      color: var(--sw-text-primary);
+      font-size: 12px;
+    }
+    .user-name small {
+      color: var(--sw-text-muted);
+      font-size: 10px;
+    }
+    .account-action,
+    .login-button {
+      gap: 6px;
+    }
+    .danger-action {
+      color: var(--sw-color-danger);
     }
     .content {
       min-width: 0;
-      padding: 24px;
-      max-width: 1440px;
+      min-height: calc(100vh - 72px);
+      padding: 26px 28px 40px;
+      max-width: var(--sw-content-max);
       margin: 0 auto;
-      width: 100%;
     }
     .workspace-content {
       max-width: none;
-      height: calc(100vh - 56px);
+      height: calc(100vh - 72px);
+      min-height: 0;
       padding: 0;
       overflow: hidden;
     }
-
+    .menu-button {
+      margin: 0 10px 0 -8px;
+    }
     @media (max-width: 800px) {
       .side-nav {
-        width: min(82vw, 280px);
+        width: min(82vw, 300px);
       }
       .content {
-        padding: 14px;
+        min-height: calc(100vh - 64px);
+        padding: 16px 14px 28px;
+      }
+      .top-bar {
+        min-height: 64px;
+        padding-inline: 14px;
+      }
+      .page-context span,
+      .user-name,
+      .danger-action {
+        display: none;
+      }
+      .account-summary {
+        padding-right: 9px;
+      }
+      .workspace-content {
+        height: calc(100vh - 64px);
       }
     }
   `,
@@ -508,128 +417,75 @@ export class AppShellComponent {
   readonly auth = inject(AuthService);
   readonly mobile = signal(typeof window !== 'undefined' && window.innerWidth <= 800);
   readonly drawerOpen = signal(false);
-  readonly userMenuOpen = signal(false);
-  readonly workspace = signal(false);
-  readonly expandedGroups = signal<Record<string, boolean>>({
-    数据中心: true,
-    开发者工具: false,
-  });
-
   private readonly router = inject(Router);
   private readonly notifications = inject(NotificationService);
-
-  private readonly items: NavItem[] = [
+  private readonly loginDialog = inject(LoginDialogService);
+  readonly workspace = signal(false);
+  readonly currentPageTitle = signal('快速试用');
+  readonly userInitial = computed(() => {
+    const user = this.auth.user();
+    return (user?.display_name || user?.username || 'U').trim().slice(0, 1).toUpperCase();
+  });
+  private readonly groups: NavigationGroup[] = [
     {
-      label: '工作台',
-      icon: 'dashboard',
-      route: '/dashboard',
-      badge: 0, // 运行中任务数，后续可动态绑定
+      label: '开始',
+      items: ['quickTrial', 'dashboard'],
     },
     {
-      label: '数据中心',
-      icon: 'folder',
-      children: [
-        { label: '数据集管理', route: '/data-sources', permission: 'data_source:read' },
-        { label: '数据评估', route: '/data-center/assessment' },
-        { label: '数据清洗', route: '/data-center/cleaning', pending: true },
-        { label: '数据修复', route: '/data-center/repair', pending: true },
-        { label: '数据增强', route: '/data-center/augmentation', pending: true },
-        { label: '数据标注', route: '/data-center/annotation', pending: true },
-      ],
+      label: '数据与分析',
+      items: ['scenes', 'dataSources', 'dataCollections', 'operators'],
     },
     {
-      label: '算法中控',
-      icon: 'memory',
-      route: '/operators',
-      permission: 'operator:read',
-    },
-    {
-      label: '场景编排',
-      icon: 'account_tree',
-      route: '/workflows',
-      permission: 'workflow:read',
-    },
-    {
-      label: '开发者工具',
-      icon: 'code',
-      children: [
-        { label: 'API Key', route: '/developer/api-keys', pending: true },
-        { label: '开发文档', route: '/developer/docs' },
-      ],
+      label: '运行与管理',
+      items: ['workflows', 'workflowRuns', 'tasks', 'users', 'recycleBin'],
     },
   ];
-
-  readonly visibleItems = computed(() =>
-    this.items.map((item) => {
-      if (!item.children) return item;
-      return {
-        ...item,
-        children: item.children.filter((c) => !c.permission || this.auth.hasPermission(c.permission)),
-      };
-    }),
+  readonly visibleGroups = computed(() =>
+    this.groups
+      .map((group) => ({
+        ...group,
+        items: group.items
+          .map(navigationItem)
+          .filter((item) =>
+            this.auth.isGuest()
+              ? item.access === 'public' || item.guestNavigation === 'locked'
+              : !item.permission || this.auth.hasPermission(item.permission),
+          ),
+      }))
+      .filter((group) => group.items.length > 0),
   );
-
-  /** 根据当前路由计算页面标题（顶栏显示） */
-  readonly currentPageTitle = computed(() => {
-    const url = this.router.url;
-    const titleMap: Array<[RegExp, string]> = [
-      [/^\/dashboard/, '工作台'],
-      [/^\/data-sources/, '数据中心 · 数据集管理'],
-      [/^\/datasets\//, '数据中心 · 数据集详情'],
-      [/^\/data-center\/assessment/, '数据中心 · 数据评估'],
-      [/^\/data-center\/cleaning/, '数据中心 · 数据清洗'],
-      [/^\/data-center\/repair/, '数据中心 · 数据修复'],
-      [/^\/data-center\/augmentation/, '数据中心 · 数据增强'],
-      [/^\/data-center\/annotation/, '数据中心 · 数据标注'],
-      [/^\/operators\/import/, '算法中控 · 外部算法导入'],
-      [/^\/operators/, '算法中控 · 算子中心'],
-      [/^\/workflows\/new/, '场景编排 · 新建工作流'],
-      [/^\/workflows\/.+\/edit/, '场景编排 · 工作流编辑器'],
-      [/^\/workflows\//, '场景编排 · 工作流详情'],
-      [/^\/workflows/, '场景编排 · 工作流库'],
-      [/^\/workflow-runs\//, '场景编排 · 运行详情'],
-      [/^\/workflow-runs/, '场景编排 · 运行记录'],
-      [/^\/scenes/, '场景中心'],
-      [/^\/s01-leakage/, '场景编排 · S01 漏损评估'],
-      [/^\/s01\/runs/, '场景编排 · S01 运行结果'],
-      [/^\/tasks\//, '任务中心 · 任务详情'],
-      [/^\/tasks/, '任务中心'],
-      [/^\/results\//, '算法结果'],
-      [/^\/users/, '用户管理'],
-      [/^\/recycle-bin/, '资源回收站'],
-      [/^\/developer\/api-keys/, '开发者工具 · API Key'],
-      [/^\/developer\/docs/, '开发者工具 · 开发文档'],
-    ];
-    for (const [pattern, title] of titleMap) {
-      if (pattern.test(url)) return title;
-    }
-    return 'AlgoSphere';
-  });
 
   constructor() {
     this.workspace.set(this.isWorkspaceUrl(this.router.url));
+    this.currentPageTitle.set(this.resolvePageTitle(this.router.url));
     this.router.events
       .pipe(filter((event): event is NavigationEnd => event instanceof NavigationEnd))
       .subscribe((event) => {
         this.workspace.set(this.isWorkspaceUrl(event.urlAfterRedirects));
-        this.userMenuOpen.set(false);
+        this.currentPageTitle.set(this.resolvePageTitle(event.urlAfterRedirects));
+        if (this.hasForbiddenNotice(event.urlAfterRedirects)) {
+          this.notifications.error(
+            new Error('当前账号没有访问该页面的权限。请返回可访问的工作区或联系管理员。'),
+          );
+          void this.router.navigate(['/dashboard'], { replaceUrl: true });
+        }
       });
-  }
-
-  toggleGroup(label: string): void {
-    this.expandedGroups.update((prev) => ({ ...prev, [label]: !prev[label] }));
-  }
-
-  avatarText(name: string): string {
-    return name.slice(0, 1).toUpperCase();
-  }
-
-  openDocs(): void {
-    window.open('https://schwarz-hal.github.io/smart-water-platform-docs/', '_blank', 'noopener');
   }
 
   private isWorkspaceUrl(url: string): boolean {
     return /\/workflows\/[^/]+\/edit(?:\?|$)/.test(url);
+  }
+
+  private hasForbiddenNotice(url: string): boolean {
+    return new URLSearchParams(url.split('?')[1] ?? '').get('forbidden') === '1';
+  }
+
+  private resolvePageTitle(url: string): string {
+    const path = url.split('?')[0];
+    const item = this.groups
+      .flatMap((group) => group.items.map(navigationItem))
+      .find((candidate) => path === candidate.route || path.startsWith(`${candidate.route}/`));
+    return item?.label ?? '智慧水务平台';
   }
 
   @HostListener('window:resize')
@@ -644,13 +500,34 @@ export class AppShellComponent {
 
   logout(): void {
     this.auth.clearSession();
-    void this.router.navigate(['/login']);
+    void this.router.navigate(['/quick-trial']);
+  }
+
+  openLogin(): void {
+    this.loginDialog.requireLogin({ reason: 'header-login' }).subscribe();
+  }
+
+  isLockedForGuest(item: NavigationItem): boolean {
+    return (
+      this.auth.isGuest() && item.access === 'authenticated' && item.guestNavigation === 'locked'
+    );
+  }
+
+  requestRouteLogin(item: NavigationItem): void {
+    this.closeDrawer();
+    this.loginDialog
+      .requireLogin({
+        title: `登录后访问${item.label}`,
+        description: `登录后将打开${item.label}，快速试用中的选择会保留。`,
+        reason: `navigation:${item.route}`,
+        redirectUrl: item.route,
+      })
+      .subscribe();
   }
 
   cancelAccount(): void {
     const user = this.auth.user();
     if (!user) return;
-    this.userMenuOpen.set(false);
     const username = window.prompt(
       `账户注销后，资源将进入回收站并保留 14 天。\n请输入用户名 ${user.username} 确认：`,
     );

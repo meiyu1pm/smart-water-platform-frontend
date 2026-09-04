@@ -153,14 +153,14 @@ const EVIDENCE_LABELS: Record<string, string> = {
                   </div>
                 </div>
                 <div class="rule-card">
-                  <span class="rule-icon">⚖️</span>
+                  <span class="rule-icon">规则</span>
                   <div>
                     <strong>水平衡分析法</strong>
                     <p>进水量 − 授权用水量 − 已知损失 = 表观及真实漏损，异常时触发</p>
                   </div>
                 </div>
                 <div class="rule-card">
-                  <span class="rule-icon">📈</span>
+                  <span class="rule-icon">趋势</span>
                   <div>
                     <strong>流量/压力突变法</strong>
                     <p>实时监测流量、压力时序突变点，C1 异常筛查辅助识别</p>
@@ -237,7 +237,7 @@ const EVIDENCE_LABELS: Record<string, string> = {
               <p class="step-desc">基于水力模型的关阀方案分析，评估关阀影响范围与最优关阀组合。</p>
             </div>
             <div class="planned-box">
-              <span class="planned-icon">🔧</span>
+              <span class="planned-icon">待办</span>
               <h3>关阀分析模型 · 规划中</h3>
               <p>该功能依赖 SimuWater 水力模型对接，当前算法暂未输出关阀分析结果。后续将支持：关阀方案模拟、影响范围评估、最优关阀组合推荐。</p>
             </div>
@@ -388,7 +388,7 @@ const EVIDENCE_LABELS: Record<string, string> = {
                   <span class="source-status">待接入</span>
                 </div>
                 <div class="source-card pending">
-                  <span class="source-icon">🕸️</span>
+                  <span class="source-icon">拓扑</span>
                   <strong>知识图谱</strong>
                   <span class="source-status">待接入</span>
                 </div>
@@ -404,7 +404,7 @@ const EVIDENCE_LABELS: Record<string, string> = {
               <p class="step-desc">基于规则库、案例库、知识图谱与 C2 异常分类，生成可执行的漏损处置建议。</p>
             </div>
             <div class="planned-box">
-              <span class="planned-icon">💡</span>
+              <span class="planned-icon">提示</span>
               <h3>智能处置建议 · 规划中</h3>
               <p>该功能依赖成因分析知识库（规则库/案例库/知识图谱）与 C2 异常分类能力。后续将支持：处置方案推荐、优先级排序、处置结果回写与模型迭代闭环。</p>
             </div>

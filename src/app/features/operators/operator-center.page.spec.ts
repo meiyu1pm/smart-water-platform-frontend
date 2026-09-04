@@ -1,18 +1,18 @@
 import '@angular/compiler';
 import { describe, expect, it } from 'vitest';
 
-import { AlgorithmDocument, OperatorSummary } from '../../core/models/api.models';
+import { OperatorSummary } from '../../core/models/api.models';
 import {
   clampOperatorCatalogWidth,
   countActiveOperatorFilters,
-  currentAlgorithmDocumentVersion,
   extractParameterSpecs,
   linkedAlgorithmCode,
+  operatorDocumentScopeKey,
 } from './operator-center.page';
 
-function operator(algorithm: Record<string, unknown> | null): OperatorSummary {
+function operator(algorithm: Record<string, unknown> | null, code = 'dataset_channel_v1'): OperatorSummary {
   return {
-    code: 'dataset_channel_v1',
+    code,
     name: 'Dataset channel',
     description: '',
     kind: 'data_source',
@@ -52,41 +52,28 @@ describe('operator lifecycle links', () => {
     expect(linkedAlgorithmCode(operator(null))).toBeNull();
     expect(linkedAlgorithmCode(operator({ reason: 'Algorithm version not found' }))).toBeNull();
   });
-});
 
-describe('operator documents', () => {
-  it('renders only the explicitly selected current document version', () => {
-    const document: AlgorithmDocument = {
-      document_id: 'doc-1',
-      title: 'Chronos-2 算法说明',
-      doc_kind: 'reference',
-      status: 'published',
-      current_version_id: 'version-2',
-      versions: [
-        {
-          document_version_id: 'version-1',
-          version: '1.0.0',
-          locale: 'zh-CN',
-          source_type: 'markdown',
-          status: 'published',
-          markdown: '旧文档',
-          created_at: '2026-08-01T00:00:00+08:00',
-        },
-        {
-          document_version_id: 'version-2',
-          version: '1.1.0',
-          locale: 'zh-CN',
-          source_type: 'markdown',
-          status: 'published',
-          markdown: '新文档',
-          created_at: '2026-08-18T00:00:00+08:00',
-        },
-      ],
-    };
+  it('resolves document scope key with algorithm code priority and operator code fallback', () => {
+    // 1. When linked algorithm exists, use its code
+    expect(operatorDocumentScopeKey(operator({ code: 'chronos2_flow_forecast' }, 'chronos2_node'))).toBe(
+      'chronos2_flow_forecast',
+    );
 
-    expect(currentAlgorithmDocumentVersion(document)?.markdown).toBe('新文档');
+    // 2. When linked algorithm is null or missing, fall back to operator code
+    expect(operatorDocumentScopeKey(operator(null, 'align_timeseries_v1'))).toBe(
+      'align_timeseries_v1',
+    );
+    expect(
+      operatorDocumentScopeKey(
+        operator({ reason: 'Algorithm version not found' }, 's01_minimum_night_flow_v1'),
+      ),
+    ).toBe('s01_minimum_night_flow_v1');
+
+    // 3. When operator is null, return null
+    expect(operatorDocumentScopeKey(null)).toBeNull();
   });
 });
+
 
 describe('operator catalogue controls', () => {
   it('clamps the resizable list between 320px and 45 percent of the workspace', () => {
@@ -156,4 +143,3 @@ describe('parameter specification extraction', () => {
     }
   });
 });
-

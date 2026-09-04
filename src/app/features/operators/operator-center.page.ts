@@ -2,11 +2,10 @@ import { CommonModule } from '@angular/common';
 import { Component, HostListener, OnDestroy, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { SafeHtml } from '@angular/platform-browser';
-import { ActivatedRoute, RouterLink } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { catchError, forkJoin, map, of, switchMap } from 'rxjs';
 
 import {
-  AlgorithmDocument,
-  AlgorithmDocumentVersion,
   ModelVersionSummary,
   OperatorSummary,
   OperatorVersionSummary,
@@ -16,26 +15,31 @@ import { ApiClient } from '../../core/services/api-client.service';
 import { AlgorithmDocumentRendererService } from '../../core/services/algorithm-document-renderer.service';
 import { NotificationService } from '../../core/services/notification.service';
 import { OperatorNameService } from '../../core/services/operator-name.service';
+import {
+  StaticOperatorDocument,
+  StaticOperatorDocumentService,
+} from '../../core/services/operator-document.service';
 import { AuthService } from '../../core/services/auth.service';
+import { SwIconComponent } from '../../shared/components/sw-icon.component';
 import { DataAssetPickerComponent } from '../../shared/components/data-asset-picker.component';
 import { OperatorParameterFormComponent } from '../../shared/components/operator-parameter-form.component';
 import { DataAssetSelection } from '../../core/models/api.models';
 
 export function linkedAlgorithmCode(operator: OperatorSummary): string | null {
   const value = operator.active_version?.algorithm?.['code'];
-  return typeof value === 'string' && value.trim() ? value : null;
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
 }
 
-export function currentAlgorithmDocumentVersion(
-  document: AlgorithmDocument,
-): AlgorithmDocumentVersion | null {
-  if (document.current_version_id) {
-    const current = document.versions.find(
-      (version) => version.document_version_id === document.current_version_id,
-    );
-    if (current) return current;
+export function operatorDocumentScopeKey(operator: OperatorSummary | null): string | null {
+  if (!operator) {
+    return null;
   }
-  return document.versions.find((version) => version.status === 'published') ?? null;
+  const linkedCode = operator.active_version?.algorithm?.['code'];
+  if (typeof linkedCode === 'string' && linkedCode.trim()) {
+    return linkedCode.trim();
+  }
+  const operatorCode = operator.code;
+  return typeof operatorCode === 'string' && operatorCode.trim() ? operatorCode.trim() : null;
 }
 
 interface OperatorFacetOption {
@@ -47,6 +51,14 @@ interface OperatorFacetOption {
 interface OperatorFacetResponse {
   facets: Record<string, OperatorFacetOption[]>;
   permissions: string[];
+}
+
+interface AlgorithmReleaseSummary {
+  release_id: string;
+  algorithm_version_id: number;
+  version: string;
+  status: string;
+  default_model_version_id: string | null;
 }
 
 const catalogWidthDefault = 380;
@@ -141,6 +153,7 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
     RouterLink,
     DataAssetPickerComponent,
     OperatorParameterFormComponent,
+    SwIconComponent,
   ],
   template: `
     <header class="page-header">
@@ -251,16 +264,6 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
             <option value="external_cpu">外部 CPU</option>
           </select>
         </label>
-        @if (auth.hasPermission('operator:manage')) {
-          <label>
-            <span>算子状态</span>
-            <select [(ngModel)]="status" (change)="load()">
-              <option value="">全部状态</option>
-              <option value="active">已启用</option>
-              <option value="disabled">已停用</option>
-            </select>
-          </label>
-        }
       </section>
     }
 
@@ -280,7 +283,9 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
             ><span class="row-copy"
               ><strong>{{ operatorNames.displayName(operator.code, operator.name) }}</strong
               ><small>{{ operator.code }} · {{ operator.kind }}</small></span
-            ><span class="badge">{{ operator.active_version?.version || '—' }}</span>
+            ><span class="badge">{{
+              operator.default_version?.version || operator.active_version?.version || '—'
+            }}</span>
           </button>
         } @empty {
           <div class="empty">暂无符合条件的算子。</div>
@@ -314,6 +319,23 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
               operator.available ? '可用' : '不可运行'
             }}</span>
           </div>
+          <label class="version-viewer">
+            <span>查看版本</span>
+            <select [ngModel]="viewedVersion()" (ngModelChange)="selectVersion(operator, $event)">
+              @for (item of operator.versions || []; track item.id) {
+                <option [value]="item.version">
+                  {{ item.version
+                  }}{{
+                    item.lifecycle === 'deprecated'
+                      ? ' · 已弃用'
+                      : item.lifecycle === 'blocked'
+                        ? ' · 已阻断'
+                        : ''
+                  }}
+                </option>
+              }
+            </select>
+          </label>
           @if (algorithmTags(operator); as tags) {
             <div class="tag-row">
               @for (tag of tags; track tag.code) {
@@ -433,7 +455,7 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
                       type="button"
                       (click)="openEditDefaults(version)"
                     >
-                      <span>⚙</span> 调整默认参数
+                      <app-sw-icon name="settings" [size]="16" />调整默认参数
                     </button>
                   }
                 </div>
@@ -512,7 +534,9 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
                         </div>
                         <div class="param-value-col">
                           <span class="param-val-label">默认值</span>
-                          <span class="param-val-pill">{{ formatParamValue(spec.currentValue) }}</span>
+                          <span class="param-val-pill">{{
+                            formatParamValue(spec.currentValue)
+                          }}</span>
                         </div>
                       </div>
                     } @empty {
@@ -521,13 +545,43 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
                   </div>
                 }
 
+                @if (auth.hasPermission('operator:manage') && version.algorithm) {
+                  <section class="release-binding-card" aria-label="版本默认发布包">
+                    <div>
+                      <strong>新建节点使用的公共发布包</strong>
+                      <p class="muted">
+                        只影响之后创建的节点；已有节点和已发布工作流继续使用原来的模型快照。
+                      </p>
+                    </div>
+                    <div class="release-binding-actions">
+                      <select
+                        aria-label="公共发布包"
+                        [ngModel]="version.default_release_id || ''"
+                        [disabled]="loadingReleases() || savingRelease()"
+                        (ngModelChange)="saveDefaultRelease(operator, version, $event)"
+                      >
+                        <option value="">不绑定公共发布包</option>
+                        @for (release of releases(); track release.release_id) {
+                          <option [value]="release.release_id">
+                            {{ release.version }} · {{ release.status
+                            }}{{ release.default_model_version_id ? ' · 含默认模型' : '' }}
+                          </option>
+                        }
+                      </select>
+                    </div>
+                  </section>
+                }
+
                 <details class="raw-contract-details">
                   <summary>查看底层原始 JSON 契约</summary>
                   <div class="raw-contract-content">
                     <h4>参数契约 Schema (JSON Schema)</h4>
                     <pre>{{ version.parameter_schema | json }}</pre>
                     <h4>当前默认参数快照 (Raw JSON)</h4>
-                    <pre>{{ (version.default_parameters || version.algorithm?.['default_params'] || {}) | json }}</pre>
+                    <pre>{{
+                      version.default_parameters || version.algorithm?.['default_params'] || {}
+                        | json
+                    }}</pre>
                   </div>
                 </details>
               </div>
@@ -706,19 +760,6 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
                                   基线详情
                                 </button>
                                 @if (
-                                  auth.hasPermission('algorithm:publish') &&
-                                  !model.is_default &&
-                                  model.status === 'ready'
-                                ) {
-                                  <button
-                                    class="secondary btn-xs"
-                                    type="button"
-                                    (click)="setDefaultModel(operator, model)"
-                                  >
-                                    设为算子默认
-                                  </button>
-                                }
-                                @if (
                                   auth.user()?.id === model.owner_user_id ||
                                   auth.hasPermission('admin')
                                 ) {
@@ -758,38 +799,61 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
                 <h3>已登记算子版本</h3>
                 @for (item of operator.versions || []; track item.id) {
                   <div class="version-row">
-                    <b>{{ item.version }}</b
-                    ><span>{{ item.status }} · {{ item.maturity }}</span
-                    ><span>{{ item.available ? '可用' : '不可用' }}</span>
+                    <span class="version-identity">
+                      <b>{{ item.version }}</b>
+                      <small>{{
+                        item.lifecycle ||
+                          (item.version === operator.default_version?.version
+                            ? 'current'
+                            : 'installed')
+                      }}</small>
+                    </span>
+                    <span>{{ item.status }} · {{ item.maturity }}</span>
+                    <span [class.available-text]="item.available">
+                      {{ item.available ? '可用' : versionUnavailableReason(item) }}
+                    </span>
                   </div>
                 } @empty {
                   <p class="muted">暂无版本记录。</p>
                 }
                 @if (activeRelease(operator); as release) {
                   <div class="algorithm-ref">
-                    活动发布版本：{{ release.version }} · {{ release.status }}
+                    该算子版本的默认发布包：{{ release.version }} · {{ release.status }}
                   </div>
                 }
               </div>
             }
             @if (activeTab() === 'documents') {
-              <div class="tab-body">
-                @if (documents().length === 0) {
-                  <p class="muted">该算子暂未发布文档。</p>
+              <div class="tab-body documents-tab-body">
+                @if (loadingDocuments()) {
+                  <p class="muted" style="padding: 16px 0;">正在加载算子文档…</p>
+                } @else if (documents().length === 0 && !documentMessage()) {
+                  <div class="empty-docs-box">
+                    <p class="muted">该算子暂未发布文档。</p>
+                  </div>
                 }
-                @for (doc of documents(); track doc.document_id) {
-                  <h3>{{ doc.title }}</h3>
-                  @if (currentDocumentVersion(doc); as docVersion) {
-                    <p class="document-version">文档版本 {{ docVersion.version }}</p>
-                    @if (docVersion.markdown) {
+                @if (documentMessage()) {
+                  <div class="empty-docs-box">
+                    <p class="muted">{{ documentMessage() }}</p>
+                  </div>
+                }
+                @for (doc of documents(); track doc.id) {
+                  <section class="doc-card">
+                    <div class="doc-card-header">
+                      <h3>{{ doc.title }}</h3>
+                      <span class="doc-version-tag">文档版本 v{{ doc.version }}</span>
+                    </div>
+                    @if (doc.markdownError) {
+                      <p class="muted">该文档暂时无法读取，请稍后重试。</p>
+                    } @else if (doc.markdown) {
                       <article
                         class="markdown"
-                        [innerHTML]="renderMarkdown(docVersion.markdown)"
+                        [innerHTML]="renderMarkdown(doc.markdown)"
                       ></article>
                     } @else {
-                      <p class="muted">该文档版本暂无可展示的 Markdown 内容。</p>
+                      <p class="muted">该文档暂无可展示的 Markdown 内容。</p>
                     }
-                  }
+                  </section>
                 }
               </div>
             }
@@ -801,13 +865,6 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
                 <p class="muted">详细使用统计将在任务聚合接口接入后展示。</p>
               </div>
             }
-          }
-          @if (operator.can_manage) {
-            <div class="manage-actions">
-              <button class="secondary" type="button" (click)="toggle(operator)">
-                {{ operator.status === 'active' ? '停用算子' : '启用算子' }}
-              </button>
-            </div>
           }
         } @else {
           <div class="empty">选择一个算子查看契约。</div>
@@ -896,7 +953,7 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
   styles: `
     :host {
       display: block;
-      color: #172033;
+      color: var(--sw-text-primary);
     }
     h1,
     h2,
@@ -905,7 +962,8 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
       margin: 0;
     }
     h1 {
-      font-size: 32px;
+      font-size: clamp(27px, 2.4vw, 34px);
+      letter-spacing: -0.025em;
       margin-top: 4px;
     }
     h2 {
@@ -934,7 +992,7 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
       justify-content: flex-end;
     }
     .eyebrow {
-      color: #2563eb;
+      color: var(--sw-color-primary);
       font-size: 11px;
       font-weight: 800;
       letter-spacing: 0.08em;
@@ -942,7 +1000,7 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
     .lead,
     .description,
     .muted {
-      color: #667085;
+      color: var(--sw-text-muted);
     }
     .tag-row {
       display: flex;
@@ -952,23 +1010,29 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
     }
     .tag {
       border-radius: 999px;
-      background: #eef5ff;
-      color: #205493;
+      border: 1px solid color-mix(in srgb, var(--sw-color-primary) 15%, var(--sw-border));
+      background: var(--sw-color-primary-soft);
+      color: var(--sw-color-primary-strong);
       padding: 4px 9px;
       font-size: 12px;
     }
     .toolbar {
       flex-wrap: wrap;
-      margin-bottom: 12px;
+      margin-bottom: var(--sw-space-3);
+      padding: var(--sw-space-3);
+      border: 1px solid var(--sw-border);
+      border-radius: var(--sw-radius-md);
+      background: var(--sw-surface);
+      box-shadow: var(--sw-shadow-sm);
     }
     input,
     select {
       min-height: 40px;
-      border: 1px solid #d0d5dd;
-      border-radius: 9px;
+      border: 1px solid var(--sw-border-strong);
+      border-radius: var(--sw-radius-sm);
       padding: 0 12px;
-      background: #fff;
-      color: #172033;
+      background: var(--sw-surface);
+      color: var(--sw-text-primary);
     }
     input {
       min-width: 240px;
@@ -978,7 +1042,7 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
     .primary,
     .secondary {
       border: 0;
-      border-radius: 9px;
+      border-radius: var(--sw-radius-sm);
       padding: 10px 15px;
       cursor: pointer;
       font: inherit;
@@ -988,17 +1052,17 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
       align-items: center;
     }
     .primary {
-      background: #0f67c9;
-      color: #fff;
+      background: var(--sw-color-primary);
+      color: white;
     }
     .secondary {
-      background: #fff;
-      color: #0f67c9;
-      border: 1px solid #b6c5d9;
+      background: var(--sw-surface);
+      color: var(--sw-color-primary-strong);
+      border: 1px solid var(--sw-border-strong);
     }
     .filter-toggle.active {
-      border-color: #0f67c9;
-      background: #eef5ff;
+      border-color: var(--sw-color-primary);
+      background: var(--sw-color-primary-soft);
     }
     .filter-toggle span {
       min-width: 20px;
@@ -1007,14 +1071,14 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
       display: inline-grid;
       place-items: center;
       margin-left: 6px;
-      background: #0f67c9;
-      color: #fff;
+      background: var(--sw-color-primary);
+      color: white;
       font-size: 11px;
     }
     .text-button {
       padding-inline: 4px;
       background: transparent;
-      color: #0f67c9;
+      color: var(--sw-color-primary);
     }
     .filter-panel {
       display: grid;
@@ -1022,14 +1086,14 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
       gap: 12px;
       padding: 14px;
       margin-bottom: 18px;
-      border: 1px solid #dce6f2;
-      border-radius: 12px;
-      background: #f8fbff;
+      border: 1px solid var(--sw-border);
+      border-radius: var(--sw-radius-md);
+      background: var(--sw-surface-muted);
     }
     .filter-panel label {
       display: grid;
       gap: 6px;
-      color: #475467;
+      color: var(--sw-text-secondary);
       font-size: 12px;
       font-weight: 700;
     }
@@ -1047,8 +1111,9 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
       border-radius: 10px;
       padding: 11px 14px;
       margin-bottom: 16px;
-      background: #fff4d6;
-      color: #8a5b00;
+      border: 1px solid color-mix(in srgb, var(--sw-color-warning) 25%, var(--sw-border));
+      background: var(--sw-color-warning-soft);
+      color: var(--sw-color-warning);
     }
     .content-grid {
       display: grid;
@@ -1059,15 +1124,24 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
     .operator-list,
     .detail-card,
     .starter-section {
-      background: #fff;
-      border: 1px solid #e4e7ec;
-      border-radius: 14px;
-      box-shadow: 0 6px 20px rgba(16, 24, 40, 0.05);
+      background: var(--sw-surface);
+      border: 1px solid var(--sw-border);
+      border-radius: var(--sw-radius-lg);
+      box-shadow: var(--sw-shadow-sm);
     }
     .operator-list {
       padding: 10px;
-      max-height: 680px;
+      max-height: min(680px, calc(100vh - 250px));
       overflow: auto;
+      scrollbar-gutter: stable;
+    }
+    .operator-list .empty {
+      min-height: 180px;
+      display: grid;
+      place-items: center;
+      padding: var(--sw-space-5);
+      color: var(--sw-text-muted);
+      text-align: center;
     }
     .catalog-resizer {
       align-self: stretch;
@@ -1082,7 +1156,7 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
       width: 3px;
       height: 54px;
       border-radius: 999px;
-      background: #c8d3e1;
+      background: var(--sw-border-strong);
       transition:
         height 120ms ease,
         background 120ms ease;
@@ -1090,7 +1164,7 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
     .catalog-resizer:hover span,
     .catalog-resizer:focus-visible span {
       height: 78px;
-      background: #0f67c9;
+      background: var(--sw-color-primary);
     }
     .operator-row {
       width: 100%;
@@ -1099,23 +1173,31 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
       gap: 10px;
       text-align: left;
       padding: 13px 12px;
-      background: #fff;
-      color: #172033;
-      border-bottom: 1px solid #eef1f5;
+      background: var(--sw-surface);
+      color: var(--sw-text-primary);
+      border: 1px solid transparent;
+      border-bottom-color: var(--sw-border);
+      border-radius: var(--sw-radius-sm);
+      transition:
+        background-color var(--sw-motion-fast) var(--sw-ease-standard),
+        border-color var(--sw-motion-fast) var(--sw-ease-standard);
     }
-    .operator-row:hover,
+    .operator-row:hover {
+      background: var(--sw-color-primary-faint);
+    }
     .operator-row.selected {
-      background: #eef5ff;
+      background: var(--sw-color-primary-soft);
+      border-color: color-mix(in srgb, var(--sw-color-primary) 36%, var(--sw-border));
     }
     .status-dot {
       flex: 0 0 9px;
       width: 9px;
       height: 9px;
       border-radius: 50%;
-      background: #1aa260;
+      background: var(--sw-color-success);
     }
     .status-dot.offline {
-      background: #b8c0cc;
+      background: var(--sw-border-strong);
     }
     .row-copy {
       min-width: 0;
@@ -1126,11 +1208,12 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
     }
     .row-copy strong {
       overflow-wrap: anywhere;
+      line-height: 1.35;
     }
     .row-copy small,
     .badge,
     .port small {
-      color: #7b8798;
+      color: var(--sw-text-muted);
       font-size: 11px;
     }
     .badge {
@@ -1144,8 +1227,21 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
       justify-content: space-between;
       align-items: flex-start;
     }
+    .version-viewer {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: var(--sw-space-2);
+      margin: var(--sw-space-3) 0 0;
+      color: var(--sw-text-muted);
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .version-viewer select {
+      min-width: 150px;
+    }
     code {
-      color: #64748b;
+      color: var(--sw-text-muted);
       font-size: 12px;
       overflow-wrap: anywhere;
     }
@@ -1153,20 +1249,21 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
       white-space: nowrap;
       border-radius: 999px;
       padding: 5px 10px;
-      background: #f1f3f5;
-      color: #667085;
+      background: var(--sw-surface-sunken);
+      color: var(--sw-text-muted);
       font-size: 12px;
+      font-weight: 700;
     }
     .state.ready {
-      background: #e8f8ef;
-      color: #087443;
+      background: var(--sw-color-success-soft);
+      color: var(--sw-color-success);
     }
     .meta-line {
       flex-wrap: wrap;
-      color: #667085;
+      color: var(--sw-text-muted);
       font-size: 12px;
-      border-top: 1px solid #eef1f5;
-      border-bottom: 1px solid #eef1f5;
+      border-top: 1px solid var(--sw-border);
+      border-bottom: 1px solid var(--sw-border);
       padding: 12px 0;
       margin: 16px 0;
     }
@@ -1174,20 +1271,23 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
       display: flex;
       flex-wrap: wrap;
       gap: 4px;
-      border-bottom: 1px solid #e4e7ec;
+      border-bottom: 1px solid var(--sw-border);
       margin-bottom: 16px;
+      overflow-x: auto;
+      scrollbar-width: thin;
     }
     .tabs button {
       border-radius: 8px 8px 0 0;
       padding: 9px 12px;
       background: transparent;
-      color: #667085;
+      color: var(--sw-text-muted);
       border-bottom: 2px solid transparent;
+      white-space: nowrap;
     }
     .tabs button.active {
-      color: #0f67c9;
-      border-bottom-color: #0f67c9;
-      background: #f3f7ff;
+      color: var(--sw-color-primary-strong);
+      border-bottom-color: var(--sw-color-primary);
+      background: var(--sw-color-primary-faint);
     }
     .tab-body {
       min-height: 220px;
@@ -1202,13 +1302,13 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
       flex-direction: column;
       gap: 3px;
       padding: 9px 0;
-      border-bottom: 1px solid #eef1f5;
+      border-bottom: 1px solid var(--sw-border);
     }
     details {
       margin-top: 16px;
     }
     .section-subtitle {
-      color: #64748b;
+      color: var(--sw-text-muted);
       font-size: 12px;
       margin-top: 2px;
     }
@@ -1232,15 +1332,17 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
       justify-content: space-between;
       align-items: flex-start;
       padding: 12px 14px;
-      background: #f8fafc;
-      border: 1px solid #e2e8f0;
-      border-radius: 10px;
+      background: var(--sw-surface-muted);
+      border: 1px solid var(--sw-border);
+      border-radius: var(--sw-radius-sm);
       gap: 16px;
-      transition: background 0.15s, border-color 0.15s;
+      transition:
+        background 0.15s,
+        border-color 0.15s;
     }
     .param-row:hover {
-      background: #f1f5f9;
-      border-color: #cbd5e1;
+      background: var(--sw-color-primary-faint);
+      border-color: var(--sw-border-strong);
     }
     .param-main {
       flex: 1;
@@ -1258,13 +1360,13 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
     .param-title {
       font-weight: 600;
       font-size: 14px;
-      color: #1e293b;
+      color: var(--sw-text-primary);
     }
     .param-key {
       font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
       font-size: 11px;
-      background: #e2e8f0;
-      color: #475569;
+      background: var(--sw-surface-sunken);
+      color: var(--sw-text-secondary);
       padding: 2px 6px;
       border-radius: 4px;
     }
@@ -1272,32 +1374,32 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
       font-size: 11px;
       padding: 2px 7px;
       border-radius: 999px;
-      background: #e0f2fe;
-      color: #0369a1;
+      background: var(--sw-color-info-soft);
+      color: var(--sw-color-info);
       font-weight: 500;
     }
     .param-unit-badge {
       font-size: 11px;
       padding: 2px 6px;
       border-radius: 4px;
-      background: #fef3c7;
-      color: #92400e;
+      background: var(--sw-color-accent-soft);
+      color: var(--sw-color-accent);
     }
     .param-desc {
       font-size: 12px;
-      color: #475569;
+      color: var(--sw-text-secondary);
       margin: 0;
       line-height: 1.4;
     }
     .param-constraints {
       font-size: 11px;
-      color: #64748b;
+      color: var(--sw-text-muted);
       display: flex;
       align-items: center;
       gap: 4px;
     }
     .constraint-label {
-      color: #94a3b8;
+      color: var(--sw-text-muted);
     }
     .param-value-col {
       display: flex;
@@ -1308,16 +1410,16 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
     }
     .param-val-label {
       font-size: 11px;
-      color: #94a3b8;
+      color: var(--sw-text-muted);
     }
     .param-val-pill {
       font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
       font-size: 12px;
       font-weight: 600;
       padding: 4px 10px;
-      background: #eff6ff;
-      border: 1px solid #bfdbfe;
-      color: #1d4ed8;
+      background: var(--sw-color-primary-soft);
+      border: 1px solid color-mix(in srgb, var(--sw-color-primary) 25%, var(--sw-border));
+      color: var(--sw-color-primary-strong);
       border-radius: 6px;
       max-width: 220px;
       overflow: hidden;
@@ -1327,10 +1429,10 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
     .params-edit-card {
       margin-bottom: 18px;
       padding: 16px;
-      border: 1px solid #93c5fd;
-      border-radius: 12px;
-      background: #f0f7ff;
-      box-shadow: 0 4px 12px rgba(15, 103, 201, 0.08);
+      border: 1px solid color-mix(in srgb, var(--sw-color-primary) 38%, var(--sw-border));
+      border-radius: var(--sw-radius-md);
+      background: var(--sw-color-primary-faint);
+      box-shadow: var(--sw-shadow-sm);
       display: grid;
       gap: 14px;
     }
@@ -1340,11 +1442,11 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
       align-items: flex-start;
       gap: 12px;
       padding-bottom: 10px;
-      border-bottom: 1px solid #dbeafe;
+      border-bottom: 1px solid var(--sw-border);
     }
     .edit-card-header strong {
       font-size: 14px;
-      color: #1e3a8a;
+      color: var(--sw-color-primary-strong);
     }
     .edit-card-form {
       padding: 8px 0;
@@ -1354,21 +1456,39 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
       justify-content: flex-end;
       gap: 10px;
       padding-top: 10px;
-      border-top: 1px solid #dbeafe;
+      border-top: 1px solid var(--sw-border);
     }
     .raw-contract-details {
       margin-top: 20px;
       padding-top: 12px;
-      border-top: 1px dashed #cbd5e1;
+      border-top: 1px dashed var(--sw-border-strong);
+    }
+    .release-binding-card {
+      margin-top: 18px;
+      padding: 14px;
+      border: 1px solid var(--sw-border);
+      border-radius: var(--sw-radius-sm);
+      background: var(--sw-surface-muted);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+    .release-binding-card p {
+      margin: 4px 0 0;
+    }
+    .release-binding-actions select {
+      min-width: 240px;
+      max-width: 360px;
     }
     .raw-contract-details summary {
-      color: #64748b;
+      color: var(--sw-text-muted);
       font-size: 12px;
       cursor: pointer;
       user-select: none;
     }
     .raw-contract-details summary:hover {
-      color: #0f67c9;
+      color: var(--sw-color-primary);
     }
     .raw-contract-content {
       margin-top: 10px;
@@ -1376,12 +1496,13 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
     .raw-contract-content h4 {
       font-size: 12px;
       margin: 8px 0 4px;
-      color: #475569;
+      color: var(--sw-text-secondary);
     }
     pre {
       white-space: pre-wrap;
       overflow: auto;
-      background: #f6f8fb;
+      background: var(--sw-surface-muted);
+      color: var(--sw-text-primary);
       padding: 12px;
       border-radius: 8px;
       font-size: 12px;
@@ -1390,17 +1511,17 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
     .algorithm-ref {
       margin-top: 12px;
       padding: 10px;
-      background: #f1f7ff;
-      color: #28527a;
+      background: var(--sw-color-info-soft);
+      color: var(--sw-color-info);
       border-radius: 8px;
       font-size: 13px;
     }
     .training-card {
       margin: 14px 0;
       padding: 14px;
-      border: 1px solid #d8e6f7;
-      border-radius: 10px;
-      background: #f7fbff;
+      border: 1px solid var(--sw-border);
+      border-radius: var(--sw-radius-md);
+      background: var(--sw-color-primary-faint);
       display: grid;
       gap: 8px;
     }
@@ -1415,7 +1536,7 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
     .training-fields label {
       display: grid;
       gap: 5px;
-      color: #475467;
+      color: var(--sw-text-secondary);
       font-size: 12px;
     }
     .training-fields input,
@@ -1443,16 +1564,16 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
     }
     .training-feedback {
       font-size: 13px;
-      color: #b45309;
+      color: var(--sw-color-warning);
     }
     .training-feedback.success {
-      color: #15803d;
+      color: var(--sw-color-success);
       font-weight: 600;
     }
     .models-registry-section {
       margin-top: 24px;
       padding-top: 16px;
-      border-top: 1px solid #e4e7ec;
+      border-top: 1px solid var(--sw-border);
     }
     .section-title-row {
       display: flex;
@@ -1463,10 +1584,10 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
     }
     .empty-models-card {
       padding: 20px;
-      border: 1px dashed #cbd5e1;
-      border-radius: 10px;
+      border: 1px dashed var(--sw-border-strong);
+      border-radius: var(--sw-radius-sm);
       text-align: center;
-      background: #f8fafc;
+      background: var(--sw-surface-muted);
     }
     .models-grid {
       display: grid;
@@ -1474,20 +1595,20 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
     }
     .model-item-card {
       padding: 14px;
-      border: 1px solid #e2e8f0;
-      border-radius: 10px;
-      background: #fff;
+      border: 1px solid var(--sw-border);
+      border-radius: var(--sw-radius-sm);
+      background: var(--sw-surface);
       transition:
         border-color 0.15s,
         box-shadow 0.15s;
     }
     .model-item-card:hover {
-      border-color: #94a3b8;
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.04);
+      border-color: var(--sw-border-strong);
+      box-shadow: var(--sw-shadow-md);
     }
     .model-item-card.is-default-card {
-      border-color: #3b82f6;
-      background: #f8fbff;
+      border-color: var(--sw-color-primary);
+      background: var(--sw-color-primary-faint);
     }
     .model-item-head {
       display: flex;
@@ -1503,24 +1624,24 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
     }
     .model-code-label {
       font-size: 14px;
-      color: #0f172a;
+      color: var(--sw-text-primary);
     }
     .badge-default-model {
-      background: #2563eb;
+      background: var(--sw-color-primary);
       color: #fff;
       font-weight: 700;
     }
     .badge-ready {
-      background: #dcfce7;
-      color: #15803d;
+      background: var(--sw-color-success-soft);
+      color: var(--sw-color-success);
     }
     .badge-pending {
-      background: #fef3c7;
-      color: #b45309;
+      background: var(--sw-color-warning-soft);
+      color: var(--sw-color-warning);
     }
     .badge-vis {
-      background: #f1f5f9;
-      color: #475569;
+      background: var(--sw-surface-sunken);
+      color: var(--sw-text-secondary);
     }
     .model-item-details {
       display: grid;
@@ -1541,9 +1662,9 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
     }
     .chip {
       padding: 2px 8px;
-      background: #f1f5f9;
+      background: var(--sw-surface-sunken);
       border-radius: 4px;
-      color: #334155;
+      color: var(--sw-text-secondary);
       font-size: 11px;
     }
     .model-item-actions {
@@ -1570,24 +1691,25 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
     .modal-backdrop {
       position: fixed;
       inset: 0;
-      background: rgba(15, 23, 42, 0.45);
+      background: color-mix(in srgb, var(--sw-text-primary) 48%, transparent);
       display: grid;
       place-items: center;
       z-index: 1000;
       backdrop-filter: blur(2px);
     }
     .modal-card {
-      background: #fff;
-      border-radius: 14px;
+      background: var(--sw-surface-raised);
+      border: 1px solid var(--sw-border);
+      border-radius: var(--sw-radius-lg);
       width: min(90vw, 680px);
       max-height: 85vh;
       display: flex;
       flex-direction: column;
-      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15);
+      box-shadow: var(--sw-shadow-lg);
     }
     .modal-header {
       padding: 16px 20px;
-      border-bottom: 1px solid #e2e8f0;
+      border-bottom: 1px solid var(--sw-border);
       display: flex;
       justify-content: space-between;
       align-items: center;
@@ -1595,6 +1717,7 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
     .modal-close-btn {
       font-size: 18px;
       cursor: pointer;
+      color: var(--sw-text-secondary);
     }
     .modal-body {
       padding: 20px;
@@ -1607,13 +1730,14 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
       grid-template-columns: 1fr 1fr;
       gap: 8px;
       padding: 12px;
-      background: #f8fafc;
+      background: var(--sw-surface-muted);
+      border: 1px solid var(--sw-border);
       border-radius: 8px;
       font-size: 12px;
     }
     .modal-footer {
       padding: 14px 20px;
-      border-top: 1px solid #e2e8f0;
+      border-top: 1px solid var(--sw-border);
       display: flex;
       justify-content: flex-end;
       gap: 10px;
@@ -1623,11 +1747,68 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
       grid-template-columns: 1fr 1fr auto;
       gap: 12px;
       padding: 10px 0;
-      border-bottom: 1px solid #eef1f5;
-      color: #667085;
+      border-bottom: 1px solid var(--sw-border);
+      color: var(--sw-text-muted);
     }
     .version-row b {
-      color: #172033;
+      color: var(--sw-text-primary);
+    }
+    .version-select-row {
+      grid-template-columns: auto minmax(140px, 0.9fr) minmax(150px, 1fr) minmax(180px, 1fr);
+      align-items: center;
+      cursor: pointer;
+      border: 1px solid transparent;
+      border-radius: 9px;
+      padding: 10px 12px;
+      transition:
+        border-color 0.16s ease,
+        background 0.16s ease;
+    }
+    .version-select-row:hover:not(.disabled),
+    .version-select-row.selected {
+      border-color: var(--sw-color-primary);
+      background: var(--sw-color-primary-faint);
+    }
+    .version-select-row.current {
+      background: var(--sw-color-success-soft);
+    }
+    .version-select-row.disabled {
+      cursor: not-allowed;
+      opacity: 0.66;
+    }
+    .version-select-row input {
+      min-width: 0;
+      margin: 0;
+      accent-color: var(--sw-color-primary);
+    }
+    .version-identity {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .current-version-badge {
+      color: var(--sw-color-success);
+      background: var(--sw-color-success-soft);
+      border-radius: 999px;
+      padding: 2px 7px;
+      white-space: nowrap;
+    }
+    .available-text {
+      color: var(--sw-color-success);
+    }
+    .version-activation-actions {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 18px;
+      margin-top: 16px;
+      padding: 14px;
+      border: 1px solid var(--sw-border);
+      border-radius: var(--sw-radius-sm);
+      background: var(--sw-surface-muted);
+    }
+    .version-activation-actions p {
+      margin: 4px 0 0;
     }
     .usage-grid {
       display: grid;
@@ -1638,26 +1819,27 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
       display: grid;
       gap: 6px;
       padding: 14px;
-      background: #f6f8fb;
-      border-radius: 10px;
+      background: var(--sw-surface-muted);
+      border: 1px solid var(--sw-border);
+      border-radius: var(--sw-radius-sm);
     }
     .usage-grid strong {
       font-size: 22px;
     }
     .markdown {
       line-height: 1.7;
-      color: #344054;
+      color: var(--sw-text-secondary);
       max-width: 1040px;
     }
     .document-version {
-      color: #667085;
+      color: var(--sw-text-muted);
       font-size: 12px;
       margin: -4px 0 18px;
     }
     :host ::ng-deep .markdown h1,
     :host ::ng-deep .markdown h2,
     :host ::ng-deep .markdown h3 {
-      color: #172033;
+      color: var(--sw-text-primary);
       line-height: 1.3;
       margin: 1.35em 0 0.55em;
     }
@@ -1666,9 +1848,9 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
       width: min(100%, 1120px);
       height: auto;
       margin: 18px auto 10px;
-      border: 1px solid #e4e7ec;
+      border: 1px solid var(--sw-border);
       border-radius: 12px;
-      background: #f8fafc;
+      background: var(--sw-surface-muted);
     }
     :host ::ng-deep .markdown .katex-display {
       overflow-x: auto;
@@ -1699,28 +1881,203 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
       flex-direction: column;
       gap: 10px;
       padding: 16px;
-      border: 1px solid #e4e7ec;
-      border-radius: 10px;
+      border: 1px solid var(--sw-border);
+      border-radius: var(--sw-radius-md);
+      background: var(--sw-surface-muted);
+      transition:
+        border-color var(--sw-motion-fast) var(--sw-ease-standard),
+        background-color var(--sw-motion-fast) var(--sw-ease-standard);
+    }
+    .starter-card:hover {
+      border-color: var(--sw-border-strong);
+      background: var(--sw-color-primary-faint);
     }
     .starter-title {
       justify-content: space-between;
       align-items: flex-start;
     }
     .starter-title span {
-      color: #667085;
+      color: var(--sw-text-muted);
       font-size: 12px;
       white-space: nowrap;
     }
     .starter-card p {
-      color: #667085;
+      color: var(--sw-text-muted);
       min-height: 48px;
     }
     .starter-card small {
-      color: #667085;
+      color: var(--sw-text-muted);
       overflow-wrap: anywhere;
     }
     .starter-card a {
       margin-top: auto;
+    }
+    .documents-tab-body {
+      padding-top: 4px;
+    }
+    .doc-card {
+      margin-bottom: 24px;
+    }
+    .doc-card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--sw-border);
+    }
+    .doc-card-header h3 {
+      margin: 0;
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--sw-text-primary);
+    }
+    .doc-version-tag {
+      font-size: 11px;
+      font-weight: 600;
+      padding: 2px 8px;
+      background: var(--sw-color-info-soft);
+      color: var(--sw-color-info);
+      border-radius: 999px;
+    }
+    .empty-docs-box {
+      padding: 24px;
+      text-align: center;
+      background: var(--sw-surface-muted);
+      border: 1px dashed var(--sw-border-strong);
+      border-radius: 10px;
+      margin: 12px 0;
+    }
+    :host ::ng-deep .markdown {
+      line-height: 1.75;
+      color: var(--sw-text-secondary);
+      font-size: 14px;
+    }
+    :host ::ng-deep .markdown h1 {
+      font-size: 20px;
+      font-weight: 800;
+      margin: 20px 0 12px;
+      color: var(--sw-text-primary);
+      letter-spacing: -0.01em;
+    }
+    :host ::ng-deep .markdown h2 {
+      font-size: 16px;
+      font-weight: 700;
+      margin: 18px 0 10px;
+      color: var(--sw-text-primary);
+      padding-bottom: 6px;
+      border-bottom: 1px solid var(--sw-border);
+    }
+    :host ::ng-deep .markdown h3 {
+      font-size: 14px;
+      font-weight: 600;
+      margin: 14px 0 8px;
+      color: var(--sw-text-secondary);
+    }
+    :host ::ng-deep .markdown p {
+      margin: 10px 0;
+      line-height: 1.75;
+    }
+    :host ::ng-deep .markdown ul,
+    :host ::ng-deep .markdown ol {
+      padding-left: 22px;
+      margin: 10px 0;
+    }
+    :host ::ng-deep .markdown li {
+      margin: 5px 0;
+      line-height: 1.65;
+    }
+    :host ::ng-deep .markdown table {
+      width: 100%;
+      border-collapse: separate;
+      border-spacing: 0;
+      margin: 18px 0;
+      font-size: 13px;
+      background: var(--sw-surface);
+      border: 1px solid var(--sw-border-strong);
+      border-radius: 8px;
+      overflow: hidden;
+      box-shadow: var(--sw-shadow-sm);
+    }
+    :host ::ng-deep .markdown th {
+      background: var(--sw-surface-muted);
+      font-weight: 700;
+      color: var(--sw-text-primary);
+      text-align: left;
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--sw-border-strong);
+      border-right: 1px solid var(--sw-border);
+      white-space: nowrap;
+    }
+    :host ::ng-deep .markdown th:last-child {
+      border-right: none;
+    }
+    :host ::ng-deep .markdown td {
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--sw-border);
+      border-right: 1px solid var(--sw-border);
+      color: var(--sw-text-secondary);
+      line-height: 1.6;
+      word-break: break-word;
+    }
+    :host ::ng-deep .markdown td:last-child {
+      border-right: none;
+    }
+    :host ::ng-deep .markdown tr:last-child td {
+      border-bottom: none;
+    }
+    :host ::ng-deep .markdown tr:nth-child(even) td {
+      background: var(--sw-surface-muted);
+    }
+    :host ::ng-deep .markdown tr:hover td {
+      background: var(--sw-color-primary-faint);
+    }
+    :host ::ng-deep .markdown img {
+      max-width: 100%;
+      height: auto;
+      display: block;
+      margin: 20px auto;
+      border-radius: 10px;
+      border: 1px solid var(--sw-border);
+      background: var(--sw-surface);
+      padding: 12px;
+      box-shadow: var(--sw-shadow-md);
+    }
+    :host ::ng-deep .markdown code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 12px;
+      background: var(--sw-surface-sunken);
+      color: var(--sw-color-primary-strong);
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+    :host ::ng-deep .markdown pre {
+      background: #0f172a;
+      color: #f8fafc;
+      padding: 14px 18px;
+      border-radius: 8px;
+      overflow-x: auto;
+      font-size: 12px;
+      line-height: 1.5;
+      margin: 14px 0;
+    }
+    :host ::ng-deep .markdown pre code {
+      background: transparent;
+      color: inherit;
+      padding: 0;
+    }
+    :host ::ng-deep .markdown blockquote {
+      margin: 14px 0;
+      padding: 10px 16px;
+      border-left: 4px solid var(--sw-color-primary);
+      background: var(--sw-color-primary-faint);
+      color: var(--sw-color-primary-strong);
+      border-radius: 0 6px 6px 0;
+      line-height: 1.65;
+    }
+    :host ::ng-deep .markdown em {
+      color: var(--sw-text-muted);
+      font-size: 13px;
     }
     @media (max-width: 900px) {
       .content-grid {
@@ -1748,10 +2105,27 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
       input {
         min-width: 100%;
       }
+      .toolbar > select,
+      .toolbar > button,
+      .toolbar > a {
+        flex: 1 1 calc(50% - var(--sw-space-2));
+      }
       .usage-grid,
       .version-row,
       .training-fields {
         grid-template-columns: 1fr;
+      }
+      .detail-card {
+        padding: var(--sw-space-4);
+      }
+      .version-viewer {
+        align-items: stretch;
+        flex-direction: column;
+      }
+      .version-viewer select,
+      .release-binding-actions select {
+        min-width: 0;
+        width: 100%;
       }
     }
   `,
@@ -1759,17 +2133,24 @@ export function extractParameterSpecs(version: OperatorVersionSummary): Paramete
 export class OperatorCenterPage implements OnDestroy {
   private readonly api = inject(ApiClient);
   private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
   private readonly notice = inject(NotificationService);
   private readonly documentRenderer = inject(AlgorithmDocumentRendererService);
+  private readonly operatorDocuments = inject(StaticOperatorDocumentService);
   readonly operatorNames = inject(OperatorNameService);
   readonly auth = inject(AuthService);
   readonly operators = signal<OperatorSummary[]>([]);
   readonly facets = signal<Record<string, OperatorFacetOption[]>>({});
   readonly templates = signal<WorkflowTemplateSummary[]>([]);
   readonly selected = signal<OperatorSummary | null>(null);
-  readonly documents = signal<AlgorithmDocument[]>([]);
+  readonly documents = signal<StaticOperatorDocument[]>([]);
+  readonly documentMessage = signal('');
+  readonly loadingDocuments = signal(false);
   readonly models = signal<ModelVersionSummary[]>([]);
   readonly loadingModels = signal(false);
+  readonly releases = signal<AlgorithmReleaseSummary[]>([]);
+  readonly loadingReleases = signal(false);
+  readonly savingRelease = signal(false);
   readonly selectedModelForDetail = signal<ModelVersionSummary | null>(null);
   readonly activeTab = signal<
     'overview' | 'contract' | 'training' | 'versions' | 'documents' | 'usage'
@@ -1785,6 +2166,7 @@ export class OperatorCenterPage implements OnDestroy {
   readonly defaultParamsFormModel = signal<Record<string, unknown>>({});
   readonly defaultParamsValid = signal(true);
   readonly savingDefaults = signal(false);
+  readonly viewedVersion = signal<string | null>(null);
   trainingSeasonality = 'auto';
   trainingMinimumCycles = 3;
   trainingMadFloor = 0.000001;
@@ -1800,9 +2182,13 @@ export class OperatorCenterPage implements OnDestroy {
   modelStrategy = '';
   private resizeCleanup: (() => void) | null = null;
   private lastCatalogLayout: HTMLElement | null = null;
+  private selectionRequestGeneration = 0;
+  private documentRequestGeneration = 0;
+  private releaseRequestGeneration = 0;
 
   constructor() {
     this.kind = this.route.snapshot.queryParamMap.get('kind') || '';
+    this.viewedVersion.set(this.route.snapshot.queryParamMap.get('version'));
     const tab = this.route.snapshot.queryParamMap.get('tab');
     if (
       ['overview', 'contract', 'training', 'versions', 'documents', 'usage'].includes(tab || '')
@@ -1844,11 +2230,13 @@ export class OperatorCenterPage implements OnDestroy {
             this.operators().find((item) => item.code === current?.code) ||
             this.operators()[0] ||
             null;
-          this.selected.set(target);
-          if (target) {
-            if (this.activeTab() === 'documents') this.loadDocuments(target);
-            if (this.activeTab() === 'training') this.loadModels(target);
+          if (!target) {
+            this.selected.set(null);
+            return;
           }
+          const preserveVersion =
+            current?.code === target.code || (!current && !!this.viewedVersion());
+          this.select(target, !preserveVersion);
         },
         error: () => this.message.set('算子目录加载失败，请检查权限或服务状态。'),
       });
@@ -1892,20 +2280,38 @@ export class OperatorCenterPage implements OnDestroy {
       .get<WorkflowTemplateSummary[]>('/api/v1/workflow-templates')
       .subscribe({ next: (items) => this.templates.set(items || []) });
   }
-  select(operator: OperatorSummary): void {
-    this.selected.set(operator);
+  select(operator: OperatorSummary, resetVersion = true): void {
+    const selectionGeneration = ++this.selectionRequestGeneration;
+    this.documentRequestGeneration += 1;
+    if (resetVersion) this.syncViewedVersion(operator, true);
+    const selectedVersion = this.findViewedVersion(operator);
+    const selectedOperator = this.withViewedVersion(operator, selectedVersion);
+    this.selected.set(selectedOperator);
     this.documents.set([]);
+    this.documentMessage.set('');
     this.models.set([]);
     this.trainingSelection.set(null);
     this.trainingMessage.set('');
     this.trainingSuccess.set(false);
-    if (this.activeTab() === 'documents') this.loadDocuments(operator);
-    if (this.activeTab() === 'training') this.loadModels(operator);
+    this.releases.set([]);
+    this.loadReleases(selectedOperator);
+    if (this.activeTab() === 'documents') this.loadDocuments(selectedOperator);
+    if (this.activeTab() === 'training') this.loadModels(selectedOperator);
     this.api.get<OperatorSummary>(`/api/v1/operators/${operator.code}`).subscribe({
       next: (detail) => {
-        this.selected.set(detail);
-        if (this.activeTab() === 'documents') this.loadDocuments(detail);
-        if (this.activeTab() === 'training') this.loadModels(detail);
+        if (selectionGeneration !== this.selectionRequestGeneration) return;
+        const version = this.findViewedVersion(detail);
+        const viewed = this.withViewedVersion(detail, version);
+        this.viewedVersion.set(version?.version || null);
+        this.selected.set(viewed);
+        void this.router.navigate([], {
+          relativeTo: this.route,
+          queryParams: { version: version?.version || null, tab: this.activeTab() },
+          queryParamsHandling: 'merge',
+        });
+        this.loadReleases(viewed);
+        if (this.activeTab() === 'documents') this.loadDocuments(viewed);
+        if (this.activeTab() === 'training') this.loadModels(viewed);
       },
     });
   }
@@ -1919,8 +2325,16 @@ export class OperatorCenterPage implements OnDestroy {
       return;
     }
     this.loadingModels.set(true);
+    const algorithm = operator.active_version?.algorithm as
+      Record<string, unknown> | null | undefined;
+    const rawVersionId = algorithm?.['algorithm_version_id'] ?? algorithm?.['id'] ?? null;
     this.api
-      .get<ModelVersionSummary[]>('/api/v1/model-versions', { algorithm_code: code })
+      .get<ModelVersionSummary[]>(
+        '/api/v1/model-versions',
+        rawVersionId === null || rawVersionId === undefined || rawVersionId === ''
+          ? { algorithm_code: code }
+          : { algorithm_version_id: String(rawVersionId) },
+      )
       .subscribe({
         next: (items) => {
           this.models.set(items || []);
@@ -1930,23 +2344,6 @@ export class OperatorCenterPage implements OnDestroy {
           this.models.set([]);
           this.loadingModels.set(false);
         },
-      });
-  }
-  setDefaultModel(operator: OperatorSummary, model: ModelVersionSummary): void {
-    const code = this.algorithmCode(operator);
-    if (!code) return;
-    this.api
-      .post<Record<string, unknown>, { model_version_id: string }>(
-        `/api/v1/algorithms/${code}/default-model`,
-        { model_version_id: model.model_version_id },
-      )
-      .subscribe({
-        next: () => {
-          this.notice.success(`已将 ${model.version} 设为算子默认模型`);
-          this.loadModels(operator);
-          this.select(operator);
-        },
-        error: () => this.notice.error('设为默认模型失败，请检查权限。'),
       });
   }
   toggleVisibility(operator: OperatorSummary, model: ModelVersionSummary): void {
@@ -1985,22 +2382,23 @@ export class OperatorCenterPage implements OnDestroy {
     this.trainingBusy.set(true);
     this.trainingSuccess.set(false);
     this.trainingMessage.set('正在创建并调度训练任务…');
+    const exactVersion = operator.active_version?.version;
+    const trainingPath = `/api/v1/algorithms/${algorithmCode}/training-runs${
+      exactVersion ? `?algorithm_version=${encodeURIComponent(exactVersion)}` : ''
+    }`;
     this.api
-      .post<Record<string, unknown>, Record<string, unknown>>(
-        `/api/v1/algorithms/${algorithmCode}/training-runs`,
-        {
-          dataset_version_id: selection.version.id,
-          monitor_point_id: selection.channel?.monitor_point_id ?? null,
-          metric_code: selection.channel?.metric_code || 'flow',
-          value_source: selection.value_source,
-          training_params: {
-            seasonality: this.trainingSeasonality,
-            minimum_cycles: Number(this.trainingMinimumCycles),
-            mad_floor: Number(this.trainingMadFloor),
-          },
-          random_seed: 42,
+      .post<Record<string, unknown>, Record<string, unknown>>(trainingPath, {
+        dataset_version_id: selection.version.id,
+        monitor_point_id: selection.channel?.monitor_point_id ?? null,
+        metric_code: selection.channel?.metric_code || 'flow',
+        value_source: selection.value_source,
+        training_params: {
+          seasonality: this.trainingSeasonality,
+          minimum_cycles: Number(this.trainingMinimumCycles),
+          mad_floor: Number(this.trainingMadFloor),
         },
-      )
+        random_seed: 42,
+      })
       .subscribe({
         next: (run) => {
           const runId = String(run['training_run_id'] || run['task_id'] || '');
@@ -2059,6 +2457,11 @@ export class OperatorCenterPage implements OnDestroy {
   }
   setTab(tab: 'overview' | 'contract' | 'training' | 'versions' | 'documents' | 'usage'): void {
     this.activeTab.set(tab);
+    void this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: { version: this.viewedVersion(), tab },
+      queryParamsHandling: 'merge',
+    });
     if (this.selected()) {
       if (tab === 'documents') this.loadDocuments(this.selected()!);
       if (tab === 'training') this.loadModels(this.selected()!);
@@ -2083,24 +2486,190 @@ export class OperatorCenterPage implements OnDestroy {
       : '';
   }
   activeRelease(operator: OperatorSummary): { version: string; status: string } | null {
-    const release = operator.active_version?.algorithm?.['active_release'];
-    if (!release || typeof release !== 'object') return null;
-    const value = release as Record<string, unknown>;
-    return { version: String(value['version'] || ''), status: String(value['status'] || '') };
+    const releaseId = operator.active_version?.default_release_id;
+    if (!releaseId) return null;
+    const release = this.releases().find((item) => item.release_id === String(releaseId));
+    return release
+      ? { version: release.version, status: release.status }
+      : { version: String(releaseId), status: '已绑定' };
+  }
+  versionUnavailableReason(version: OperatorVersionSummary): string {
+    const algorithm = version.algorithm as Record<string, unknown> | null;
+    return String(algorithm?.['reason'] || '不可用');
+  }
+  private syncViewedVersion(operator: OperatorSummary, reset = false): void {
+    const versions = operator.versions || [];
+    const current = this.viewedVersion();
+    if (!reset && current && versions.some((item) => item.version === current)) return;
+    this.viewedVersion.set(
+      operator.default_version?.version ||
+        operator.active_version?.version ||
+        versions[0]?.version ||
+        null,
+    );
+  }
+  selectVersion(operator: OperatorSummary, version: string): void {
+    const selected = (operator.versions || []).find((item) => item.version === version);
+    if (!selected) return;
+    this.viewedVersion.set(version);
+    const viewed = this.withViewedVersion(operator, selected);
+    this.selected.set(viewed);
+    this.editingDefaults.set(false);
+    this.models.set([]);
+    this.documents.set([]);
+    this.loadReleases(viewed);
+    if (this.activeTab() === 'documents') this.loadDocuments(viewed);
+    if (this.activeTab() === 'training') this.loadModels(viewed);
+    void this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: { version, tab: this.activeTab() },
+      queryParamsHandling: 'merge',
+    });
+  }
+  private findViewedVersion(operator: OperatorSummary): OperatorVersionSummary | null {
+    const requested = this.viewedVersion();
+    return (
+      (operator.versions || []).find((item) => item.version === requested) ||
+      operator.default_version ||
+      operator.active_version ||
+      operator.versions?.[0] ||
+      null
+    );
+  }
+  private withViewedVersion(
+    operator: OperatorSummary,
+    version: OperatorVersionSummary | null,
+  ): OperatorSummary {
+    if (!version) return operator;
+    return {
+      ...operator,
+      active_version: version,
+      available: version.available,
+      unavailable_reason: version.unavailable_reasons?.[0] || null,
+      unavailable_reasons: version.unavailable_reasons || [],
+      installed: version.installed,
+      lifecycle: version.lifecycle,
+      runtime_ready: version.runtime_ready,
+      runnable_with_defaults: version.runnable_with_defaults,
+      default_parameters: version.default_parameters,
+      default_release_id: version.default_release_id,
+      default_model_version_id: version.default_model_version_id,
+    };
+  }
+  loadReleases(operator: OperatorSummary): void {
+    const requestGeneration = ++this.releaseRequestGeneration;
+    const code = this.algorithmCode(operator);
+    const rawVersionId = operator.active_version?.algorithm?.['id'];
+    if (!code || rawVersionId === null || rawVersionId === undefined) {
+      this.releases.set([]);
+      return;
+    }
+    const algorithmVersionId = Number(rawVersionId);
+    this.loadingReleases.set(true);
+    this.api.get<AlgorithmReleaseSummary[]>(`/api/v1/algorithms/${code}/releases`).subscribe({
+      next: (items) => {
+        if (requestGeneration !== this.releaseRequestGeneration) return;
+        this.releases.set(
+          (items || []).filter(
+            (item) =>
+              item.algorithm_version_id === algorithmVersionId &&
+              ['approved', 'active'].includes(item.status),
+          ),
+        );
+        this.loadingReleases.set(false);
+      },
+      error: () => {
+        if (requestGeneration !== this.releaseRequestGeneration) return;
+        this.releases.set([]);
+        this.loadingReleases.set(false);
+      },
+    });
+  }
+  saveDefaultRelease(
+    operator: OperatorSummary,
+    version: OperatorVersionSummary,
+    releaseId: string,
+  ): void {
+    if (this.savingRelease()) return;
+    this.savingRelease.set(true);
+    this.api
+      .put<
+        { default_release_id: string | null; default_model_version_id: string | null },
+        { release_id: string | null }
+      >(`/api/v1/operators/${operator.code}/versions/${version.version}/default-release`, {
+        release_id: releaseId || null,
+      })
+      .subscribe({
+        next: (result) => {
+          this.savingRelease.set(false);
+          const updated = {
+            ...version,
+            default_release_id: result.default_release_id,
+            default_model_version_id: result.default_model_version_id,
+          };
+          const versions = (operator.versions || []).map((item) =>
+            item.version === version.version ? updated : item,
+          );
+          this.selected.set(this.withViewedVersion({ ...operator, versions }, updated));
+          this.notice.success('当前版本的新建节点默认发布包已更新。');
+        },
+        error: () => {
+          this.savingRelease.set(false);
+          this.notice.error('公共发布包更新失败，请确认发布包已通过审核且属于当前算法版本。');
+        },
+      });
   }
   algorithmCode(operator: OperatorSummary): string | null {
     return linkedAlgorithmCode(operator);
   }
+  documentScopeKey(operator: OperatorSummary | null): string | null {
+    return operatorDocumentScopeKey(operator);
+  }
   loadDocuments(operator: OperatorSummary): void {
-    const code = this.algorithmCode(operator);
+    const documentGeneration = ++this.documentRequestGeneration;
+    const code = this.documentScopeKey(operator);
     if (!code || !this.auth.hasPermission('algorithm:read')) {
       this.documents.set([]);
+      this.documentMessage.set('');
+      this.loadingDocuments.set(false);
       return;
     }
-    this.api.get<AlgorithmDocument[]>(`/api/v1/algorithms/${code}/documents`).subscribe({
-      next: (documents) => this.documents.set(documents || []),
-      error: () => this.documents.set([]),
-    });
+    this.documentMessage.set('');
+    this.loadingDocuments.set(true);
+    this.operatorDocuments
+      .documentsForOperator(code)
+      .pipe(
+        switchMap((documents) =>
+          documents.length
+            ? forkJoin(
+                documents.map((document) =>
+                  this.operatorDocuments.loadMarkdown(document).pipe(
+                    map((markdown) => ({ ...document, markdown })),
+                    catchError(() => of({ ...document, markdown: null, markdownError: true })),
+                  ),
+                ),
+              )
+            : of([]),
+        ),
+      )
+      .subscribe({
+        next: (documents) => {
+          if (documentGeneration !== this.documentRequestGeneration) return;
+          this.documents.set(documents);
+          this.documentMessage.set(
+            documents.some((document) => document.markdownError)
+              ? '部分算子文档暂时无法读取。'
+              : '',
+          );
+          this.loadingDocuments.set(false);
+        },
+        error: () => {
+          if (documentGeneration !== this.documentRequestGeneration) return;
+          this.documents.set([]);
+          this.documentMessage.set('算子文档索引暂时无法加载。');
+          this.loadingDocuments.set(false);
+        },
+      });
   }
   startListResize(event: PointerEvent, layout: HTMLElement): void {
     if (window.innerWidth <= 900) return;
@@ -2179,9 +2748,6 @@ export class OperatorCenterPage implements OnDestroy {
   renderMarkdown(markdown: string): SafeHtml {
     return this.documentRenderer.render(markdown);
   }
-  currentDocumentVersion(document: AlgorithmDocument): AlgorithmDocumentVersion | null {
-    return currentAlgorithmDocumentVersion(document);
-  }
   getParameterSpecs(version: OperatorVersionSummary): ParameterSpecItem[] {
     return extractParameterSpecs(version);
   }
@@ -2243,10 +2809,9 @@ export class OperatorCenterPage implements OnDestroy {
       .patch<
         { operator: OperatorSummary; version: OperatorVersionSummary },
         { default_parameters: Record<string, unknown> }
-      >(
-        `/api/v1/operators/${operator.code}/versions/${version.version}/default-parameters`,
-        { default_parameters: params },
-      )
+      >(`/api/v1/operators/${operator.code}/versions/${version.version}/default-parameters`, {
+        default_parameters: params,
+      })
       .subscribe({
         next: (res) => {
           this.savingDefaults.set(false);
@@ -2255,7 +2820,7 @@ export class OperatorCenterPage implements OnDestroy {
           if (res?.operator) {
             this.selected.set(res.operator);
           } else {
-            this.select(operator);
+            this.select(operator, false);
           }
         },
         error: (err) => {
@@ -2263,26 +2828,6 @@ export class OperatorCenterPage implements OnDestroy {
           const detailMsg = err?.error?.detail?.message || err?.message || '未知错误';
           this.notice.error(`更新默认参数失败: ${detailMsg}`);
         },
-      });
-  }
-
-  toggle(operator: OperatorSummary): void {
-    const nextStatus = operator.status === 'active' ? 'disabled' : 'active';
-    this.api
-      .patch<OperatorSummary, { status: string; disabled_reason?: string }>(
-        `/api/v1/operators/${operator.code}`,
-        {
-          status: nextStatus,
-          disabled_reason: nextStatus === 'disabled' ? '由管理员在算子中心停用' : undefined,
-        },
-      )
-      .subscribe({
-        next: (detail) => {
-          this.selected.set(detail);
-          this.load();
-          this.notice.success(nextStatus === 'active' ? '算子已启用。' : '算子已停用。');
-        },
-        error: () => this.message.set('算子状态更新失败。'),
       });
   }
 }

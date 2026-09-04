@@ -2,10 +2,9 @@ import {
   AfterViewInit,
   Component,
   ElementRef,
-  Injectable,
   OnDestroy,
-  Signal,
   ViewChild,
+  computed,
   effect,
   inject,
   signal,
@@ -13,16 +12,31 @@ import {
 import { FormsModule } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
 import { RouterLink } from '@angular/router';
+import { Subscription } from 'rxjs';
 
-import { DataAssetSelection, ModelVersionSummary } from '../../core/models/api.models';
+import {
+  DataAssetSelection,
+  DataCollectionSummary,
+  DataFilePreview,
+  DataFileSummary,
+  DataFileVersionSummary,
+  DataFileViewCreate,
+  DataFileViewSelection,
+  ModelVersionSummary,
+} from '../../core/models/api.models';
 import { ApiClient } from '../../core/services/api-client.service';
+import { DataFileService } from '../../core/services/data-file.service';
 import { DataAssetPickerComponent } from '../../shared/components/data-asset-picker.component';
+import { DataFilePreviewPanelComponent } from '../data-sources/data-file-preview-panel.component';
 import { OperatorNameService } from '../../core/services/operator-name.service';
 import {
   OperatorParameterFormComponent,
   ParameterSchema,
 } from '../../shared/components/operator-parameter-form.component';
-import type { Definition, EditorNode } from './workflow-editor.page';
+import type { Definition, EditorNode } from './workflow-editor.models';
+import { WorkflowEditorStore } from './workflow-editor-store';
+import { WorkflowEditorFacade } from './workflow-editor-facade';
+import { ReteWorkflowAdapter } from './rete-workflow-adapter';
 
 export interface SelectedRuntimeBinding {
   id: string;
@@ -31,45 +45,6 @@ export interface SelectedRuntimeBinding {
   wholeAsset: boolean;
 }
 
-export interface WorkflowEditorPanelHost {
-  readonly definitions: Signal<Definition[]>;
-  readonly nodes: Signal<EditorNode[]>;
-  readonly selectedNode: Signal<EditorNode | null>;
-  readonly selectedDataBinding: Signal<SelectedRuntimeBinding | null>;
-  readonly history: Signal<unknown[]>;
-  readonly historyIndex: Signal<number>;
-  readonly edges: unknown[];
-  addNode(definition: Definition): Promise<void>;
-  onCatalogDragStart(event: DragEvent, definition: Definition): void;
-  allowDrop(event: DragEvent): void;
-  onCanvasDrop(event: DragEvent): void;
-  attachEditorHost(element: HTMLDivElement): void;
-  detachEditorHost(element: HTMLDivElement): void;
-  fitView(): Promise<void>;
-  refreshEditorViewport(): void;
-  undo(): void;
-  redo(): void;
-  parameterEntries(node: EditorNode): Array<{ key: string; value: unknown }>;
-  parameterSchema(node: EditorNode, key: string): Record<string, any>;
-  setParameter(id: string, key: string, value: unknown): void;
-  setParameters(id: string, parameters: Record<string, unknown>): void;
-  setParameterValidity(id: string, valid: boolean): void;
-  coerceNumber(value: unknown, integer: boolean): number;
-  isOutputPort(nodeId: string, port: string): boolean;
-  toggleOutputPort(nodeId: string, port: string): void;
-  removeNode(id: string): Promise<void>;
-  setBinding(nodeId: string, selection: DataAssetSelection | null): void;
-}
-
-@Injectable()
-export class WorkflowEditorPanelBridge {
-  host?: WorkflowEditorPanelHost;
-
-  requireHost(): WorkflowEditorPanelHost {
-    if (!this.host) throw new Error('Workflow editor panel host is not ready');
-    return this.host;
-  }
-}
 
 @Component({
   selector: 'app-operator-catalog-panel',
@@ -81,7 +56,7 @@ export class WorkflowEditorPanelBridge {
           <span>算子目录</span>
           <h2>可用节点</h2>
         </div>
-        <small>{{ host.definitions().length }}</small>
+        <small>{{ store.definitions().length }}</small>
       </header>
       <label class="search">搜索<input [(ngModel)]="search" placeholder="名称或编码" /></label>
       <p class="help">点击添加，或拖入画布。</p>
@@ -101,8 +76,8 @@ export class WorkflowEditorPanelBridge {
                   <button
                     class="catalog-item"
                     draggable="true"
-                    (dragstart)="host.onCatalogDragStart($event, item)"
-                    (click)="host.addNode(item)"
+                    (dragstart)="onCatalogDragStart($event, item)"
+                    (click)="addNode(item)"
                   >
                     <i [class.gpu]="item.runtime_type === 'builtin_gpu'"></i>
                     <span
@@ -204,7 +179,13 @@ export class WorkflowEditorPanelBridge {
     }
     .catalog-item:hover {
       border-color: var(--sw-color-primary);
+      background: var(--sw-color-primary-faint);
       box-shadow: var(--sw-shadow-sm);
+    }
+    .catalog-item:focus-visible {
+      border-color: var(--sw-focus);
+      outline: 0;
+      box-shadow: var(--sw-shadow-focus);
     }
     .catalog-item i {
       width: 8px;
@@ -213,7 +194,7 @@ export class WorkflowEditorPanelBridge {
       background: var(--sw-color-success);
     }
     .catalog-item i.gpu {
-      background: #8b5cf6;
+      background: var(--sw-color-accent);
     }
     .catalog-item b,
     .catalog-item small {
@@ -233,7 +214,9 @@ export class WorkflowEditorPanelBridge {
   `,
 })
 export class OperatorCatalogPanelComponent {
-  readonly host = inject(WorkflowEditorPanelBridge).requireHost();
+  readonly store = inject(WorkflowEditorStore);
+  readonly facade = inject(WorkflowEditorFacade);
+  readonly adapter = inject(ReteWorkflowAdapter);
   readonly operatorNames = inject(OperatorNameService);
   search = '';
   private readonly openCategories = new Set([
@@ -256,7 +239,7 @@ export class OperatorCatalogPanelComponent {
   groups(): Array<{ category: string; label: string; items: Definition[] }> {
     const term = this.search.trim().toLowerCase();
     const groups = new Map<string, Definition[]>();
-    for (const item of this.host.definitions()) {
+    for (const item of this.store.definitions().filter((definition) => definition.is_default !== false)) {
       if (term && !this.operatorNames.matches(item.node_code, item.node_name, term)) continue;
       groups.set(item.category, [...(groups.get(item.category) ?? []), item]);
     }
@@ -276,6 +259,8 @@ export class OperatorCatalogPanelComponent {
     if (this.openCategories.has(category)) this.openCategories.delete(category);
     else this.openCategories.add(category);
   }
+  onCatalogDragStart(event: DragEvent, definition: Definition): void { event.dataTransfer?.setData('application/x-node-code', definition.node_code); }
+  addNode(definition: Definition): void { const node = this.facade.addNode(definition); void this.adapter.addNode(node); }
 }
 
 @Component({
@@ -286,21 +271,21 @@ export class OperatorCatalogPanelComponent {
       <div
         #editorHost
         class="rete-host"
-        (dragover)="host.allowDrop($event)"
-        (drop)="host.onCanvasDrop($event)"
+        (dragover)="allowDrop($event)"
+        (drop)="onCanvasDrop($event)"
       ></div>
-      @if (!host.nodes().length) {
+      @if (!store.nodes().length) {
         <div class="canvas-empty">从算子目录添加节点。</div>
       }
       <div class="canvas-tools">
-        <button mat-stroked-button (click)="host.fitView()">适应画布</button>
-        <button mat-stroked-button (click)="host.undo()" [disabled]="host.historyIndex() <= 0">
+        <button mat-stroked-button (click)="adapter.fitView()">适应画布</button>
+        <button mat-stroked-button (click)="facade.undo()" [disabled]="store.historyIndex() <= 0">
           撤销
         </button>
         <button
           mat-stroked-button
-          (click)="host.redo()"
-          [disabled]="host.historyIndex() >= host.history().length - 1"
+          (click)="facade.redo()"
+          [disabled]="store.historyIndex() >= store.history().length - 1"
         >
           重做
         </button>
@@ -364,13 +349,61 @@ export class OperatorCatalogPanelComponent {
   `,
 })
 export class WorkflowCanvasPanelComponent implements AfterViewInit, OnDestroy {
-  readonly host = inject(WorkflowEditorPanelBridge).requireHost();
+  readonly store = inject(WorkflowEditorStore);
+  readonly facade = inject(WorkflowEditorFacade);
+  readonly adapter = inject(ReteWorkflowAdapter);
   @ViewChild('editorHost', { static: true }) private editorHost!: ElementRef<HTMLDivElement>;
-  ngAfterViewInit(): void {
-    this.host.attachEditorHost(this.editorHost.nativeElement);
+  private resizeObserver?: ResizeObserver;
+  private viewMounted = false;
+
+  constructor() {
+    effect(() => {
+      const nodes = this.store.nodes();
+      const edges = this.store.edges();
+      if (this.viewMounted) {
+        void this.adapter.sync({ nodes, edges });
+      }
+    });
   }
+
+  ngAfterViewInit(): void {
+    const host = this.editorHost.nativeElement;
+    this.viewMounted = true;
+    void this.adapter
+      .mount(
+        host,
+        { nodes: this.store.nodes(), edges: this.store.edges() },
+        {
+          editable: true,
+          onNodePicked: (id) => this.facade.notifyNodePicked(id),
+        },
+      )
+      .then(() => {
+        if (this.store.nodes().length > 0) {
+          void this.adapter.fitView();
+        }
+      });
+    if (typeof ResizeObserver !== 'undefined') {
+      this.resizeObserver = new ResizeObserver(() => this.adapter.refresh());
+      this.resizeObserver.observe(host);
+    }
+  }
+
   ngOnDestroy(): void {
-    this.host.detachEditorHost(this.editorHost.nativeElement);
+    this.viewMounted = false;
+    this.resizeObserver?.disconnect();
+    this.adapter.unmount(this.editorHost.nativeElement);
+  }
+
+  allowDrop(event: DragEvent): void { event.preventDefault(); }
+  onCanvasDrop(event: DragEvent): void {
+    event.preventDefault();
+    const definition = this.store.defaultDefinitionByCode().get(event.dataTransfer?.getData('application/x-node-code') || '');
+    if (definition) void this.addNode(definition);
+  }
+  addNode(definition: Definition): void {
+    const node = this.facade.addNode(definition);
+    void this.adapter.addNode(node);
   }
 }
 
@@ -381,17 +414,27 @@ export class WorkflowCanvasPanelComponent implements AfterViewInit, OnDestroy {
     MatButtonModule,
     RouterLink,
     DataAssetPickerComponent,
+    DataFilePreviewPanelComponent,
     OperatorParameterFormComponent,
   ],
   template: `
     <section class="panel-content">
-      @if (host.selectedNode(); as node) {
+      @if (store.selectedNode(); as node) {
         <header>
           <span>节点属性</span>
           <h2>{{ operatorNames.displayName(node.node_code, node.definition?.node_name) }}</h2>
         </header>
         <small>{{ node.node_code }} · {{ node.node_version }}</small>
         <p>{{ node.definition?.description }}</p>
+        <details class="version-control" (toggle)="loadNodeVersions(node, $event)">
+          <summary>高级：使用版本</summary>
+          <p class="muted">默认情况下新节点使用推荐版本；已有节点始终固定在这里显示的精确版本。</p>
+          <select [ngModel]="node.node_version" (ngModelChange)="changeNodeVersion(node, $event)">
+            @for (version of facade.versionsForNode(node); track version.version) {
+              <option [value]="version.version">{{ version.version }}{{ version.is_default ? ' · 默认' : '' }}</option>
+            }
+          </select>
+        </details>
         <h3>端口</h3>
         <div class="ports">
           @for (port of node.definition?.input_ports || []; track port.key) {
@@ -484,15 +527,101 @@ export class WorkflowCanvasPanelComponent implements AfterViewInit, OnDestroy {
           </section>
         }
 
-        <h3>参数</h3>
-        <app-operator-parameter-form
-          [schema]="node.definition?.parameter_schema || {}"
-          [uiSchema]="node.definition?.ui_schema || {}"
-          [model]="node.parameters"
-          (parametersChange)="host.setParameters(node.id, $event)"
-          (validityChange)="host.setParameterValidity(node.id, $event)"
-        />
-        @if (host.selectedDataBinding(); as binding) {
+        @if (node.node_code !== 'data_file_input_v1') {
+          <h3>参数</h3>
+          <app-operator-parameter-form
+            [schema]="node.definition?.parameter_schema || {}"
+            [uiSchema]="node.definition?.ui_schema || {}"
+            [model]="node.parameters"
+            (parametersChange)="facade.setParameters(node.id, $event)"
+            (validityChange)="facade.setParameterValidity(node.id, $event)"
+          />
+        }
+        @if (dataFileNode(); as dataNode) {
+          <section class="runtime-binding data-file-binding">
+            <header class="section-subhead">
+              <h3>绑定数据文件版本</h3>
+              <small class="subhead-tip">指定该节点读取的数据集文件版本及输出列视图</small>
+            </header>
+
+            <div class="data-file-form-grid">
+              <div class="form-group">
+                <label class="form-label">
+                  <span class="label-text">1. 所属数据集</span>
+                  <select
+                    class="form-select"
+                    [ngModel]="selectedCollectionId()"
+                    (ngModelChange)="onCollectionChange($event)"
+                  >
+                    <option [ngValue]="null">-- 请选择数据集 --</option>
+                    @for (collection of dataCollections(); track collection.id) {
+                      <option [ngValue]="collection.id">{{ collection.name }}</option>
+                    }
+                  </select>
+                </label>
+              </div>
+
+              <div class="form-group">
+                <label class="form-label">
+                  <span class="label-text">2. 数据文件</span>
+                  <select
+                    class="form-select"
+                    [ngModel]="selectedFileId()"
+                    (ngModelChange)="onFileChange($event)"
+                    [disabled]="!dataFiles().length"
+                  >
+                    <option [ngValue]="null">-- 请选择文件 --</option>
+                    @for (file of dataFiles(); track file.id) {
+                      <option [ngValue]="file.id">{{ file.name }}</option>
+                    }
+                  </select>
+                </label>
+              </div>
+
+              <div class="form-group">
+                <label class="form-label">
+                  <span class="label-text">3. 文件版本</span>
+                  <select
+                    class="form-select"
+                    [ngModel]="selectedFileVersionId()"
+                    (ngModelChange)="onVersionChange($event)"
+                    [disabled]="!dataFileVersions().length"
+                  >
+                    <option [ngValue]="null">-- 请选择版本 --</option>
+                    @for (version of dataFileVersions(); track version.id) {
+                      <option [ngValue]="version.id">
+                        {{ version.version_code || ('v' + version.version_no) }} · {{ version.profile_status || version.status }}
+                      </option>
+                    }
+                  </select>
+                </label>
+              </div>
+            </div>
+
+            @if (selectedFileVersionId()) {
+              <app-data-file-preview-panel
+                [fileVersionId]="selectedFileVersionId()"
+                [profileStatus]="selectedDataFileVersion()?.profile_status || null"
+                [initialBinding]="currentDataFileBinding()"
+                (viewChange)="onDataFileViewChange($event)"
+                (previewLoaded)="onDataFilePreviewLoaded($event)"
+              />
+            }
+            @if (dataFileBindingSummary(); as bindingSummary) {
+              <div class="frozen-binding-card" aria-live="polite">
+                <div class="card-title">
+                  <b>当前生效视图</b>
+                  <span class="mode-tag">{{ bindingSummary.outputMode }}</span>
+                </div>
+                <div class="card-detail">
+                  <span>{{ bindingSummary.fileName || '数据文件' }} ({{ bindingSummary.version || ('版本 #' + bindingSummary.fileVersionId) }})</span>
+                  <small class="view-detail">{{ bindingSummary.viewSummary || '已保存视图' }}</small>
+                </div>
+              </div>
+            }
+          </section>
+        }
+        @if (selectedDataBinding(); as binding) {
           <section class="runtime-binding">
             <h3>运行数据绑定</h3>
             <p>
@@ -505,7 +634,7 @@ export class WorkflowCanvasPanelComponent implements AfterViewInit, OnDestroy {
             <app-data-asset-picker
               [selection]="binding.selection"
               [channelRequired]="!binding.wholeAsset"
-              (selectionChange)="host.setBinding(binding.id, $event)"
+              (selectionChange)="facade.setBinding(binding.id, $event)"
             />
           </section>
         }
@@ -515,13 +644,13 @@ export class WorkflowCanvasPanelComponent implements AfterViewInit, OnDestroy {
             <label
               ><input
                 type="checkbox"
-                [checked]="host.isOutputPort(node.id, port.key)"
-                (change)="host.toggleOutputPort(node.id, port.key)"
+                [checked]="facade.isOutputPort(node.id, port.key)"
+                (change)="facade.toggleOutputPort(node.id, port.key)"
               />{{ port.label || port.key }}</label
             >
           }
         </div>
-        <button mat-stroked-button color="warn" (click)="host.removeNode(node.id)">移除节点</button>
+        <button mat-stroked-button color="warn" (click)="removeNode(node.id)">移除节点</button>
       } @else {
         <div class="empty">在画布中选择节点以查看属性。</div>
       }
@@ -631,11 +760,11 @@ export class WorkflowCanvasPanelComponent implements AfterViewInit, OnDestroy {
       margin-top: 4px;
     }
     .warning-text {
-      color: #b45309;
+      color: var(--sw-color-warning);
       font-size: 12px;
     }
     .text-link {
-      color: #2563eb;
+      color: var(--sw-color-info);
       font-size: 12px;
       text-decoration: none;
       font-weight: 600;
@@ -659,6 +788,87 @@ export class WorkflowCanvasPanelComponent implements AfterViewInit, OnDestroy {
       margin: -2px 0 12px;
       font-size: 12px;
     }
+    .data-file-binding {
+      margin-top: 14px;
+      display: grid;
+      gap: 12px;
+    }
+    .section-subhead h3 {
+      margin: 0 0 2px;
+      font-size: 14px;
+      color: var(--sw-text-primary, #0f172a);
+    }
+    .subhead-tip {
+      font-size: 11px;
+      color: var(--sw-text-muted);
+      display: block;
+      margin-bottom: 6px;
+    }
+    .data-file-form-grid {
+      display: grid;
+      gap: 8px;
+    }
+    .form-group {
+      display: flex;
+      flex-direction: column;
+    }
+    .form-label {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      font-size: 12px;
+      color: var(--sw-text-secondary);
+      font-weight: 500;
+    }
+    .form-select {
+      width: 100%;
+      padding: 7px 9px;
+      border: 1.5px solid var(--sw-border-strong);
+      border-radius: 6px;
+      background: var(--sw-surface);
+      color: var(--sw-text-primary);
+      font-size: 12px;
+      outline: none;
+      transition: border-color 0.15s ease;
+    }
+    .form-select:focus {
+      border-color: var(--sw-focus);
+      box-shadow: var(--sw-shadow-focus);
+    }
+    .form-select:disabled {
+      background: var(--sw-surface-sunken);
+      color: var(--sw-text-muted);
+      cursor: not-allowed;
+    }
+    .frozen-binding-card {
+      padding: 10px 12px;
+      border-radius: 8px;
+      background: var(--sw-color-success-soft);
+      border: 1px solid color-mix(in srgb, var(--sw-color-success) 22%, var(--sw-border));
+      color: var(--sw-color-success);
+      font-size: 12px;
+      display: grid;
+      gap: 4px;
+    }
+    .frozen-binding-card .card-title {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .frozen-binding-card .mode-tag {
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      background: color-mix(in srgb, var(--sw-color-success) 18%, transparent);
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+    .frozen-binding-card .view-detail {
+      color: var(--sw-color-success);
+      font-size: 11px;
+      display: block;
+      margin-top: 2px;
+    }
     .empty {
       display: grid;
       height: 100%;
@@ -668,33 +878,365 @@ export class WorkflowCanvasPanelComponent implements AfterViewInit, OnDestroy {
     }
   `,
 })
-export class NodeInspectorPanelComponent {
-  readonly host = inject(WorkflowEditorPanelBridge).requireHost();
+export class NodeInspectorPanelComponent implements OnDestroy {
+  readonly store = inject(WorkflowEditorStore);
+  readonly facade = inject(WorkflowEditorFacade);
   readonly operatorNames = inject(OperatorNameService);
   private readonly api = inject(ApiClient);
+  private readonly files = inject(DataFileService);
+  private readonly rete = inject(ReteWorkflowAdapter);
+  private readonly subscriptions: Subscription[] = [];
 
   readonly availableModels = signal<ModelVersionSummary[]>([]);
   readonly loadingModels = signal(false);
-  private lastFetchedCode: string | null = null;
+  readonly dataCollections = signal<DataCollectionSummary[]>([]);
+  readonly dataFiles = signal<DataFileSummary[]>([]);
+  readonly dataFileVersions = signal<DataFileVersionSummary[]>([]);
+  readonly selectedCollectionId = signal<number | null>(null);
+  readonly selectedFileId = signal<number | null>(null);
+  readonly selectedFileVersionId = signal<number | null>(null);
+  private dataCollectionsLoaded = false;
+  private lastBackfilledVersionId: number | null = null;
+
+  readonly dataFileNode = computed(() => {
+    const node = this.store.selectedNode();
+    return node?.node_code === 'data_file_input_v1' ? node : null;
+  });
+
+  readonly selectedDataFileVersion = computed(() => {
+    const id = this.selectedFileVersionId();
+    return id
+      ? this.dataFileVersions().find((version) => version.id === id) || null
+      : null;
+  });
+
+  readonly currentDataFileBinding = computed(() => {
+    const node = this.dataFileNode();
+    if (!node) return null;
+    const binding = this.store.bindings().get(node.id);
+    if (!binding || binding.kind !== 'data_file') return null;
+    return {
+      output_mode: binding.output_mode,
+      view_summary: binding.view_summary,
+    };
+  });
+
+  readonly dataFileBindingSummary = computed(() => {
+    const node = this.dataFileNode();
+    const binding = node ? this.store.bindings().get(node.id) : null;
+    if (!binding || binding.kind !== 'data_file') return null;
+    return {
+      fileName: binding.file_name || '',
+      version: binding.version || '',
+      fileVersionId: binding.file_version_id,
+      outputMode: binding.output_mode,
+      viewSummary: binding.view_summary || '',
+    };
+  });
+  private lastFetchedModelScope: string | null = null;
+  readonly selectedDataBinding = computed(() => {
+    this.store.bindingRevision();
+    const node = this.store.selectedNode();
+    if (
+      !node ||
+      !['dataset_channel_v1', 'dataset_asset_v1'].includes(node.node_code)
+    )
+      return null;
+    return {
+      id: node.id,
+      selection: this.store.bindingSelections().get(node.id) as
+        | DataAssetSelection
+        | null,
+      wholeAsset: node.node_code === 'dataset_asset_v1',
+    };
+  });
 
   constructor() {
     effect(() => {
-      const node = this.host.selectedNode();
+      const node = this.store.selectedNode();
       if (!node) {
-        this.lastFetchedCode = null;
+        this.lastFetchedModelScope = null;
         this.availableModels.set([]);
         return;
       }
       if (this.requiresModel(node)) {
-        if (this.lastFetchedCode !== node.node_code) {
-          this.lastFetchedCode = node.node_code;
-          this.loadModels(node.node_code);
+        const scope = this.modelScope(node);
+        if (this.lastFetchedModelScope !== scope.key) {
+          this.lastFetchedModelScope = scope.key;
+          this.loadModels(scope);
         }
       } else {
-        this.lastFetchedCode = null;
+        this.lastFetchedModelScope = null;
         this.availableModels.set([]);
       }
     });
+    effect(() => {
+      const node = this.dataFileNode();
+      if (node) {
+        const binding = this.store.bindings().get(node.id);
+        if (binding?.kind === 'data_file') {
+          if (this.lastBackfilledVersionId !== binding.file_version_id) {
+            this.lastBackfilledVersionId = binding.file_version_id;
+            this.backfillBindingSelection(binding.file_version_id);
+          }
+        } else if (!this.dataCollectionsLoaded) {
+          this.loadCollections();
+        }
+      } else {
+        this.lastBackfilledVersionId = null;
+      }
+    });
+  }
+
+  ngOnDestroy(): void {
+    this.subscriptions.forEach((subscription) => subscription.unsubscribe());
+  }
+
+  onCollectionChange(value: string | number | null): void {
+    const id = Number(value);
+    this.selectedCollectionId.set(Number.isInteger(id) ? id : null);
+    this.dataFiles.set([]);
+    this.dataFileVersions.set([]);
+    this.selectedFileId.set(null);
+    this.selectedFileVersionId.set(null);
+    if (Number.isInteger(id)) {
+      this.subscriptions.push(
+        this.files.listFiles(id).subscribe({
+          next: (items) => this.dataFiles.set(items),
+          error: () => this.dataFiles.set([]),
+        }),
+      );
+    }
+  }
+
+  onFileChange(value: string | number | null): void {
+    const id = Number(value);
+    this.selectedFileId.set(Number.isInteger(id) ? id : null);
+    this.dataFileVersions.set([]);
+    this.selectedFileVersionId.set(null);
+    if (Number.isInteger(id)) {
+      this.subscriptions.push(
+        this.files.listFileVersions(id).subscribe({
+          next: (items) => this.dataFileVersions.set(items),
+          error: () => this.dataFileVersions.set([]),
+        }),
+      );
+    }
+  }
+
+  onVersionChange(value: string | number | null): void {
+    const id = Number(value);
+    this.selectedFileVersionId.set(Number.isInteger(id) ? id : null);
+  }
+
+  onDataFilePreviewLoaded(event: {
+    preview: DataFilePreview;
+    sampleRows: Array<Record<string, unknown>>;
+  }): void {
+    const node = this.dataFileNode();
+    if (!node) return;
+    const binding = this.store.bindings().get(node.id);
+    const file = this.dataFiles().find(
+      (item) => item.id === this.selectedFileId(),
+    );
+    const version = this.dataFileVersions().find(
+      (item) => item.id === this.selectedFileVersionId(),
+    );
+    const prev = this.rete.getNodeData(node.id) || {};
+    this.rete.setNodeData(node.id, {
+      ...prev,
+      fileName:
+        file?.name ||
+        (prev['fileName'] as string) ||
+        (binding?.kind === 'data_file' ? binding.file_name : '') ||
+        '',
+      version:
+        version?.version_code ||
+        (prev['version'] as string) ||
+        (binding?.kind === 'data_file' ? binding.version : '') ||
+        '',
+      outputMode:
+        binding?.kind === 'data_file'
+          ? binding.output_mode
+          : (node.parameters?.['output_mode'] as string) || 'table',
+      columnSummary: binding?.kind === 'data_file' ? binding.view_summary : '',
+      sampleRows: event.sampleRows,
+      columns: event.preview.columns.map((c) => c.name),
+    });
+  }
+
+  onDataFileViewChange(view: DataFileViewSelection): void {
+    const node = this.dataFileNode();
+    const versionId = this.selectedFileVersionId();
+    if (!node || !versionId) return;
+    const outputMode = view.output_mode;
+    const mapping =
+      outputMode === 'table'
+        ? { selected_columns: view.selected_columns || [] }
+        : {
+            time_column: view.time_column || '',
+            value_column: view.value_column || '',
+            ...(view.point_column ? { point_column: view.point_column } : {}),
+          };
+    const payload: DataFileViewCreate = { view_kind: outputMode, mapping };
+    this.subscriptions.push(
+      this.files.createView(versionId, payload).subscribe({
+        next: (created) => {
+          const file =
+            this.dataFiles().find(
+              (item) => item.id === this.selectedFileId(),
+            ) || undefined;
+          const version =
+            this.dataFileVersions().find((item) => item.id === versionId) ||
+            undefined;
+          const binding = {
+            kind: 'data_file' as const,
+            file_version_id: versionId,
+            data_view_id: Number(created.id),
+            output_mode: outputMode,
+            ...(file?.name ? { file_name: file.name } : {}),
+            ...(version
+              ? { version: version.version_code || `v${version.version_no}` }
+              : {}),
+            view_summary: this.viewSummary(view),
+          };
+          this.facade.setDataFileBinding(node.id, binding, outputMode);
+          this.facade.setParameter(node.id, 'output_mode', outputMode);
+          const prev = this.rete.getNodeData(node.id) || {};
+          this.rete.setNodeData(node.id, {
+            ...prev,
+            fileName: file?.name || (prev['fileName'] as string) || '',
+            version:
+              version?.version_code || (prev['version'] as string) || '',
+            outputMode,
+            columnSummary: binding.view_summary,
+            selectedColumns: view.selected_columns,
+            timeColumn: view.time_column,
+            valueColumn: view.value_column,
+          });
+        },
+        error: () =>
+          this.store.setMessage(
+            'error',
+            '数据视图创建失败，请检查列映射后重试。',
+          ),
+      }),
+    );
+  }
+
+  private backfillBindingSelection(versionId: number): void {
+    this.selectedFileVersionId.set(versionId);
+    this.subscriptions.push(
+      this.files.getFileVersion(versionId).subscribe({
+        next: (version) => {
+          if (!version) return;
+          this.selectedFileVersionId.set(version.id);
+          const fileId = version.file_id;
+          this.selectedFileId.set(fileId);
+          this.subscriptions.push(
+            this.files.listFileVersions(fileId).subscribe({
+              next: (versions) => this.dataFileVersions.set(versions),
+              error: () => this.dataFileVersions.set([version]),
+            }),
+          );
+
+          // Fetch preview rows so canvas node can render ECharts immediately
+          this.subscriptions.push(
+            this.files.getPreview(version.id).subscribe({
+              next: (preview) => {
+                const node = this.dataFileNode();
+                if (node) {
+                  const b = this.store.bindings().get(node.id);
+                  let timeCol = '';
+                  let valCol = '';
+                  if (b?.kind === 'data_file' && b.view_summary) {
+                    const parts = b.view_summary.split(' → ').map((s) => s.trim());
+                    if (parts[0]) timeCol = parts[0];
+                    if (parts[1]) valCol = parts[1];
+                  }
+                  const prev = this.rete.getNodeData(node.id) || {};
+                  this.rete.setNodeData(node.id, {
+                    ...prev,
+                    sampleRows: preview.rows || [],
+                    columns: preview.columns.map((c) => c.name),
+                    timeColumn: timeCol || (prev['timeColumn'] as string) || '',
+                    valueColumn: valCol || (prev['valueColumn'] as string) || '',
+                  });
+                }
+              },
+            }),
+          );
+
+          this.subscriptions.push(
+            this.files.listCollections().subscribe({
+              next: (collections) => {
+                this.dataCollections.set(collections);
+                this.dataCollectionsLoaded = true;
+                for (const col of collections) {
+                  this.files.listFiles(col.id).subscribe({
+                    next: (files) => {
+                      const match = files.find((f) => f.id === fileId);
+                      if (match) {
+                        this.selectedCollectionId.set(col.id);
+                        this.dataFiles.set(files);
+                        const node = this.dataFileNode();
+                        if (node) {
+                          const b = this.store.bindings().get(node.id);
+                          let timeCol = '';
+                          let valCol = '';
+                          if (b?.kind === 'data_file' && b.view_summary) {
+                            const parts = b.view_summary.split(' → ').map((s) => s.trim());
+                            if (parts[0]) timeCol = parts[0];
+                            if (parts[1]) valCol = parts[1];
+                          }
+                          const prev = this.rete.getNodeData(node.id) || {};
+                          this.rete.setNodeData(node.id, {
+                            ...prev,
+                            fileName: match.name,
+                            version:
+                              version.version_code || `v${version.version_no}`,
+                            outputMode:
+                              b?.kind === 'data_file'
+                                ? b.output_mode
+                                : (node.parameters?.['output_mode'] as string) ||
+                                  'table',
+                            columnSummary:
+                              b?.kind === 'data_file' ? b.view_summary : '',
+                            timeColumn: timeCol || (prev['timeColumn'] as string) || '',
+                            valueColumn: valCol || (prev['valueColumn'] as string) || '',
+                          });
+                        }
+                      }
+                    },
+                  });
+                }
+              },
+            }),
+          );
+        },
+      }),
+    );
+  }
+
+  private loadCollections(): void {
+    this.dataCollectionsLoaded = true;
+    this.subscriptions.push(
+      this.files.listCollections().subscribe({
+        next: (items) => this.dataCollections.set(items),
+        error: () => {
+          this.dataCollections.set([]);
+          this.dataCollectionsLoaded = false;
+        },
+      }),
+    );
+  }
+
+  private viewSummary(view: DataFileViewSelection): string {
+    return view.output_mode === 'table'
+      ? (view.selected_columns || []).join('、')
+      : [view.time_column, view.value_column, view.point_column]
+          .filter(Boolean)
+          .join(' → ');
   }
 
   requiresModel(node: EditorNode): boolean {
@@ -709,25 +1251,44 @@ export class NodeInspectorPanelComponent {
   }
 
   selectedModelId(node: EditorNode): string {
-    return String(node.parameters?.['model_version_id'] || '');
+    return String(node.model_binding?.model_version_id || node.parameters?.['model_version_id'] || '');
   }
 
   onModelChoiceChange(node: EditorNode, modelId: string): void {
     if (modelId === '__none__') {
-      this.host.setParameter(node.id, 'model_version_id', '');
+      this.facade.setModelBinding(node.id, null);
     } else {
-      this.host.setParameter(node.id, 'model_version_id', modelId);
+      this.facade.setModelBinding(node.id, modelId);
     }
   }
 
   onModelSelect(node: EditorNode, modelId: string): void {
-    this.host.setParameter(node.id, 'model_version_id', modelId);
+    this.facade.setModelBinding(node.id, modelId);
   }
 
-  private loadModels(algorithmCode: string): void {
+  loadNodeVersions(node: EditorNode, event: Event): void {
+    if ((event.target as HTMLDetailsElement).open) this.facade.loadVersionsForNode(node);
+  }
+
+  changeNodeVersion(node: EditorNode, version: string): void {
+    const definition = this.facade.versionsForNode(node).find((item) => item.version === version);
+    if (definition) this.facade.changeNodeVersion(node, definition);
+  }
+
+  removeNode(id: string): void { if (typeof window !== 'undefined' && !window.confirm('移除该节点并删除其连接？')) return; this.facade.removeNode(id); }
+
+  private modelScope(node: EditorNode): { key: string; algorithmCode: string; algorithmVersionId: string | null } {
+    const algorithm = node.definition?.algorithm as Record<string, unknown> | null | undefined;
+    const algorithmCode = String(algorithm?.['code'] || algorithm?.['algorithm_code'] || node.node_code);
+    const rawId = algorithm?.['algorithm_version_id'] ?? algorithm?.['id'] ?? null;
+    const algorithmVersionId = rawId === null || rawId === undefined || rawId === '' ? null : String(rawId);
+    return { key: algorithmVersionId ? `version:${algorithmVersionId}` : `code:${algorithmCode}`, algorithmCode, algorithmVersionId };
+  }
+
+  private loadModels(scope: { key: string; algorithmCode: string; algorithmVersionId: string | null }): void {
     this.loadingModels.set(true);
     this.api
-      .get<ModelVersionSummary[]>('/api/v1/model-versions', { algorithm_code: algorithmCode })
+      .get<ModelVersionSummary[]>('/api/v1/model-versions', scope.algorithmVersionId ? { algorithm_version_id: scope.algorithmVersionId } : { algorithm_code: scope.algorithmCode })
       .subscribe({
         next: (items) => {
           this.availableModels.set(items || []);

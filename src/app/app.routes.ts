@@ -1,7 +1,7 @@
 import { Routes } from '@angular/router';
 
-import { authGuard } from './core/guards/auth.guard';
-import { permissionGuard } from './core/guards/permission.guard';
+import { authChildGuard } from './core/guards/auth.guard';
+import { routeData } from './core/routing/route-access-policy';
 
 export const routes: Routes = [
   {
@@ -11,32 +11,46 @@ export const routes: Routes = [
   {
     path: '',
     loadComponent: () => import('./layout/app-shell.component').then((m) => m.AppShellComponent),
-    canActivate: [authGuard],
+    canActivateChild: [authChildGuard],
     children: [
-      // ===== 工作台 =====
+      {
+        path: 'quick-trial',
+        ...routeData('quickTrial'),
+        loadComponent: () =>
+          import('./features/quick-trial/quick-trial-hub.page').then((m) => m.QuickTrialHubPage),
+      },
       {
         path: 'dashboard',
+        ...routeData('dashboard'),
         loadComponent: () =>
           import('./features/dashboard/dashboard.page').then((m) => m.DashboardPage),
       },
-
-      // ===== 数据中心 =====
-      // 数据集管理 → 复用现有数据源页面
+      {
+        path: 'scenes',
+        loadComponent: () => import('./features/scenes/scenes.page').then((m) => m.ScenesPage),
+        ...routeData('scenes'),
+      },
       {
         path: 'data-sources',
         loadComponent: () =>
           import('./features/data-sources/data-sources.page').then((m) => m.DataSourcesPage),
-        canActivate: [permissionGuard],
-        data: { permission: 'data_source:read' },
+        ...routeData('dataSources'),
+      },
+      {
+        path: 'data-collections',
+        loadComponent: () =>
+          import('./features/data-sources/data-collections.page').then(
+            (m) => m.DataCollectionsPage,
+          ),
+        ...routeData('dataCollections'),
       },
       {
         path: 'datasets/:datasetId',
         loadComponent: () =>
           import('./features/data-sources/dataset-detail.page').then((m) => m.DatasetDetailPage),
-        canActivate: [permissionGuard],
-        data: { permission: 'dataset:read' },
+        ...routeData('datasetDetail'),
       },
-      // 数据评估 → 占位（后端可复用 SwDataQualityReport）
+      // ===== 数据中心扩展（占位模块） =====
       {
         path: 'data-center/assessment',
         loadComponent: () =>
@@ -48,7 +62,6 @@ export const routes: Routes = [
           expectedApi: 'GET /api/v1/data-assessment/results',
         },
       },
-      // 数据清洗 → 占位（待后端）
       {
         path: 'data-center/cleaning',
         loadComponent: () =>
@@ -60,7 +73,6 @@ export const routes: Routes = [
           expectedApi: 'GET /api/v1/data-cleaning/configs',
         },
       },
-      // 数据修复 → 占位（待后端）
       {
         path: 'data-center/repair',
         loadComponent: () =>
@@ -72,7 +84,6 @@ export const routes: Routes = [
           expectedApi: 'GET /api/v1/data-repair/configs',
         },
       },
-      // 数据增强 → 占位（待后端）
       {
         path: 'data-center/augmentation',
         loadComponent: () =>
@@ -84,7 +95,6 @@ export const routes: Routes = [
           expectedApi: 'GET /api/v1/data-augmentation/configs',
         },
       },
-      // 数据标注 → 占位（待后端）
       {
         path: 'data-center/annotation',
         loadComponent: () =>
@@ -96,38 +106,59 @@ export const routes: Routes = [
           expectedApi: 'GET /api/v1/data-annotation/tasks',
         },
       },
-
-      // ===== 算法中控（复用算子中心） =====
       {
         path: 'operators/import',
         loadComponent: () =>
           import('./features/operators/algorithm-package.page').then((m) => m.AlgorithmPackagePage),
-        canActivate: [permissionGuard],
-        data: { permission: 'algorithm:publish' },
+        ...routeData('operatorImport'),
       },
       {
         path: 'operators',
         loadComponent: () =>
           import('./features/operators/operator-center.page').then((m) => m.OperatorCenterPage),
-        canActivate: [permissionGuard],
-        data: { permission: 'operator:read' },
+        ...routeData('operators'),
       },
       { path: 'algorithms', redirectTo: 'operators?kind=algorithm', pathMatch: 'full' },
-
-      // ===== 场景编排（复用工作流） =====
+      {
+        path: 'tasks',
+        loadComponent: () =>
+          import('./features/task-detail/task-center.page').then((m) => m.TaskCenterPage),
+        ...routeData('tasks'),
+      },
+      {
+        path: 'tasks/:taskId',
+        loadComponent: () =>
+          import('./features/task-detail/task-detail.page').then((m) => m.TaskDetailPage),
+        ...routeData('taskDetail'),
+      },
+      {
+        path: 'results/:taskId',
+        loadComponent: () => import('./features/results/result.page').then((m) => m.ResultPage),
+        ...routeData('result'),
+      },
+      {
+        path: 's01-leakage',
+        loadComponent: () =>
+          import('./features/scenes/s01-leakage-scene.page').then((m) => m.S01LeakageScenePage),
+        ...routeData('s01Leakage'),
+      },
+      {
+        path: 's01/runs/:runId',
+        loadComponent: () =>
+          import('./features/scenes/s01-run-result.page').then((m) => m.S01RunResultPage),
+        ...routeData('s01Run'),
+      },
       {
         path: 'workflows',
         loadComponent: () =>
           import('./features/workflows/workflow-library.page').then((m) => m.WorkflowLibraryPage),
-        canActivate: [permissionGuard],
-        data: { permission: 'workflow:read' },
+        ...routeData('workflows'),
       },
       {
         path: 'workflows/new',
         loadComponent: () =>
           import('./features/workflows/workflow-starter.page').then((m) => m.WorkflowStarterPage),
-        canActivate: [permissionGuard],
-        data: { permission: 'workflow:edit' },
+        ...routeData('workflowNew'),
       },
       {
         path: 'workflows/:workflowId/edit',
@@ -135,15 +166,13 @@ export const routes: Routes = [
           import('./features/workflows/workflow-editor-workspace.page').then(
             (m) => m.WorkflowEditorWorkspacePage,
           ),
-        canActivate: [permissionGuard],
-        data: { permission: 'workflow:read', workspace: true },
+        ...routeData('workflowEditor', { workspace: true }),
       },
       {
         path: 'workflow-runs',
         loadComponent: () =>
           import('./features/workflows/workflow-runs.page').then((m) => m.WorkflowRunsPage),
-        canActivate: [permissionGuard],
-        data: { permission: 'workflow:read' },
+        ...routeData('workflowRuns'),
       },
       {
         path: 'workflow-runs/:runId',
@@ -151,55 +180,8 @@ export const routes: Routes = [
           import('./features/workflows/workflow-run-detail.page').then(
             (m) => m.WorkflowRunDetailPage,
           ),
-        canActivate: [permissionGuard],
-        data: { permission: 'workflow:read' },
+        ...routeData('workflowRunDetail'),
       },
-
-      // ===== 场景中心（保留旧入口） =====
-      {
-        path: 'scenes',
-        loadComponent: () =>
-          import('./features/scenes/scenes.page').then((m) => m.ScenesPage),
-        canActivate: [permissionGuard],
-        data: { permission: 'workflow:read' },
-      },
-      {
-        path: 's01-leakage',
-        loadComponent: () =>
-          import('./features/scenes/s01-leakage-scene.page').then((m) => m.S01LeakageScenePage),
-        canActivate: [permissionGuard],
-        data: { permission: 'workflow:edit' },
-      },
-      {
-        path: 's01/runs/:runId',
-        loadComponent: () =>
-          import('./features/scenes/s01-run-result.page').then((m) => m.S01RunResultPage),
-        canActivate: [permissionGuard],
-        data: { permission: 'workflow:read' },
-      },
-
-      // ===== 任务中心 =====
-      {
-        path: 'tasks',
-        loadComponent: () =>
-          import('./features/task-detail/task-center.page').then((m) => m.TaskCenterPage),
-        canActivate: [permissionGuard],
-        data: { permission: 'task:read' },
-      },
-      {
-        path: 'tasks/:taskId',
-        loadComponent: () =>
-          import('./features/task-detail/task-detail.page').then((m) => m.TaskDetailPage),
-        canActivate: [permissionGuard],
-        data: { permission: 'task:read' },
-      },
-      {
-        path: 'results/:taskId',
-        loadComponent: () => import('./features/results/result.page').then((m) => m.ResultPage),
-        canActivate: [permissionGuard],
-        data: { permission: 'result:read' },
-      },
-
       // ===== 开发者工具 =====
       {
         path: 'developer/api-keys',
@@ -217,23 +199,18 @@ export const routes: Routes = [
         loadComponent: () =>
           import('./features/developer/dev-docs.page').then((m) => m.DevDocsPage),
       },
-
-      // ===== 系统管理（保留） =====
       {
         path: 'users',
         loadComponent: () => import('./features/users/users.page').then((m) => m.UsersPage),
-        canActivate: [permissionGuard],
-        data: { permission: 'user:manage' },
+        ...routeData('users'),
       },
       {
         path: 'recycle-bin',
         loadComponent: () =>
           import('./features/recycle-bin/recycle-bin.page').then((m) => m.RecycleBinPage),
-        canActivate: [permissionGuard],
-        data: { permission: 'recycle:manage' },
+        ...routeData('recycleBin'),
       },
-
-      { path: '', pathMatch: 'full', redirectTo: 'dashboard' },
+      { path: '', pathMatch: 'full', redirectTo: 'quick-trial' },
     ],
   },
   { path: '**', redirectTo: '' },

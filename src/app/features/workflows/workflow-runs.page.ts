@@ -59,7 +59,7 @@ import { BeijingTimePipe } from '../../shared/pipes/beijing-time.pipe';
   styles: `
     :host {
       display: block;
-      color: #172033;
+      color: var(--sw-text-primary);
     }
     .page-header {
       display: flex;
@@ -74,32 +74,34 @@ import { BeijingTimePipe } from '../../shared/pipes/beijing-time.pipe';
     }
     h1 {
       margin-top: 4px;
-      font-size: 32px;
+      font-size: clamp(27px, 2.4vw, 34px);
+      letter-spacing: -0.025em;
     }
     .eyebrow {
-      color: #2563eb;
+      color: var(--sw-color-primary);
       font-size: 11px;
       font-weight: 800;
       letter-spacing: 0.08em;
     }
     .lead,
     .hint {
-      color: #667085;
+      color: var(--sw-text-muted);
       font-size: 13px;
       margin-top: 7px;
     }
     .panel {
-      background: #fff;
-      border: 1px solid #e4e7ec;
-      border-radius: 13px;
-      padding: 15px;
-      box-shadow: 0 3px 12px #1018280a;
+      overflow: hidden;
+      background: var(--sw-surface);
+      border: 1px solid var(--sw-border);
+      border-radius: var(--sw-radius-lg);
+      padding: 16px;
+      box-shadow: var(--sw-shadow-sm);
     }
     .toolbar {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      border-bottom: 1px solid #eaecf0;
+      border-bottom: 1px solid var(--sw-border);
       padding-bottom: 12px;
       margin-bottom: 4px;
     }
@@ -107,14 +109,20 @@ import { BeijingTimePipe } from '../../shared/pipes/beijing-time.pipe';
       display: block;
       color: inherit;
       text-decoration: none;
-      border-bottom: 1px solid #f2f4f7;
-      padding: 15px 6px;
+      border: 1px solid transparent;
+      border-bottom-color: var(--sw-border);
+      border-radius: var(--sw-radius-sm);
+      padding: 14px 10px;
+      transition:
+        border-color var(--sw-motion-fast) var(--sw-ease-standard),
+        background-color var(--sw-motion-fast) var(--sw-ease-standard);
     }
     .run-row:last-child {
       border-bottom: 0;
     }
     .run-row:hover {
-      background: #f8fbff;
+      border-color: color-mix(in srgb, var(--sw-color-primary) 22%, var(--sw-border));
+      background: var(--sw-color-primary-faint);
     }
     .run-title,
     .run-meta {
@@ -126,7 +134,7 @@ import { BeijingTimePipe } from '../../shared/pipes/beijing-time.pipe';
     .run-title span,
     .run-meta,
     .error {
-      color: #667085;
+      color: var(--sw-text-muted);
       font-size: 12px;
     }
     .run-meta {
@@ -136,25 +144,26 @@ import { BeijingTimePipe } from '../../shared/pipes/beijing-time.pipe';
       margin-left: auto;
     }
     .status {
+      border: 1px solid color-mix(in srgb, currentColor 15%, transparent);
       border-radius: 999px;
       padding: 3px 8px;
-      background: #f2f4f7;
+      background: var(--sw-surface-sunken);
     }
     .status[data-status='success'] {
-      color: #087443;
-      background: #ecfdf3;
+      color: var(--sw-color-success);
+      background: var(--sw-color-success-soft);
     }
     .status[data-status='failed'] {
-      color: #b42318;
-      background: #fef3f2;
+      color: var(--sw-color-danger);
+      background: var(--sw-color-danger-soft);
     }
     .status[data-status='running'] {
-      color: #175cd3;
-      background: #eff8ff;
+      color: var(--sw-color-info);
+      background: var(--sw-color-info-soft);
     }
     .status[data-status='queued'] {
-      color: #9c2d00;
-      background: #fff6ed;
+      color: var(--sw-color-warning);
+      background: var(--sw-color-warning-soft);
     }
     .error {
       margin: 8px 0 0;
@@ -162,7 +171,8 @@ import { BeijingTimePipe } from '../../shared/pipes/beijing-time.pipe';
     }
     .empty {
       padding: 34px;
-      color: #98a2b3;
+      color: var(--sw-text-muted);
+      background: var(--sw-surface-muted);
       text-align: center;
     }
     .hint {
@@ -190,16 +200,22 @@ export class WorkflowRunsPage {
   }
   load(): void {
     this.loading.set(true);
-    this.api.get<WorkflowRunPage>('/api/v1/workflow-runs', { page: 1, page_size: 50 }).subscribe({
-      next: (page) => {
-        this.page.set(page);
-        this.loading.set(false);
-      },
-      error: (error: unknown) => {
-        this.loading.set(false);
-        this.notifications.error(error, '读取运行记录失败。');
-      },
-    });
+    this.api
+      .get<WorkflowRunPage>('/api/v1/workflow-runs', {
+        page: 1,
+        page_size: 50,
+        view: 'summary',
+      })
+      .subscribe({
+        next: (page) => {
+          this.page.set(page);
+          this.loading.set(false);
+        },
+        error: (error: unknown) => {
+          this.loading.set(false);
+          this.notifications.error(error, '读取运行记录失败。');
+        },
+      });
   }
   statusLabel(status: string): string {
     return (

@@ -9,6 +9,8 @@ import { finalize } from 'rxjs';
 
 import { AuthService } from '../../core/services/auth.service';
 import { NotificationService } from '../../core/services/notification.service';
+import { safeInternalRedirect } from '../../core/routing/route-access-policy';
+import { SwIconComponent } from '../../shared/components/sw-icon.component';
 
 @Component({
   selector: 'app-login-page',
@@ -18,13 +20,25 @@ import { NotificationService } from '../../core/services/notification.service';
     MatCardModule,
     MatFormFieldModule,
     MatInputModule,
+    SwIconComponent,
   ],
   template: `
     <section class="login-page">
       <mat-card class="login-card">
-        <div class="logo">SW</div>
-        <h1>{{ registering() ? '注册平台账号' : '智能水务算法管理平台' }}</h1>
-        <p>{{ registering() ? '注册后将获得数据上传和工作流使用权限。' : '使用平台账号登录。' }}</p>
+        <header class="heading">
+          <div class="logo"><app-sw-icon name="droplet" [size]="22" /></div>
+          <div>
+            <span class="eyebrow">SMART WATER PLATFORM</span>
+            <h1>{{ registering() ? '注册平台账号' : '欢迎回来' }}</h1>
+            <p>
+              {{
+                registering()
+                  ? '注册后即可上传数据并创建分析工作流。'
+                  : '登录后继续进行水务数据分析与工作流编排。'
+              }}
+            </p>
+          </div>
+        </header>
         <form [formGroup]="form" (ngSubmit)="submit()">
           @if (registering()) {
             <mat-form-field appearance="outline"
@@ -59,8 +73,12 @@ import { NotificationService } from '../../core/services/notification.service';
             color="primary"
             type="submit"
             [disabled]="form.invalid || loading()"
+            [attr.aria-busy]="loading()"
           >
-            {{ loading() ? '处理中…' : registering() ? '注册' : '登录' }}
+            @if (!loading()) {
+              <app-sw-icon [name]="registering() ? 'users' : 'login'" [size]="17" />
+            }
+            {{ loading() ? '正在处理…' : registering() ? '创建账号' : '登录并继续' }}
           </button>
         </form>
         <button mat-button type="button" class="mode" (click)="toggleMode()">
@@ -75,37 +93,61 @@ import { NotificationService } from '../../core/services/notification.service';
       display: grid;
       place-items: center;
       padding: 24px;
-      background: radial-gradient(circle at top right, #dbeafe, #f8fafc 42%, #e2e8f0);
+      box-sizing: border-box;
+      background:
+        radial-gradient(
+          circle at 78% 12%,
+          color-mix(in srgb, var(--sw-color-secondary) 14%, transparent),
+          transparent 32rem
+        ),
+        linear-gradient(145deg, var(--sw-surface-muted), var(--sw-page-bg));
     }
     .login-card {
-      width: min(420px, 100%);
-      padding: 32px;
+      width: min(460px, 100%);
+      padding: 34px;
       box-sizing: border-box;
+      border: 1px solid var(--sw-border);
+      border-radius: var(--sw-radius-lg);
+      background: var(--sw-surface);
+      box-shadow: var(--sw-shadow-lg);
+    }
+    .heading {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr);
+      align-items: start;
+      gap: 15px;
     }
     .logo {
-      width: 44px;
-      height: 44px;
+      width: 46px;
+      height: 46px;
       display: grid;
       place-items: center;
-      background: #0f4c81;
-      color: white;
-      border-radius: 12px;
-      font-weight: 800;
+      border: 1px solid color-mix(in srgb, var(--sw-color-primary) 26%, var(--sw-border));
+      background: var(--sw-color-primary-soft);
+      color: var(--sw-color-primary-strong);
+      border-radius: var(--sw-radius-md);
+    }
+    .eyebrow {
+      color: var(--sw-color-primary);
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.09em;
     }
     h1 {
-      margin: 18px 0 8px;
+      margin: 4px 0 6px;
       font-size: 24px;
-      color: #0f172a;
+      color: var(--sw-text-primary);
+      line-height: 1.25;
     }
-    p,
-    small {
-      color: #64748b;
+    p {
+      margin: 0;
+      color: var(--sw-text-secondary);
       line-height: 1.6;
     }
     form {
       display: grid;
-      gap: 4px;
-      margin: 22px 0;
+      gap: 6px;
+      margin: 26px 0 16px;
     }
     mat-form-field {
       width: 100%;
@@ -113,8 +155,21 @@ import { NotificationService } from '../../core/services/notification.service';
     button {
       height: 44px;
     }
+    form > button app-sw-icon {
+      margin-right: 6px;
+      vertical-align: -3px;
+    }
     .mode {
       width: 100%;
+      color: var(--sw-color-primary-strong);
+    }
+    @media (max-width: 520px) {
+      .login-page {
+        padding: 14px;
+      }
+      .login-card {
+        padding: 25px 20px;
+      }
     }
   `,
 })
@@ -171,7 +226,9 @@ export class LoginPage {
       .pipe(finalize(() => this.loading.set(false)))
       .subscribe({
         next: () => {
-          const redirect = this.route.snapshot.queryParamMap.get('redirect') || '/dashboard';
+          const redirect =
+            safeInternalRedirect(this.route.snapshot.queryParamMap.get('redirect') || undefined) ||
+            '/dashboard';
           void this.router.navigateByUrl(redirect);
         },
         error: (error: unknown) => this.notifications.error(error, '用户名或密码错误。'),

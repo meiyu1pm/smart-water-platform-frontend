@@ -18,6 +18,7 @@ import { NotificationService } from '../../core/services/notification.service';
 import { TaskTrackingHandle, TaskTrackerService } from '../../core/services/task-tracker.service';
 import { OperatorNameService } from '../../core/services/operator-name.service';
 import { BeijingTimePipe } from '../../shared/pipes/beijing-time.pipe';
+import { C1AnomalyResultComponent } from './c1-anomaly-result.component';
 import { WorkflowArtifactRendererComponent } from './workflow-artifact-renderer.component';
 
 interface GraphNode {
@@ -36,6 +37,7 @@ interface GraphNode {
     MatCardModule,
     MatProgressBarModule,
     RouterLink,
+    C1AnomalyResultComponent,
     WorkflowArtifactRendererComponent,
   ],
   template: `
@@ -133,6 +135,8 @@ interface GraphNode {
               <h3>节点输出</h3>
               @if (!selectedArtifacts().length) {
                 <p class="muted">暂无输出。</p>
+              } @else if (node.node_code === 'water_adaptive_anomaly') {
+                <app-c1-anomaly-result [artifacts]="selectedArtifacts()" />
               } @else {
                 @for (item of selectedArtifacts(); track item.id) {
                   <div class="artifact-card">
@@ -167,7 +171,7 @@ interface GraphNode {
   styles: `
     :host {
       display: block;
-      color: #172033;
+      color: var(--sw-text-primary);
       min-width: 0;
     }
     .page-header {
@@ -185,7 +189,8 @@ interface GraphNode {
     }
     h1 {
       margin-top: 4px;
-      font-size: 30px;
+      font-size: clamp(26px, 2.2vw, 32px);
+      letter-spacing: -0.025em;
     }
     h2 {
       font-size: 16px;
@@ -195,14 +200,14 @@ interface GraphNode {
       margin: 16px 0 7px;
     }
     .eyebrow {
-      color: #2563eb;
+      color: var(--sw-color-primary);
       font-size: 11px;
       font-weight: 800;
       letter-spacing: 0.08em;
     }
     .subline,
     .muted {
-      color: #667085;
+      color: var(--sw-text-muted);
       font-size: 12px;
       margin-top: 6px;
       overflow-wrap: anywhere;
@@ -223,18 +228,23 @@ interface GraphNode {
       min-width: 0;
     }
     .summary-grid mat-card {
-      padding: 14px;
+      padding: 16px;
+      border: 1px solid var(--sw-border);
+      border-radius: var(--sw-radius-md);
+      background: var(--sw-surface);
+      box-shadow: var(--sw-shadow-sm);
     }
     .summary-grid span,
     .summary-grid small {
       display: block;
-      color: #667085;
+      color: var(--sw-text-muted);
       font-size: 12px;
     }
     .summary-grid strong {
       display: block;
       margin-top: 6px;
       font-size: 20px;
+      font-variant-numeric: tabular-nums;
       overflow-wrap: anywhere;
     }
     .summary-grid strong.mono {
@@ -249,30 +259,32 @@ interface GraphNode {
       width: max-content;
       padding: 4px 8px;
       border-radius: 999px;
-      background: #f2f4f7;
+      border: 1px solid color-mix(in srgb, currentColor 15%, transparent);
+      background: var(--sw-surface-sunken);
     }
     .status[data-status='success'] {
-      background: #ecfdf3;
-      color: #087443;
+      background: var(--sw-color-success-soft);
+      color: var(--sw-color-success);
     }
     .status[data-status='failed'] {
-      background: #fef3f2;
-      color: #b42318;
+      background: var(--sw-color-danger-soft);
+      color: var(--sw-color-danger);
     }
     .status[data-status='running'] {
-      background: #eff8ff;
-      color: #175cd3;
+      background: var(--sw-color-info-soft);
+      color: var(--sw-color-info);
     }
     .status[data-status='queued'] {
-      background: #fff6ed;
-      color: #9c2d00;
+      background: var(--sw-color-warning-soft);
+      color: var(--sw-color-warning);
     }
     .error-banner,
     .error-text {
       padding: 10px 12px;
-      border-radius: 8px;
-      background: #fef3f2;
-      color: #b42318;
+      border: 1px solid color-mix(in srgb, var(--sw-color-danger) 22%, var(--sw-border));
+      border-radius: var(--sw-radius-sm);
+      background: var(--sw-color-danger-soft);
+      color: var(--sw-color-danger);
       font-size: 12px;
       overflow-wrap: anywhere;
       margin-bottom: 14px;
@@ -290,7 +302,11 @@ interface GraphNode {
       min-width: 0;
     }
     .panel {
-      padding: 15px;
+      padding: 16px;
+      border: 1px solid var(--sw-border);
+      border-radius: var(--sw-radius-lg);
+      background: var(--sw-surface);
+      box-shadow: var(--sw-shadow-sm);
     }
     .section-title {
       display: flex;
@@ -300,7 +316,7 @@ interface GraphNode {
       margin-bottom: 10px;
     }
     .section-title span {
-      color: #667085;
+      color: var(--sw-text-muted);
       font-size: 12px;
     }
     .node-list {
@@ -314,34 +330,34 @@ interface GraphNode {
       gap: 10px;
       width: 100%;
       text-align: left;
-      border: 1px solid #eaecf0;
-      background: #fff;
-      border-radius: 9px;
+      border: 1px solid var(--sw-border);
+      background: var(--sw-surface);
+      border-radius: var(--sw-radius-sm);
       padding: 10px;
       cursor: pointer;
     }
     .node-row:hover,
     .node-row.selected {
-      border-color: #84adf7;
-      background: #f8fbff;
+      border-color: var(--sw-color-primary);
+      background: var(--sw-color-primary-faint);
     }
     .node-state {
       width: 9px;
       height: 9px;
       border-radius: 50%;
-      background: #98a2b3;
+      background: var(--sw-border-strong);
     }
     .node-state[data-status='running'] {
-      background: #2563eb;
+      background: var(--sw-color-info);
     }
     .node-state[data-status='success'] {
-      background: #16a34a;
+      background: var(--sw-color-success);
     }
     .node-state[data-status='failed'] {
-      background: #dc2626;
+      background: var(--sw-color-danger);
     }
     .node-state[data-status='cancelled'] {
-      background: #d97706;
+      background: var(--sw-color-warning);
     }
     .node-copy strong,
     .node-copy small {
@@ -351,16 +367,16 @@ interface GraphNode {
       white-space: nowrap;
     }
     .node-copy small {
-      color: #667085;
+      color: var(--sw-text-muted);
       font-size: 11px;
       margin-top: 3px;
     }
     .node-row > span:last-child {
-      color: #667085;
+      color: var(--sw-text-muted);
       font-size: 12px;
     }
     .artifact-card {
-      border-top: 1px solid #f2f4f7;
+      border-top: 1px solid var(--sw-border);
       padding: 14px 0;
     }
     .artifact-card:first-of-type {
@@ -373,7 +389,7 @@ interface GraphNode {
       font-size: 12px;
     }
     dt {
-      color: #667085;
+      color: var(--sw-text-muted);
     }
     dd {
       margin: 0;
@@ -382,7 +398,9 @@ interface GraphNode {
     pre {
       max-height: 180px;
       overflow: auto;
-      background: #f8fafc;
+      border: 1px solid var(--sw-border);
+      border-radius: var(--sw-radius-sm);
+      background: var(--sw-surface-muted);
       padding: 10px;
       border-radius: 7px;
       font-size: 11px;
